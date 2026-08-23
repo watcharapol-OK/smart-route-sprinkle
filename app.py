@@ -38,6 +38,19 @@ st.markdown('''
             overflow: hidden; border-radius: 10px; background-color: #E8F4F8; border: 2px dashed #002D62; margin-bottom: 20px;
         }
         .custom-truck-loader img { width: 150px; animation: drive 3s infinite ease-in-out; }
+        
+        /* สไตล์ปุ่มดาวน์โหลด */
+        [data-testid="stDownloadButton"] > button {
+            background-color: #28A745 !important;
+            color: white !important;
+            border: none !important;
+            padding: 0.8rem 2rem;
+            font-size: 1.1rem;
+        }
+        [data-testid="stDownloadButton"] > button:hover {
+            background-color: #218838 !important;
+            box-shadow: 0 4px 8px rgba(40, 167, 69, 0.4);
+        }
     </style>
 ''', unsafe_allow_html=True)
 
@@ -133,10 +146,16 @@ if df is not None and not df.empty:
         if has_base: targets[base_t] = 0 
         current_loads = {t: 0 for t in active_trucks + ([base_t] if has_base else [])}
         
-        for idx in opt_df[opt_df['is_locked']].index:
+        coords = opt_df[[lat_col, lon_col]].values
+        vols = opt_df[vol_col].values
+        
+        # ล็อก VIP ก่อน
+        locked_indices = np.where(opt_df['is_locked'].values)[0]
+        for idx in locked_indices:
             orig_t = str(opt_df.at[idx, truck_col])
             opt_df.at[idx, 'เบอร์รถใหม่'] = orig_t
-            if orig_t in current_loads: current_loads[orig_t] += opt_df.at[idx, vol_col]
+            if orig_t in current_loads:
+                current_loads[orig_t] += vols[idx]
             
         centers = {}
         for t in available_trucks:
@@ -149,13 +168,8 @@ if df is not None and not df.empty:
             ul_data = opt_df[~opt_df['is_locked']]
             if not ul_data.empty: centers[new_t] = (np.average(ul_data[lat_col]), np.average(ul_data[lon_col]))
 
-        coords = opt_df[[lat_col, lon_col]].values
-        vols = opt_df[vol_col].values
-        remaining_mask = ~opt_df['is_locked'].values
-        
         for iteration in range(2):
             current_loads = {t: 0 for t in active_trucks + ([base_t] if has_base else [])}
-            locked_indices = np.where(opt_df['is_locked'].values)[0]
             for idx in locked_indices:
                 current_loads[str(opt_df.at[idx, truck_col])] += vols[idx]
                 
@@ -221,7 +235,6 @@ if df is not None and not df.empty:
         st.markdown("### 📊 สรุปภาพรวมยอดการจัดส่ง")
         col1, col2 = st.columns(2)
         
-        # 📌 อัปเดตชื่อคอลัมน์ใหม่ตามที่ต้องการ
         sum_before = df.groupby(truck_col).agg(
             จำนวนสมาชิก=pd.NamedAgg(column=truck_col, aggfunc='count'), 
             **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}
@@ -295,7 +308,31 @@ if df is not None and not df.empty:
         st.markdown("### 📋 รายละเอียดข้อมูลการโยกย้ายสมาชิก")
         display_cols = [id_col, vol_col, truck_col, 'เบอร์รถใหม่', 'สถานะ']
         if name_col: display_cols.insert(1, name_col)
-        st.dataframe(res_df[display_cols].rename(columns={truck_col: 'เบอร์รถเดิม (ก่อนปรับ)'}), use_container_width=True)
+        
+        detail_df = res_df[display_cols].rename(columns={truck_col: 'เบอร์รถเดิม (ก่อนปรับ)'})
+        st.dataframe(detail_df, use_container_width=True)
+        
+        st.markdown("---")
+        st.markdown("<div style='text-align:center; margin-bottom: 10px;'><b>📌 เมื่อจัดสายส่งเป็นที่น่าพอใจแล้ว สามารถดาวน์โหลดข้อมูลเพื่อนำไปใช้อัปเดตได้เลย</b></div>", unsafe_allow_html=True)
+        
+        # 📌 ปุ่มดาวน์โหลดไฟล์ CSV (ใช้ utf-8-sig เพื่อให้ภาษาไทยใน Excel ไม่เพี้ยน)
+        @st.cache_data
+        def convert_df(df):
+            return df.to_csv(index=False, encoding='utf-8-sig')
+
+        csv = convert_df(detail_df)
+        
+        # จัดตำแหน่งปุ่มดาวน์โหลดให้อยู่ตรงกลาง
+        col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
+        with col_btn2:
+            st.download_button(
+                label="📥 ดาวน์โหลดข้อมูลสรุปผล (Excel / CSV)",
+                data=csv,
+                file_name='sprinkle_route_result.csv',
+                mime='text/csv',
+                use_container_width=True
+            )
+            
     else:
         st.info("👈 กดปุ่ม 'ประมวลผลตัดสายส่ง' ที่แถบเมนูด้านซ้าย เพื่อดูผลลัพธ์การคำนวณ")
 else:
