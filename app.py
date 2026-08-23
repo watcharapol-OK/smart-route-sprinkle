@@ -1,3 +1,7 @@
+# =========================================================================================
+# โค้ด Dashboard ตัดสายส่ง (เวอร์ชันล่าสุด: แอนิเมชันรูปรถบริษัท + Proportional Allocation)
+# =========================================================================================
+
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
@@ -6,9 +10,12 @@ import folium
 from folium import plugins
 import re
 import math
+import time
+import base64
 
 st.set_page_config(page_title="Smart Route Rebalancer", layout="wide", initial_sidebar_state="expanded")
 
+# 📌 CSS ธีม Ultra Premium และ 📌 ระบบ Animation รูปรถ
 st.markdown('''
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap');
@@ -24,6 +31,32 @@ st.markdown('''
         div[data-testid="stVerticalBlock"] > div.element-container { background-color: transparent; }
         .stDataFrame { background-color: white; padding: 1rem; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.08); border-top: 4px solid #002D62; }
         #MainMenu {visibility: hidden;} footer {visibility: hidden;}
+        
+        /* ซ่อนไอคอนนักกีฬา/สัญลักษณ์โหลดของ Streamlit ปกติ */
+        .stSpinner > div > div { display: none !important; }
+        
+        /* แอนิเมชันรูปรถวิ่งไปมา */
+        @keyframes drive {
+            0% { transform: translateX(-100%); }
+            50% { transform: translateX(100%); }
+            100% { transform: translateX(-100%); }
+        }
+        .custom-truck-loader {
+            text-align: center;
+            padding: 2rem;
+            color: #002D62;
+            font-weight: bold;
+            font-size: 1.2rem;
+            overflow: hidden;
+            border-radius: 10px;
+            background-color: #E8F4F8;
+            border: 2px dashed #002D62;
+            margin-bottom: 20px;
+        }
+        .custom-truck-loader img {
+            width: 150px;
+            animation: drive 3s infinite ease-in-out;
+        }
     </style>
 ''', unsafe_allow_html=True)
 
@@ -46,8 +79,25 @@ def load_data_from_sheet(url):
 
 df = None
 if sheet_url:
-    with st.spinner('กำลังโหลดข้อมูล...'):
-        df = load_data_from_sheet(sheet_url)
+    # 📌 ส่วนแสดงภาพรถกำลังโหลด (ถ้าไฟล์ truck.jpg มีในระบบ จะดึงมาแสดง ถ้าไม่มีจะขึ้นคำเตือน)
+    loading_placeholder = st.empty()
+    try:
+        with open("truck.jpg", "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode()
+        loader_html = f'''
+        <div class="custom-truck-loader">
+            <img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>
+            กำลังเชื่อมต่อฐานข้อมูล กรุณารอสักครู่... 💦
+        </div>
+        '''
+    except FileNotFoundError:
+        loader_html = '<div class="custom-truck-loader">กำลังโหลดข้อมูล... (กรุณาอัปโหลดไฟล์ truck.jpg ลงใน GitHub)</div>'
+        
+    loading_placeholder.markdown(loader_html, unsafe_allow_html=True)
+    
+    df = load_data_from_sheet(sheet_url)
+    time.sleep(1) # ดีเลย์ให้เห็นรูปรถวิ่งสักนิด
+    loading_placeholder.empty() # ลบรูปรถออกเมื่อโหลดเสร็จ
 
 if df is not None and not df.empty:
     vol_col = next((c for c in df.columns if 'ยอด' in str(c) or 'เดือน' in str(c)), df.columns[-1])
@@ -162,8 +212,27 @@ if df is not None and not df.empty:
         opt_df['สถานะ'] = np.where(opt_df[truck_col].astype(str) == opt_df['เบอร์รถใหม่'], 'คงเดิม', 'ย้ายไปสาย ' + opt_df['เบอร์รถใหม่'])
         return opt_df
 
-    with st.spinner('ระบบกำลังประมวลผลจัดสรรงาน...'):
-        res_df = run_proportional_allocation(df, base_truck, new_truck_name, target_pcts, manual_vips)
+    # 📌 ส่วนแสดงภาพรถกำลังคำนวณแบ่งสายงาน
+    calc_placeholder = st.empty()
+    try:
+        with open("truck.jpg", "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode()
+        loader_html = f'''
+        <div class="custom-truck-loader">
+            <img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>
+            กำลังคำนวณและเกลี่ยเส้นทางให้คุ้มค่าที่สุด... 🚚💨
+        </div>
+        '''
+    except FileNotFoundError:
+        loader_html = '<div class="custom-truck-loader">กำลังประมวลผล...</div>'
+        
+    calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
+    
+    # รันการคำนวณ
+    res_df = run_proportional_allocation(df, base_truck, new_truck_name, target_pcts, manual_vips)
+    
+    time.sleep(1) # ให้คนใช้เห็นรถวิ่งแปบนึง
+    calc_placeholder.empty() # เอาแอนิเมชันออก แสดงผลลัพธ์
 
     st.markdown("### 📊 สรุปภาพรวมยอดการจัดส่ง")
     col1, col2 = st.columns(2)
