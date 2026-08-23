@@ -38,7 +38,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Anti-Overlap Zone & 2-Trip Fleet Model)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Balanced Fleet & Daily Load Model)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...")
@@ -60,7 +60,7 @@ if sheet_url:
     try:
         with open("truck.jpg", "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode()
-        loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังจัดระเบียบพื้นที่และตัดสายส่ง... 💦</div>'''
+        loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทาง... 💦</div>'''
     except FileNotFoundError:
         loader_html = '<div class="custom-truck-loader">กำลังโหลดข้อมูล...</div>'
         
@@ -102,8 +102,8 @@ if df is not None and not df.empty:
     target_pcts = {}
     for t in available_trucks:
         if t == base_truck: continue
-        target_pcts[t] = st.sidebar.slider(f"เป้าหมายของรถ {t} (%)", min_value=0, max_value=120, value=100, step=1)
-    target_pcts[new_truck_name] = st.sidebar.slider(f"เป้าหมายของรถสายใหม่ {new_truck_name} (%)", min_value=10, max_value=120, value=100, step=1)
+        target_pcts[t] = st.sidebar.slider(f"เป้าหมายของรถ {t} (%)", min_value=50, max_value=120, value=100, step=1)
+    target_pcts[new_truck_name] = st.sidebar.slider(f"เป้าหมายของรถสายใหม่ {new_truck_name} (%)", min_value=50, max_value=120, value=100, step=1)
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🔒 4. ล็อก Key Account")
@@ -130,7 +130,6 @@ if df is not None and not df.empty:
                 daily_matrix[i, d] = vol_per_day
         return daily_matrix
 
-    # 📌 อัปเกรดสมองกล: ป้องกันรถวิ่งทับซ้อนในพื้นที่ย่อย (Anti-Overlap Zone Allocation)
     def run_fast_allocation(data, base_t, new_t, pct_dict, manual_locks, override_col=None):
         opt_df = data.copy()
         opt_df['เบอร์รถใหม่'] = 'ยังไม่จัด'
@@ -139,11 +138,13 @@ if df is not None and not df.empty:
         has_base = base_t != "(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)"
         active_trucks = [t for t in available_trucks if t != base_t] + [new_t]
         
-        daily_targets = {t: 150.0 * (pct_dict.get(t, 100) / 100) for t in active_trucks}
-        if has_base: daily_targets[base_t] = 0 
+        # 📌 กำหนดเป้าหมายโควตารายเดือนตามเปอร์เซ็นต์ที่ผู้ใช้ปรับ (100% = 4,160 ถัง)
+        monthly_targets = {t: 4160 * (pct_dict.get(t, 100) / 100) for t in active_trucks}
+        if has_base: monthly_targets[base_t] = 0 
         
         daily_matrix = get_daily_vols(opt_df, override_col)
         coords = opt_df[[lat_col, lon_col]].values
+        vols = opt_df[vol_col].values
         
         centers = {}
         for t in available_trucks:
@@ -155,64 +156,26 @@ if df is not None and not df.empty:
             ul_data = opt_df[~opt_df['is_locked']]
             if not ul_data.empty: centers[new_t] = (np.average(ul_data[lat_col]), np.average(ul_data[lon_col]))
 
-        # 📌 ขั้นตอนพิเศษ: จัดกลุ่มหมุดที่อยู่ใกล้กันมากๆ (Micro-Clusters) ให้ไปอยู่รถคันเดียวกันแบบ 100%
-        # เพื่อตัดปัญหาการส่งซ้ำซ้อนในพื้นที่ย่อย (Anti-Overlap)
-        from sklearn.cluster import DBSCAN
-        if len(coords) > 5:
-            # ใช้พิกัดกรองกลุ่มย่อยในรัศมีใกล้เคียงกัน
-            clustering = DBSCAN(eps=0.003, min_samples=2).fit(coords)
-            opt_df['cluster_id'] = clustering.labels_
-        else:
-            opt_df['cluster_id'] = -1
-
         for iteration in range(2):
-            current_daily_loads = {t: np.zeros(6) for t in active_trucks + ([base_t] if has_base else [])}
+            current_loads = {t: 0 for t in active_trucks + ([base_t] if has_base else [])}
             locked_indices = np.where(opt_df['is_locked'].values)[0]
             
             for idx in locked_indices:
                 orig_t = str(opt_df.at[idx, truck_col])
                 opt_df.at[idx, 'เบอร์รถใหม่'] = orig_t
-                if orig_t in current_daily_loads:
-                    current_daily_loads[orig_t] += daily_matrix[idx]
+                if orig_t in current_loads:
+                    current_loads[orig_t] += vols[idx]
                 
             remaining_mask = ~opt_df['is_locked'].values
             
-            # จัดสรรแบบเหมายกกลุ่มย่อย (Cluster-based Allocation) เพื่อความต่อเนื่องของพื้นที่
-            unique_clusters = opt_df['cluster_id'].unique()
-            for c_id in unique_clusters:
-                if c_id == -1: continue # ข้ามจุดเดี่ยวที่ไม่อยู่ในกลุ่ม
-                c_indices = opt_df[(opt_df['cluster_id'] == c_id) & remaining_mask].index.tolist()
-                if not c_indices: continue
-                
-                # หาว่ากลุ่มนี้อยู่ใกล้รถคันไหนที่สุด
-                c_lat = opt_df.loc[c_indices, lat_col].mean()
-                c_lon = opt_df.loc[c_indices, lon_col].mean()
-                
-                best_t = None
-                min_c_dist = float('inf')
-                for t in active_trucks:
-                    if t not in centers: continue
-                    dist = (centers[t][0] - c_lat)**2 + (centers[t][1] - c_lon)**2
-                    if dist < min_c_dist:
-                        min_c_dist = dist
-                        best_t = t
-                if not best_t: best_t = active_trucks[0]
-                
-                # เหมาทั้งกลุ่มให้รถคันนี้
-                for idx in c_indices:
-                    opt_df.at[idx, 'เบอร์รถใหม่'] = best_t
-                    current_daily_loads[best_t] += daily_matrix[idx]
-                    remaining_mask[idx] = False
-
-            # จัดสรรจุดที่เหลือรายจุด
             while remaining_mask.any():
+                # หารรถที่ขาดโควตารายเดือนมากที่สุด
                 max_deficit_ratio = -float('inf')
                 starving_truck = None
                 
                 for t in active_trucks:
-                    if daily_targets[t] <= 0: continue
-                    busiest_day_load = np.max(current_daily_loads[t])
-                    ratio = (daily_targets[t] - busiest_day_load) / daily_targets[t]
+                    if monthly_targets[t] <= 0: continue
+                    ratio = (monthly_targets[t] - current_loads[t]) / monthly_targets[t]
                     if ratio > max_deficit_ratio:
                         max_deficit_ratio = ratio
                         starving_truck = t
@@ -224,25 +187,12 @@ if df is not None and not df.empty:
                 rem_coords = coords[rem_indices]
                 
                 dists = (rem_coords[:, 0] - c_lat)**2 + (rem_coords[:, 1] - c_lon)**2
-                sorted_local_indices = np.argsort(dists)
+                best_local_idx = np.argmin(dists)
+                best_global_idx = rem_indices[best_local_idx]
                 
-                assigned = False
-                for local_idx in sorted_local_indices:
-                    global_idx = rem_indices[local_idx]
-                    pt_daily = daily_matrix[global_idx]
-                    
-                    if np.all(current_daily_loads[starving_truck] + pt_daily <= 155.0):
-                        opt_df.at[global_idx, 'เบอร์รถใหม่'] = starving_truck
-                        current_daily_loads[starving_truck] += pt_daily
-                        remaining_mask[global_idx] = False
-                        assigned = True
-                        break
-                
-                if not assigned:
-                    global_idx = rem_indices[sorted_local_indices[0]]
-                    opt_df.at[global_idx, 'เบอร์รถใหม่'] = starving_truck
-                    current_daily_loads[starving_truck] += daily_matrix[global_idx]
-                    remaining_mask[global_idx] = False
+                opt_df.at[best_global_idx, 'เบอร์รถใหม่'] = starving_truck
+                current_loads[starving_truck] += vols[best_global_idx]
+                remaining_mask[best_global_idx] = False
                 
             for t in active_trucks:
                 t_mask = opt_df['เบอร์รถใหม่'] == t
@@ -336,7 +286,7 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังจัดระเบียบพื้นที่และตัดสายส่ง... 🚚💨</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทาง... 🚚💨</div>'''
         except FileNotFoundError:
             loader_html = '<div class="custom-truck-loader">กำลังประมวลผล...</div>'
             
@@ -366,7 +316,7 @@ if df is not None and not df.empty:
         
         sum_before = df.groupby(truck_col).agg(จำนวนสมาชิก=pd.NamedAgg(column=truck_col, aggfunc='count'), **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}).reset_index()
         sum_after = active_res_df.groupby('เบอร์รถใหม่').agg(จำนวนสมาชิก=pd.NamedAgg(column='เบอร์รถใหม่', aggfunc='count'), **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}).reset_index()
-        sum_after['ปริมาณงาน(%)'] = (sum_after['ยอดรับน้ำ(ถัง/เดือน)'] / (150*26) * 100).round(1).astype(str) + '%'
+        sum_after['ปริมาณงาน(%)'] = (sum_after['ยอดรับน้ำ(ถัง/เดือน)'] / 4160 * 100).round(1).astype(str) + '%'
 
         with col1:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
@@ -462,7 +412,7 @@ if df is not None and not df.empty:
             components.html(m1.get_root().render(), height=450)
 
         with map_col2:
-            st.markdown("<div style='text-align:center; color:#002D62; font-weight:bold;'>โซนการวิ่งสายใหม่ (Anti-Overlap Optimized)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#002D62; font-weight:bold;'>โซนการวิ่งสายใหม่ (Balanced Fleet)</div>", unsafe_allow_html=True)
             m2 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m2)
             for _, r in map_df_after.iterrows():
