@@ -98,7 +98,6 @@ if df is not None and not df.empty:
     st.sidebar.markdown("---")
     st.sidebar.markdown("### ⚙️ 2. ตั้งค่าคอลัมน์และสายใหม่")
     
-    # 📌 เมื่อเปลี่ยนคอลัมน์ วันจัดส่ง ระบบจะทำการ clear ผลลัพธ์หน้าจอทันที เพื่อให้ต้องกดรันใหม่
     guessed_day = next((c for c in df.columns if 'สัปดาห์' in str(c) or 'วัน' in str(c) or 'รอบ' in str(c) or 'day' in str(c).lower()), df.columns[0])
     day_col = st.sidebar.selectbox("📅 เลือกคอลัมน์ 'วันจัดส่ง':", options=df.columns, index=df.columns.tolist().index(guessed_day) if guessed_day in df.columns else 0, on_change=reset_results)
     
@@ -162,7 +161,7 @@ if df is not None and not df.empty:
             return
             
         st.session_state.truck_pcts[changed_truck] = float(round(new_val, 1))
-        reset_results() # เคลียร์ผลเมื่อขยับสไลเดอร์
+        reset_results() 
 
     target_pcts = {}
     for t in active_trucks:
@@ -288,11 +287,33 @@ if df is not None and not df.empty:
                 c_lat, c_lon = centers[starving_truck]
                 rem_indices = np.where(remaining_mask)[0]
                 rem_coords = coords[rem_indices]
+                rem_vols = vols[rem_indices]
                 
                 dists = (rem_coords[:, 0] - c_lat)**2 + (rem_coords[:, 1] - c_lon)**2
-                best_local_idx = np.argmin(dists)
-                best_global_idx = rem_indices[best_local_idx]
                 
+                best_global_idx = -1
+                
+                # 🛑 Strict Cap Logic for Locked Trucks (กันอิ่มแล้วยัด)
+                if starving_truck in locked_ui_list and starving_truck in tier1:
+                    remaining_need = monthly_targets[starving_truck] - current_loads[starving_truck]
+                    
+                    # คัดเฉพาะลูกค้าที่รับมาแล้ว ยอดรถคันนี้จะไม่ทะลุเกินเป้าหมาย (อนุโลมให้เกินได้ไม่เกิน 60 ถัง)
+                    valid_candidates = np.where(rem_vols <= remaining_need + 60)[0]
+                    
+                    if len(valid_candidates) > 0:
+                        valid_dists = dists[valid_candidates]
+                        best_local_idx = valid_candidates[np.argmin(valid_dists)]
+                        best_global_idx = rem_indices[best_local_idx]
+                    else:
+                        # ถ้ายอดลูกค้ารอบๆ ตัวใหญ่เกินไปทั้งหมด ให้รถคันนี้ "หยุดรับงาน" ทันที เพื่อไม่ให้เป้าหมายพัง
+                        # โดยหลอก AI ว่าคันนี้เต็มแล้ว เพื่อดันคิวงานไปให้รถคันอื่น (เช่น 15S02) มารับแทน
+                        current_loads[starving_truck] = monthly_targets[starving_truck]
+                        continue
+                
+                if best_global_idx == -1:
+                    best_local_idx = np.argmin(dists)
+                    best_global_idx = rem_indices[best_local_idx]
+                    
                 opt_df.at[best_global_idx, 'เบอร์รถใหม่'] = starving_truck
                 current_loads[starving_truck] += vols[best_global_idx]
                 remaining_mask[best_global_idx] = False
