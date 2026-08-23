@@ -287,7 +287,7 @@ if df is not None and not df.empty:
                     t_coords = coords[t_idx]
                     c_lat, c_lon = centers[t]
                     dists = (t_coords[:, 0] - c_lat)**2 + (t_coords[:, 1] - c_lon)**2
-                    sorted_border = t_idx[np.argsort(dists)[::-1]] # ไกลสุดมาก่อน
+                    sorted_border = np.array(t_idx)[np.argsort(dists)[::-1]] # แก้ไขโดยแปลง t_idx เป็น numpy array ก่อนจัดเรียง
                     
                     shed = 0
                     for idx in sorted_border:
@@ -309,7 +309,7 @@ if df is not None and not df.empty:
             if len(candidates) > 0:
                 cand_coords = coords[candidates]
                 dists_to_new = (cand_coords[:, 0] - c_new_lat)**2 + (cand_coords[:, 1] - c_new_lon)**2
-                sorted_cand = candidates[np.argsort(dists_to_new)] # ใกล้รถใหม่ที่สุดมาก่อน
+                sorted_cand = np.array(candidates)[np.argsort(dists_to_new)] # แปลง candidates เป็น numpy array
                 
                 taken = 0
                 for idx in sorted_cand:
@@ -371,7 +371,7 @@ if df is not None and not df.empty:
                         seed_lat, seed_lon = opt_df.loc[seed_idx, lat_col], opt_df.loc[seed_idx, lon_col]
                         
                         dists_from_seed = [(opt_df.loc[idx, lat_col] - seed_lat)**2 + (opt_df.loc[idx, lon_col] - seed_lon)**2 for idx in pts_on_day]
-                        pts_sorted = [x for _, x in sorted(zip(dists_from_seed, pts_on_day))]
+                        pts_sorted = np.array(pts_on_day)[np.argsort(dists_from_seed)] # แปลงเป็น numpy array
                         
                         moved_v = 0
                         for idx in pts_sorted:
@@ -443,7 +443,7 @@ if df is not None and not df.empty:
                 seed_lat, seed_lon = data_df.loc[seed_idx, lat_col], data_df.loc[seed_idx, lon_col]
                 
                 dists_from_seed = [(data_df.loc[idx, lat_col] - seed_lat)**2 + (data_df.loc[idx, lon_col] - seed_lon)**2 for idx in pts_on_over_day]
-                pts_sorted = [x for _, x in sorted(zip(dists_from_seed, pts_on_over_day))]
+                pts_sorted = np.array(pts_on_over_day)[np.argsort(dists_from_seed)] # แปลงเป็น numpy array
                 
                 shifted_vol = 0
                 for idx in pts_sorted:
