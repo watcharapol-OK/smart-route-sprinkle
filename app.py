@@ -98,37 +98,63 @@ if df is not None and not df.empty:
     new_truck_name = st.sidebar.text_input("ตั้งชื่อเบอร์รถคันใหม่", value="15112")
     
     st.sidebar.markdown("---")
+    
+    # -------------------------------------------------------------
+    # ระบบ Auto-Balancing Slider (อิงปริมาณงานจริง และเกลี่ยอัตโนมัติ)
+    # -------------------------------------------------------------
     st.sidebar.markdown("### 🎛️ 3. ปรับเป้าหมายรายวัน (%)")
     
-    # -------------------------------------------------------------
-    # ระบบ Auto-Balancing Slider พร้อมระบบ Lock
-    # -------------------------------------------------------------
+    total_vol_available = df[vol_col].sum()
+    sys_pct = (total_vol_available / 4160) * 100
+    
     active_trucks = [t for t in available_trucks if t != base_truck] + [new_truck_name]
     
-    if 'truck_pcts' not in st.session_state:
-        st.session_state.truck_pcts = {t: 100.0 for t in active_trucks}
+    # คำนวณเปอร์เซ็นต์เริ่มต้นจากยอดน้ำจริงในไฟล์
+    if 'slider_init' not in st.session_state or st.session_state.get('base_truck') != base_truck or st.session_state.get('new_truck') != new_truck_name:
+        st.session_state.truck_pcts = {}
+        for t in active_trucks:
+            if t == new_truck_name and t not in df[truck_col].astype(str).unique():
+                st.session_state.truck_pcts[t] = 0.0
+            else:
+                vol = df[df[truck_col].astype(str) == t][vol_col].sum()
+                st.session_state.truck_pcts[t] = float(round((vol / 4160) * 100, 1))
         
-    for t in active_trucks:
-        if t not in st.session_state.truck_pcts:
-            st.session_state.truck_pcts[t] = 100.0
+        # ถ้ายุบสาย รถคันที่ยุบจะถูกนำยอดมาหารเฉลี่ยให้คันอื่นๆ
+        if base_truck != "(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)":
+            base_vol = df[df[truck_col].astype(str) == base_truck][vol_col].sum()
+            base_pct = float(round((base_vol / 4160) * 100, 1))
+            if len(active_trucks) > 0:
+                split = base_pct / len(active_trucks)
+                for t in active_trucks:
+                    st.session_state.truck_pcts[t] += split
+                    
+        for t in active_trucks:
+            st.session_state[f"slider_{t}"] = float(round(st.session_state.truck_pcts[t], 1))
+            
+        st.session_state['slider_init'] = True
+        st.session_state['base_truck'] = base_truck
+        st.session_state['new_truck'] = new_truck_name
 
     def on_slider_change(changed_truck):
         new_val = st.session_state[f"slider_{changed_truck}"]
         old_val = st.session_state.truck_pcts[changed_truck]
         diff = new_val - old_val
         
-        # หารถที่ปลดล็อกอยู่ และไม่ใช่คันที่กำลังปรับ
+        # ค้นหารถที่ไม่ได้ถูกล็อก และไม่ใช่รถคันที่กำลังปรับสไลเดอร์
         unlocked = [t for t in active_trucks if not st.session_state.get(f"lock_{t}", False) and t != changed_truck]
         
         if len(unlocked) > 0 and diff != 0:
-            split_diff = diff / len(unlocked) # หารเฉลี่ยให้คันที่เหลือ
+            split_diff = diff / len(unlocked)
             for t in unlocked:
                 new_t_val = st.session_state.truck_pcts[t] - split_diff
-                if new_t_val < 0: 
-                    new_t_val = 0.0 # กันไม่ให้ติดลบ
+                if new_t_val < 0: new_t_val = 0.0
                 st.session_state.truck_pcts[t] = float(round(new_t_val, 1))
                 st.session_state[f"slider_{t}"] = st.session_state.truck_pcts[t]
-                
+        elif len(unlocked) == 0 and diff != 0:
+            # ถ้าล็อกทุกคันไว้หมดแล้ว จะไม่สามารถเลื่อนสไลเดอร์คันนี้ได้ (ดึงกลับค่าเดิม)
+            st.session_state[f"slider_{changed_truck}"] = old_val
+            return
+            
         st.session_state.truck_pcts[changed_truck] = float(round(new_val, 1))
 
     target_pcts = {}
