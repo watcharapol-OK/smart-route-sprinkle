@@ -11,6 +11,13 @@ import base64
 
 st.set_page_config(page_title="Smart Route Rebalancer", layout="wide", initial_sidebar_state="expanded")
 
+def reset_results():
+    """ฟังก์ชันเคลียร์ผลลัพธ์บนหน้าจอ เมื่อผู้ใช้ปรับเปลี่ยนการตั้งค่าโครงสร้างหลัก"""
+    keys_to_clear = ['result_df', 'daily_matrix', 'simulated_df', 'simulated_matrix']
+    for k in keys_to_clear:
+        if k in st.session_state:
+            del st.session_state[k]
+
 st.markdown('''
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap');
@@ -41,7 +48,7 @@ st.title("🚛 Smart Route Rebalancer Dashboard")
 st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Balanced Fleet & Daily Load Model)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
-sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...")
+sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
 
 @st.cache_data(ttl=300)
 def load_data_from_sheet(url):
@@ -88,20 +95,18 @@ if df is not None and not df.empty:
 
     st.sidebar.success(f"✅ โหลดข้อมูลสำเร็จ: {len(df)} รายการ")
     
-    # -------------------------------------------------------------
-    # เพิ่มเมนูให้ผู้ใช้เลือกคอลัมน์รอบวันจัดส่งเอง ป้องกันระบบคำนวณพลาด
-    # -------------------------------------------------------------
     st.sidebar.markdown("---")
     st.sidebar.markdown("### ⚙️ 2. ตั้งค่าคอลัมน์และสายใหม่")
     
+    # 📌 เมื่อเปลี่ยนคอลัมน์ วันจัดส่ง ระบบจะทำการ clear ผลลัพธ์หน้าจอทันที เพื่อให้ต้องกดรันใหม่
     guessed_day = next((c for c in df.columns if 'สัปดาห์' in str(c) or 'วัน' in str(c) or 'รอบ' in str(c) or 'day' in str(c).lower()), df.columns[0])
-    day_col = st.sidebar.selectbox("📅 เลือกคอลัมน์ 'วันจัดส่ง':", options=df.columns, index=df.columns.tolist().index(guessed_day) if guessed_day in df.columns else 0)
+    day_col = st.sidebar.selectbox("📅 เลือกคอลัมน์ 'วันจัดส่ง':", options=df.columns, index=df.columns.tolist().index(guessed_day) if guessed_day in df.columns else 0, on_change=reset_results)
     
     available_trucks = [str(x) for x in df[truck_col].unique() if str(x) != 'nan']
     base_truck_options = ["(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)"] + available_trucks
     
-    base_truck = st.sidebar.selectbox("เลือกรถที่จะถูกยุบ/ดึงงานออก", options=base_truck_options)
-    new_truck_name = st.sidebar.text_input("ตั้งชื่อเบอร์รถคันใหม่", value="15112")
+    base_truck = st.sidebar.selectbox("เลือกรถที่จะถูกยุบ/ดึงงานออก", options=base_truck_options, on_change=reset_results)
+    new_truck_name = st.sidebar.text_input("ตั้งชื่อเบอร์รถคันใหม่", value="15112", on_change=reset_results)
     
     st.sidebar.markdown("---")
     
@@ -157,13 +162,14 @@ if df is not None and not df.empty:
             return
             
         st.session_state.truck_pcts[changed_truck] = float(round(new_val, 1))
+        reset_results() # เคลียร์ผลเมื่อขยับสไลเดอร์
 
     target_pcts = {}
     for t in active_trucks:
         col1, col2 = st.sidebar.columns([3, 1.2])
         with col2:
             st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
-            st.checkbox("🔒 ล็อก", key=f"lock_{t}")
+            st.checkbox("🔒 ล็อก", key=f"lock_{t}", on_change=reset_results)
         with col1:
             if f"slider_{t}" not in st.session_state:
                 st.session_state[f"slider_{t}"] = st.session_state.truck_pcts[t]
@@ -184,11 +190,8 @@ if df is not None and not df.empty:
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🔒 4. ล็อก Key Account")
-    manual_vips = st.sidebar.multiselect("เลือกรหัสสมาชิกที่ห้ามย้ายสาย", options=df[id_col].astype(str).unique().tolist(), default=[])
+    manual_vips = st.sidebar.multiselect("เลือกรหัสสมาชิกที่ห้ามย้ายสาย", options=df[id_col].astype(str).unique().tolist(), default=[], on_change=reset_results)
 
-    # -------------------------------------------------------------
-    # ปรับปรุงลอจิกอ่านค่ารอบวันจัดส่งให้แม่นยำขึ้นมาก ป้องกันยอดราบเป็นหน้ากลอง
-    # -------------------------------------------------------------
     def get_daily_vols(data_df, override_day_col=None):
         col_to_use = override_day_col if override_day_col else day_col
         daily_matrix = np.zeros((len(data_df), 6)) 
@@ -204,7 +207,6 @@ if df is not None and not df.empty:
             if 'ศุกร์' in day_str or 'ศ.' in day_str or day_str == '5' or day_str == 'ศ': days.append(4)
             if 'เสาร์' in day_str or 'ส.' in day_str or day_str == '6' or day_str == 'ส': days.append(5)
             
-            # ถ้าระบุไม่ได้จริงๆ ค่อยจำยอมให้ไปเกลี่ย 6 วัน (Fallback)
             if not days: 
                 days = [0, 1, 2, 3, 4, 5] 
             
@@ -442,6 +444,11 @@ if df is not None and not df.empty:
                 'โหลดสูงสุด (ถัง/วัน)': round(max(t_daily))
             })
         st.dataframe(pd.DataFrame(daily_summary), use_container_width=True)
+        
+        # แจ้งเตือนถ้ายอดโด่งเกิน 155 ถัง
+        max_all_days = max([row['โหลดสูงสุด (ถัง/วัน)'] for row in daily_summary])
+        if max_all_days > 155 and 'simulated_df' not in st.session_state:
+            st.error(f"🚨 **พบยอดจัดส่งพุ่งทะลุ 155 ถัง/วัน (สูงสุด {max_all_days} ถัง)!** \n\nเกิดจากการจัดสายโดยอิง 'อาณาเขตพื้นที่' เป็นหลัก ทำให้ได้กลุ่มลูกค้าที่มีคิวส่งวันเดียวกันกระจุกตัวอยู่ **เพื่อไม่ให้รถวิ่งทับซอยกัน โปรดเลื่อนหน้าจอลงไปกดใช้งาน 'ระบบผู้ช่วยอัจฉริยะ (AI Day-Shift)' ด้านล่าง** เพื่อคำนวณการย้ายวันส่งให้สมดุลครับ")
         
         st.markdown("#### 💡 ระบบผู้ช่วยอัจฉริยะ (AI Day-Shift Optimization)")
         recs_df = get_recommendations(res_df, daily_matrix)
