@@ -197,7 +197,6 @@ if df is not None and not df.empty:
     st.sidebar.markdown("### 🔒 4. ล็อก Key Account")
     manual_vips = st.sidebar.multiselect("เลือกรหัสสมาชิกที่ห้ามย้ายสาย", options=df[id_col].astype(str).unique().tolist(), default=[], on_change=reset_results)
 
-    # 📌 1. Advanced Day Parser (แก้ไขปัญหาตารางรายวันแบนราบ 100%)
     def get_daily_vols(data_df, override_day_col=None):
         col_to_use = override_day_col if override_day_col else day_col
         daily_matrix = np.zeros((len(data_df), 6)) 
@@ -210,19 +209,14 @@ if df is not None and not df.empty:
             if 'ทุกวัน' in val or 'จ-ส' in val or 'จันทร์-เสาร์' in val:
                 days.update([0, 1, 2, 3, 4, 5])
             else:
-                # ตรวจจับคำนำหน้า หรือตัวอักษรย่อที่ติดกันด้วย Regex ขั้นสูง
                 if re.search(r'(จันทร์|จ\.|^จ$|^จ,|,จ,|,จ$|จ | จ)', val): days.add(0)
                 if re.search(r'(อังคาร|อ\.|^อ$|^อ,|,อ,|,อ$|อ | อ)', val): days.add(1)
-                
-                # ตัดคำว่า พฤ ออกก่อนเพื่อเช็ควันพุธ จะได้ไม่ทับซ้อนกัน
                 val_no_thu = val.replace('พฤ', '')
                 if re.search(r'(พุธ|พ\.|^พ$|^พ,|,พ,|,พ$|พ | พ)', val_no_thu): days.add(2)
-                
                 if re.search(r'(พฤหัส|พฤ)', val): days.add(3)
                 if re.search(r'(ศุกร์|ศ\.|^ศ$|^ศ,|,ศ,|,ศ$|ศ | ศ)', val): days.add(4)
                 if re.search(r'(เสาร์|ส\.|^ส$|^ส,|,ส,|,ส$|ส | ส)', val): days.add(5)
                 
-                # ถ้าระบุเป็นตัวเลข 1, 2, 3, 4, 5, 6
                 if not days:
                     if '1' in val: days.add(0)
                     if '2' in val: days.add(1)
@@ -233,7 +227,7 @@ if df is not None and not df.empty:
             
             days = list(days)
             if not days: 
-                days = [0, 1, 2, 3, 4, 5] # Fallback เฉพาะรายที่ลืมคีย์วันจัดส่งจริงๆ
+                days = [0, 1, 2, 3, 4, 5] 
             
             vol_per_day = vol / (len(days) * 4.333) 
             for d in days:
@@ -241,7 +235,6 @@ if df is not None and not df.empty:
                 
         return daily_matrix
 
-    # 📌 2. Target-Driven Knapsack Allocation (ล็อกเป้าหมายให้แม่นยำที่สุด ป้องกันการกินยอดทะลุ)
     def run_fast_allocation(data, base_t, new_t, pct_dict, manual_locks, locked_ui_list, override_col=None):
         opt_df = data.copy()
         opt_df['เบอร์รถใหม่'] = 'ยังไม่จัด'
@@ -265,7 +258,7 @@ if df is not None and not df.empty:
         
         current_loads = {t: 0 for t in active_trucks}
         
-        # Step 1: จัดลูกค้า VIP ลงรถให้เรียบร้อยก่อน
+        # 1. VIPs
         locked_indices = np.where(opt_df['is_locked'].values)[0]
         for idx in locked_indices:
             orig_t = str(opt_df.at[idx, truck_col])
@@ -273,7 +266,7 @@ if df is not None and not df.empty:
             opt_df.at[idx, 'เบอร์รถใหม่'] = target_t
             current_loads[target_t] += vols[idx]
             
-        # Step 2: เรียงสมาชิกระบบปกติจากยอดน้ำ "มากไปน้อย" เพื่อปิดช่องโหว่การยัดยอดล้นเป้าตอนท้าย
+        # 2. Main Assignment
         unlocked_indices = np.where(~opt_df['is_locked'].values)[0]
         sorted_unlocked = unlocked_indices[np.argsort(vols[unlocked_indices])[::-1]]
         
@@ -285,20 +278,16 @@ if df is not None and not df.empty:
             best_truck = None
             min_dist = float('inf')
             
-            # เงื่อนไขที่ 1: หารถที่ยังมี "โควตาเหลือพอ" รองรับน้ำบ้านนี้ได้โดยไม่ทะลุเป้าหมาย (อนุโลมให้เกินได้แค่ 20 ถัง)
             eligible_trucks = [t for t in active_trucks if current_loads[t] + vol <= monthly_targets[t] + 20]
             
             if eligible_trucks:
                 for t in eligible_trucks:
                     dist = (pt[0] - centers[t][0])**2 + (pt[1] - centers[t][1])**2
-                    # ให้ความสำคัญกับรถเบอร์เดิมของลูกค้าสูงสุด (ถ้าโควตายังเหลือ) เพื่อรักษารายวันให้เป็นธรรมชาติ
                     if t == orig_t: dist *= 0.001 
-                    
                     if dist < min_dist:
                         min_dist = dist
                         best_truck = t
             else:
-                # เงื่อนไขที่ 2: ถ้าทุกคันเต็มเป้าหมายหมดแล้ว ต้องบังคับให้โยนไปหารถที่ "ไม่ได้ล็อก (Buffer)" เพื่อรับจบเศษงาน
                 unlocked_trucks = [t for t in active_trucks if t not in locked_ui_list]
                 if unlocked_trucks:
                     for t in unlocked_trucks:
@@ -308,7 +297,6 @@ if df is not None and not df.empty:
                             min_dist = dist
                             best_truck = t
                 else:
-                    # เงื่อนไขสุดท้าย: ถ้าผู้ใช้ดันล็อกหมดทุกคัน ก็ต้องยอมยัดลงคันที่ใกล้ที่สุด
                     for t in active_trucks:
                         dist = (pt[0] - centers[t][0])**2 + (pt[1] - centers[t][1])**2
                         if dist < min_dist:
@@ -320,7 +308,6 @@ if df is not None and not df.empty:
             opt_df.at[idx, 'เบอร์รถใหม่'] = best_truck
             current_loads[best_truck] += vol
             
-            # อัปเดตศูนย์กลางพื้นที่เล็กน้อยตามลูกค้าใหม่
             centers[best_truck] = (
                 centers[best_truck][0] * 0.98 + pt[0] * 0.02,
                 centers[best_truck][1] * 0.98 + pt[1] * 0.02
@@ -438,7 +425,7 @@ if df is not None and not df.empty:
         
         st.markdown("### 📊 สรุปภาพรวมยอดการจัดส่ง")
         if 'simulated_df' in st.session_state:
-            st.info("🧪 **กำลังแสดงผลลัพธ์จำลอง (After Simulation)** - ตารางสรุปและโหลดรายวันด้านล่างถูกคำนวณใหม่ตามการย้ายวันเรียบร้อยแล้ว")
+            st.info("🧪 **กำลังแสดงผลลัพธ์จำลอง (After Simulation)** - ตารางสรุปและโหลดรายวันด้านล่างถูกอัปเดตตามการย้ายวันจัดส่งเรียบร้อยแล้ว โดยไม่กระทบการจัดสายหลัก")
             
         col1, col2 = st.columns(2)
         
@@ -455,6 +442,11 @@ if df is not None and not df.empty:
             
         st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)")
         
+        day_sums = daily_matrix.sum(axis=0)
+        is_flat_matrix = (day_sums.max() - day_sums.min()) < (day_sums.mean() * 0.05) if day_sums.mean() > 0 else False
+        if is_flat_matrix:
+            st.error("⚠️ **แจ้งเตือนจากระบบ:** ตารางรายวันถูกหารเฉลี่ยเท่ากันทุกวันเนื่องจากระบบหาข้อมูลวันในไฟล์ไม่เจอ โปรดตรวจสอบว่าได้เลือกคอลัมน์ 'วันจัดส่ง' ในเมนูข้อ 2 ถูกต้องแล้วครับ")
+            
         daily_summary = []
         for t in all_trucks_after:
             t_mask = active_res_df['เบอร์รถใหม่'] == t
@@ -483,6 +475,7 @@ if df is not None and not df.empty:
             st.dataframe(recs_df[['เบอร์รถ', 'รหัสสมาชิก', 'ชื่อ', 'ยอด(ถัง/วัน)', 'วันเดิม', 'แนะนำย้ายไป', 'เหตุผล']], use_container_width=True)
             
             if st.button("🧪 จำลองผลลัพธ์หลังทำตามคำแนะนำ (What-If Simulation)"):
+                # 📌 แก้ไขปุ่มจำลองเด็ดขาด: ไม่จัดสายรถใหม่เด็ดขาด แค่คำนวณ matrix วันที่ถูกย้ายใหม่เท่านั้น
                 sim_df = res_df.copy()
                 sim_col_name = day_col + '_simulated'
                 sim_df[sim_col_name] = sim_df[day_col].astype(str)
@@ -492,10 +485,15 @@ if df is not None and not df.empty:
                     target_day = r['แนะนำย้ายไป']
                     sim_df.at[idx, sim_col_name] = target_day
                     
-                sim_res_df, sim_daily_mat = run_fast_allocation(df, base_truck, new_truck_name, target_pcts, manual_vips, locked_ui_trucks, override_col=sim_col_name)
-                st.session_state['simulated_df'] = sim_res_df
+                # สร้าง Matrix รายวันเฉพาะวันที่โดนเปลี่ยน โดยอิงจากข้อมูลรถที่ถูกจัดไว้สมบูรณ์แล้ว
+                sim_daily_mat = get_daily_vols(sim_df, override_day_col=sim_col_name)
+                
+                # เขียนทับคอลัมน์วันเดิมเพื่อนำไปแสดงผลและให้ดาวน์โหลดได้
+                sim_df[day_col] = sim_df[sim_col_name]
+                
+                st.session_state['simulated_df'] = sim_df
                 st.session_state['simulated_matrix'] = sim_daily_mat
-                st.success("✅ จำลองผลลัพธ์สำเร็จ! ตารางสรุปด้านบนอัปเดตเรียบร้อยแล้วครับ")
+                st.success("✅ จำลองผลลัพธ์สำเร็จ! ตารางสรุปด้านบนและโหลดรายวันถูกอัปเดตเรียบร้อยแล้วครับ")
                 st.rerun()
         elif 'simulated_df' in st.session_state:
             st.success("✅ แสดงผลลัพธ์จากการจำลองการย้ายวันเรียบร้อยแล้วครับ")
