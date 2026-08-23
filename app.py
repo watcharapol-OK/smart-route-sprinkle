@@ -99,11 +99,60 @@ if df is not None and not df.empty:
     
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🎛️ 3. ปรับเป้าหมายรายวัน (%)")
+    
+    # -------------------------------------------------------------
+    # ระบบ Auto-Balancing Slider พร้อมระบบ Lock
+    # -------------------------------------------------------------
+    active_trucks = [t for t in available_trucks if t != base_truck] + [new_truck_name]
+    
+    if 'truck_pcts' not in st.session_state:
+        st.session_state.truck_pcts = {t: 100.0 for t in active_trucks}
+        
+    for t in active_trucks:
+        if t not in st.session_state.truck_pcts:
+            st.session_state.truck_pcts[t] = 100.0
+
+    def on_slider_change(changed_truck):
+        new_val = st.session_state[f"slider_{changed_truck}"]
+        old_val = st.session_state.truck_pcts[changed_truck]
+        diff = new_val - old_val
+        
+        # หารถที่ปลดล็อกอยู่ และไม่ใช่คันที่กำลังปรับ
+        unlocked = [t for t in active_trucks if not st.session_state.get(f"lock_{t}", False) and t != changed_truck]
+        
+        if len(unlocked) > 0 and diff != 0:
+            split_diff = diff / len(unlocked) # หารเฉลี่ยให้คันที่เหลือ
+            for t in unlocked:
+                new_t_val = st.session_state.truck_pcts[t] - split_diff
+                if new_t_val < 0: 
+                    new_t_val = 0.0 # กันไม่ให้ติดลบ
+                st.session_state.truck_pcts[t] = float(round(new_t_val, 1))
+                st.session_state[f"slider_{t}"] = st.session_state.truck_pcts[t]
+                
+        st.session_state.truck_pcts[changed_truck] = float(round(new_val, 1))
+
     target_pcts = {}
-    for t in available_trucks:
-        if t == base_truck: continue
-        target_pcts[t] = st.sidebar.slider(f"เป้าหมายของรถ {t} (%)", min_value=50, max_value=120, value=100, step=1)
-    target_pcts[new_truck_name] = st.sidebar.slider(f"เป้าหมายของรถสายใหม่ {new_truck_name} (%)", min_value=50, max_value=120, value=100, step=1)
+    for t in active_trucks:
+        col1, col2 = st.sidebar.columns([3, 1.2])
+        with col2:
+            st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+            st.checkbox("🔒 ล็อก", key=f"lock_{t}")
+        with col1:
+            if f"slider_{t}" not in st.session_state:
+                st.session_state[f"slider_{t}"] = st.session_state.truck_pcts[t]
+            
+            val = st.slider(
+                f"รถ {t} (%)", 
+                min_value=0.0, 
+                max_value=200.0, 
+                step=1.0, 
+                key=f"slider_{t}", 
+                on_change=on_slider_change, 
+                args=(t,)
+            )
+            target_pcts[t] = val
+            st.session_state.truck_pcts[t] = val
+    # -------------------------------------------------------------
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🔒 4. ล็อก Key Account")
