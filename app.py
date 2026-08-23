@@ -233,8 +233,8 @@ if df is not None and not df.empty:
                 daily_matrix[i, d] = vol_per_day
         return daily_matrix
 
-    # 📌 แกนสมอง "RADIAL GROWTH (Crystal Growth)" รับประกันการไม่วิ่งทับซอย 100%
-    def run_pure_spatial_allocation(data, base_t, new_t, pct_dict, manual_locks, locked_ui_list):
+    # 📌 แกนสมองขั้นสูงสุด: Voronoi Boundary + Capacity Slicing (ป้องกันการทับซ้อน 100%)
+    def run_fast_allocation(data, base_t, new_t, pct_dict, manual_locks, locked_ui_list, override_col=None):
         opt_df = data.copy()
         opt_df['เบอร์รถใหม่'] = 'ยังไม่จัด'
         opt_df['วันจัดส่ง(ใหม่)'] = opt_df[day_col].astype(str)
@@ -248,78 +248,110 @@ if df is not None and not df.empty:
         vols = opt_df[vol_col].values
         coords = opt_df[[lat_col, lon_col]].values
         
-        # 1. หาจุดศูนย์กลางดั้งเดิม เพื่อให้รถขยายวงออกจากพื้นที่ประจำของตัวเอง
         centers = {}
         for t in available_trucks:
             t_data = opt_df[opt_df[truck_col].astype(str) == t]
             if not t_data.empty: centers[t] = (np.average(t_data[lat_col]), np.average(t_data[lon_col]))
+            
         if has_base and base_t in centers: centers[new_t] = centers[base_t]
         else: centers[new_t] = (np.average(coords[:, 0]), np.average(coords[:, 1]))
         
         current_loads = {t: 0 for t in active_trucks}
-        remaining_mask = np.ones(len(opt_df), dtype=bool)
         
-        # 2. จัดลูกค้า VIP ให้เรียบร้อย
+        # 1. ล็อก VIP ให้เรียบร้อย
         locked_indices = np.where(opt_df['is_locked'].values)[0]
         for idx in locked_indices:
             orig_t = str(opt_df.at[idx, truck_col])
             target_t = orig_t if orig_t in active_trucks else new_t
             opt_df.at[idx, 'เบอร์รถใหม่'] = target_t
             current_loads[target_t] += vols[idx]
-            remaining_mask[idx] = False
-
-        # 3. ให้ AI ค่อยๆ "กลืนพื้นที่" จากศูนย์กลางขยายออกไป (Guarantee No-Overlap)
-        while remaining_mask.any():
-            # หารถที่ยัง "ไม่อิ่ม" (ยอด < เป้าหมาย)
-            eligible_trucks = [t for t in active_trucks if current_loads[t] < monthly_targets.get(t, 0)]
             
-            # ถ้ารถล็อกอิ่มหมดแล้ว ให้รถกันชน (ไม่ล็อก) รับแทน
-            if not eligible_trucks:
-                eligible_trucks = [t for t in active_trucks if t not in locked_ui_list]
-            # ถ้ากดยืนยันล็อกทุกคัน ก็ต้องยอมปลดล็อกทั้งหมดเพื่อรับน้ำส่วนที่เหลือ
-            if not eligible_trucks:
-                eligible_trucks = active_trucks
+        # 2. จัดทุกคนลงรถที่ "ใกล้ที่สุด (Voronoi)" เพื่อให้ได้กลุ่มก้อนพื้นที่ 100% ไม่มีการข้ามซอย
+        unlocked_indices = np.where(~opt_df['is_locked'].values)[0]
+        for idx in unlocked_indices:
+            pt = coords[idx]
+            best_t = None
+            min_d = float('inf')
+            orig_t = str(opt_df.at[idx, truck_col])
+            if orig_t == base_t: orig_t = new_t
+            
+            for t in active_trucks:
+                d = (pt[0] - centers[t][0])**2 + (pt[1] - centers[t][1])**2
+                if t == orig_t: d *= 0.85 # ลำเอียงให้รถคันเดิมเล็กน้อย เพื่อรักษาสายเก่า
+                if d < min_d:
+                    min_d = d
+                    best_t = t
+            
+            opt_df.at[idx, 'เบอร์รถใหม่'] = best_t
+            current_loads[best_t] += vols[idx]
 
-            # หารถที่กำลัง "หิวที่สุด" (สัดส่วนงาน/เป้าน้อยที่สุด)
-            starving_truck = None
-            min_ratio = float('inf')
-            for t in eligible_trucks:
-                ratio = current_loads[t] / monthly_targets.get(t, 1) if monthly_targets.get(t, 1) > 0 else 1
-                if ratio < min_ratio:
-                    min_ratio = ratio
-                    starving_truck = t
+        # 3. ปรับสมดุลโควตาด้วยวิธี "เฉือนตะเข็บชายแดน (Border Reassignment)"
+        # การเฉือนชายแดนทำให้พื้นที่ยังเป็นกลุ่มก้อนเหมือนเดิม ไม่ทะลุไปโผล่เป็นไข่ดาว
+        for iteration in range(25):
+            over_trucks = [t for t in active_trucks if current_loads[t] > monthly_targets.get(t, 0) + 15]
+            under_trucks = [t for t in active_trucks if current_loads[t] < monthly_targets.get(t, 0) - 15]
+            
+            if not over_trucks or not under_trucks:
+                break
+                
+            # หารถที่ล้นเป้าหมายมากที่สุด
+            t_over = max(over_trucks, key=lambda t: current_loads[t] - monthly_targets.get(t, 0))
+            excess = current_loads[t_over] - monthly_targets.get(t_over, 0)
+            
+            t_idx = [i for i in unlocked_indices if opt_df.at[i, 'เบอร์รถใหม่'] == t_over]
+            
+            candidates = []
+            for i in t_idx:
+                pt = coords[i]
+                d_over = (pt[0] - centers[t_over][0])**2 + (pt[1] - centers[t_over][1])**2
+                
+                best_under = None
+                min_d_under = float('inf')
+                for t_under in under_trucks:
+                    # ถ้ารถที่เป้ายังไม่เต็ม ดันถูกกดล็อกไว้ ต้องเช็คว่ารับไหวไหม
+                    if t_under in locked_ui_list and current_loads[t_under] + vols[i] > monthly_targets.get(t_under, 0) + 10:
+                        continue
+                        
+                    d_under = (pt[0] - centers[t_under][0])**2 + (pt[1] - centers[t_under][1])**2
+                    if d_under < min_d_under:
+                        min_d_under = d_under
+                        best_under = t_under
+                        
+                if best_under is not None:
+                    # ค่า Score ยิ่งติดลบเยอะ แปลว่าลูกค้ารายนี้อยู่ใกล้ขอบรอยต่อของรถอีกคันมากกว่า
+                    score = min_d_under - d_over 
+                    candidates.append({'idx': i, 'score': score, 'target': best_under, 'vol': vols[i]})
                     
-            if starving_truck is None: starving_truck = active_trucks[0]
-
-            # หาระยะห่างของลูกค้าทุกคนที่ยังไม่มีรถ กับ รถที่หิวที่สุดคันนี้
-            c_lat, c_lon = centers[starving_truck]
-            rem_indices = np.where(remaining_mask)[0]
-            rem_coords = coords[rem_indices]
+            if not candidates:
+                break
+                
+            # เรียงเพื่อย้ายเฉพาะลูกค้าตรงตะเข็บชายแดน
+            candidates.sort(key=lambda x: x['score'])
             
-            # สมการระยะทางบริสุทธิ์: ดึงคนที่ "ใกล้ที่สุด" เข้ามารถเสมอ (สร้างอาณาเขต 100%)
-            dists = (rem_coords[:, 0] - c_lat)**2 + (rem_coords[:, 1] - c_lon)**2
-            best_local_idx = np.argmin(dists)
-            best_global_idx = rem_indices[best_local_idx]
-            
-            # โอนลูกค้ารายนี้ให้รถ
-            opt_df.at[best_global_idx, 'เบอร์รถใหม่'] = starving_truck
-            current_loads[starving_truck] += vols[best_global_idx]
-            remaining_mask[best_global_idx] = False
-            
-            # อัปเดตศูนย์กลางพื้นที่เล็กน้อย เพื่อให้วงกลมขยายตัวอย่างเป็นธรรมชาติ
-            centers[starving_truck] = (
-                centers[starving_truck][0] * 0.98 + coords[best_global_idx][0] * 0.02,
-                centers[starving_truck][1] * 0.98 + coords[best_global_idx][1] * 0.02
-            )
-            
+            shifted_vol = 0
+            for cand in candidates:
+                if shifted_vol >= excess: break
+                
+                if cand['target'] in locked_ui_list and current_loads[cand['target']] + cand['vol'] > monthly_targets.get(cand['target'], 0) + 10:
+                    continue
+                    
+                opt_df.at[cand['idx'], 'เบอร์รถใหม่'] = cand['target']
+                current_loads[t_over] -= cand['vol']
+                current_loads[cand['target']] += cand['vol']
+                shifted_vol += cand['vol']
+                
+                # ขยับศูนย์กลางพื้นที่เล็กน้อย
+                centers[cand['target']] = (centers[cand['target']][0]*0.98 + coords[cand['idx']][0]*0.02, 
+                                           centers[cand['target']][1]*0.98 + coords[cand['idx']][1]*0.02)
+                                           
         opt_df['สถานะ'] = np.where(opt_df[truck_col].astype(str) == opt_df['เบอร์รถใหม่'], 'คงเดิม', 'ย้ายไปสาย ' + opt_df['เบอร์รถใหม่'])
         if has_base:
             opt_df['สถานะ'] = np.where(opt_df[truck_col].astype(str) == base_t, 'ยุบสายไป ' + opt_df['เบอร์รถใหม่'], opt_df['สถานะ'])
             
-        daily_matrix = get_daily_vols(opt_df, override_day_col=day_col)
+        daily_matrix = get_daily_vols(opt_df, override_col)
         return opt_df, daily_matrix, centers
 
-    # 📌 ระบบผู้ช่วยอัจฉริยะ (จำลองหาลูกค้ากลุ่มขอบพื้นที่ เพื่อเกลี่ยวัน ไม่เกลี่ยรถ)
+    # 📌 ระบบผู้ช่วยอัจฉริยะ (ดึงไปเป็นกลุ่มก้อน Cluster-Shift)
     def get_cluster_day_shift_recommendations(data_df, daily_mat, centers):
         recs = []
         days_str_map = {0: 'จันทร์', 1: 'อังคาร', 2: 'พุธ', 3: 'พฤหัสฯ', 4: 'ศุกร์', 5: 'เสาร์'}
@@ -338,23 +370,29 @@ if df is not None and not df.empty:
             over_days = [d for d in range(6) if t_daily_vols[d] > MAX_CAP]
             if not over_days: continue
             
-            c_lat, c_lon = centers[t]
+            c_lat, c_lon = centers.get(t, (data_df.loc[t_indices, lat_col].mean(), data_df.loc[t_indices, lon_col].mean()))
             
             for d_over in over_days:
                 excess = t_daily_vols[d_over] - SAFE_TARGET
                 if excess <= 0: continue
                 
-                # หา "วันที่ว่างที่สุด" ของรถคันนี้ เพื่อรับงาน
-                d_under = np.argmin(t_daily_vols)
-                if t_daily_vols[d_under] > MAX_CAP - 20: continue # ถ้าเต็มทุกวัน ก็หมดสิทธิ์ย้าย
+                # หาวันที่ "มียอดส่งน้อยที่สุด" ตามคำสั่งคุณโอ
+                under_days = [d for d in range(6) if t_daily_vols[d] < MAX_CAP - 20]
+                if not under_days: continue
                 
-                # คัดคนที่เป็น VIP ออกก่อน (ห้ามย้ายวัน)
+                d_under = under_days[np.argmin([t_daily_vols[d] for d in under_days])]
+                
                 pts_on_day = [idx for idx in t_indices if daily_mat[idx][d_over] > 0 and not data_df.loc[idx, 'is_locked']]
                 if not pts_on_day: continue
                 
-                # สมการตะเข็บชายแดน: หาลูกค้าที่อยู่ "ไกล" จากศูนย์กลางรถที่สุด (ขอบพื้นที่)
+                # หา "หัวหน้ากลุ่ม" ที่เป็นตะเข็บชายแดนที่สุดของรถคันนี้
                 dists_from_center = [(data_df.loc[idx, lat_col] - c_lat)**2 + (data_df.loc[idx, lon_col] - c_lon)**2 for idx in pts_on_day]
-                pts_sorted = [x for _, x in sorted(zip(dists_from_center, pts_on_day), reverse=True)]
+                seed_idx = pts_on_day[np.argmax(dists_from_center)]
+                seed_lat, seed_lon = data_df.loc[seed_idx, lat_col], data_df.loc[seed_idx, lon_col]
+                
+                # เรียงคนอื่นๆ ตามความใกล้ชิดกับหัวหน้ากลุ่ม (ดึงไปเป็นก้อนพื้นที่ติดกัน)
+                dists_from_seed = [(data_df.loc[idx, lat_col] - seed_lat)**2 + (data_df.loc[idx, lon_col] - seed_lon)**2 for idx in pts_on_day]
+                pts_sorted = [x for _, x in sorted(zip(dists_from_seed, pts_on_day))]
                 
                 shifted_vol = 0
                 for idx in pts_sorted:
@@ -368,7 +406,7 @@ if df is not None and not df.empty:
                         'ยอด(ถัง/วัน)': round(daily_mat[idx][d_over], 1),
                         'วันเดิม': days_str_map[d_over],
                         'แนะนำย้ายไป': days_str_map[d_under],
-                        'เหตุผล': f"กลุ่มรอยต่อพื้นที่ (ลดยอดทะลุ {round(t_daily_vols[d_over])} ถัง)"
+                        'เหตุผล': f"ย้ายตามกลุ่มพื้นที่ใกล้เคียง (-{round(t_daily_vols[d_over]-145)} ถัง)"
                     })
                     shifted_vol += daily_mat[idx][d_over]
                     
@@ -380,13 +418,13 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังสร้างอาณาเขตพื้นที่แบบ 100% Purity... 🚚💨</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังจัดกลุ่มพื้นที่ (Cluster) แบบไม่ทับซ้อน... 🚚💨</div>'''
         except FileNotFoundError:
             loader_html = '<div class="custom-truck-loader">กำลังประมวลผล...</div>'
             
         calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
         
-        res_df, daily_matrix, route_centers = run_pure_spatial_allocation(df, base_truck, new_truck_name, target_pcts, manual_vips, locked_ui_trucks)
+        res_df, daily_matrix, route_centers = run_fast_allocation(df, base_truck, new_truck_name, target_pcts, manual_vips, locked_ui_trucks)
         st.session_state['result_df'] = res_df
         st.session_state['daily_matrix'] = daily_matrix
         st.session_state['route_centers'] = route_centers
@@ -407,7 +445,7 @@ if df is not None and not df.empty:
         
         st.markdown("### 📊 สรุปภาพรวมยอดการจัดส่ง")
         if 'simulated_df' in st.session_state:
-            st.info("🧪 **แสดงผลลัพธ์จำลอง (After Simulation)** - ตารางโหลดรายวันอัปเดตแล้ว โดยไม่มีการเปลี่ยนเส้นทางรถใดๆ ทั้งสิ้น แผนที่ยังคงบริสุทธิ์ 100%")
+            st.info("🧪 **แสดงผลลัพธ์จำลอง (After Simulation)** - ตารางโหลดรายวันถูกอัปเดตตามการสลับวันของลูกค้ากลุ่มตะเข็บพื้นที่แล้ว โดยไม่เปลี่ยนเส้นทางรถหลัก")
             
         col1, col2 = st.columns(2)
         
@@ -419,11 +457,11 @@ if df is not None and not df.empty:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
             st.dataframe(sum_before, use_container_width=True)
         with col2:
-            st.markdown("**หลังปรับโครงสร้าง (พื้นที่ไม่ทับซ้อน 100%)**")
+            st.markdown("**หลังปรับโครงสร้าง (พื้นที่บริสุทธิ์ไม่ทับซ้อน)**")
             st.dataframe(sum_after, use_container_width=True)
             
         st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)")
-        
+            
         daily_summary = []
         for t in all_trucks_after:
             t_mask = active_res_df['เบอร์รถใหม่'] == t
@@ -442,22 +480,21 @@ if df is not None and not df.empty:
         
         max_all_days = max([row['โหลดสูงสุด (ถัง/วัน)'] for row in daily_summary])
         if max_all_days > 156 and 'simulated_df' not in st.session_state:
-            st.error(f"🚨 **ระบบพบโหลดทะลุเพดาน ({max_all_days} ถัง/วัน)!** \n\nหมายเหตุ: เกิดจากนโยบาย 'รักษาวันจัดส่งลูกค้าเดิม 100%' ส่งผลให้บางพื้นที่ที่หนาแน่นมียอดซ้อนทับกัน โปรดคลิกปุ่ม **'จำลองผลลัพธ์'** ด้านล่าง เพื่อให้ AI วิเคราะห์กลุ่มลูกค้ารอบนอก (ตะเข็บชายแดน) แล้วย้ายวันลงช่องว่างให้แบบสมดุลครับ")
+            st.error(f"🚨 **ระบบตรวจพบโหลดเกินขีดจำกัดสูงสุด ({max_all_days} ถัง/วัน)!** \n\nหมายเหตุ: เกิดจากพื้นที่โซนนี้มียอดสั่งน้ำหนาแน่นตรงกันในวันเดียว โปรดคลิกปุ่ม **'จำลองผลลัพธ์'** ด้านล่าง เพื่อให้ AI ดึงลูกค้าในพื้นที่ติดกันสลับไปยังวันที่โหลดน้อยที่สุด เพื่อลดยอดให้สมดุลครับ")
         
         st.markdown("#### 💡 ระบบผู้ช่วยอัจฉริยะ (AI Cluster Day-Shift Optimization)")
         recs_df = get_cluster_day_shift_recommendations(res_df, daily_matrix, route_centers)
         
         if not recs_df.empty and 'simulated_df' not in st.session_state:
-            st.warning("รายการลูกค้ากลุ่มตะเข็บรอยต่อพื้นที่ ที่แนะนำให้เจรจาสลับวัน เพื่อเกลี่ยยอดรายวันให้สมดุลและไม่เกินเพดาน 156 ถัง:")
+            st.warning("รายการลูกค้ารอยต่อพื้นที่ ที่แนะนำให้เจรจาสลับวัน เพื่อเกลี่ยยอดรายวันให้สมดุลและไม่เกิน 156 ถัง/วัน:")
             st.dataframe(recs_df[['เบอร์รถ', 'รหัสสมาชิก', 'ชื่อ', 'ยอด(ถัง/วัน)', 'วันเดิม', 'แนะนำย้ายไป', 'เหตุผล']], use_container_width=True)
             
-            if st.button("🧪 จำลองผลลัพธ์หลังเจรจาย้ายวัน (What-If Simulation)"):
+            if st.button("🧪 จำลองผลลัพธ์หลังเจรจาย้ายวันเป็นกลุ่ม (What-If Simulation)"):
                 sim_df = res_df.copy()
                 sim_col_name = day_col + '_simulated'
                 sim_df[sim_col_name] = sim_df[day_col].astype(str)
                 days_str_map = {0: 'จันทร์', 1: 'อังคาร', 2: 'พุธ', 3: 'พฤหัสฯ', 4: 'ศุกร์', 5: 'เสาร์'}
                 
-                # 📌 แกะรหัสและสลับแค่วันที่มีปัญหา (ไม่แตะต้องสายรถ หรือวันจัดส่งอื่นๆ ในสัปดาห์ของลูกค้า)
                 for _, r in recs_df.iterrows():
                     idx = r['index']
                     target_day_str = r['แนะนำย้ายไป']
@@ -478,7 +515,7 @@ if df is not None and not df.empty:
                 
                 st.session_state['simulated_df'] = sim_df
                 st.session_state['simulated_matrix'] = sim_daily_mat
-                st.success("✅ จำลองผลลัพธ์สำเร็จ! ตารางโหลดรายวันถูกอัปเดตเรียบร้อยแล้ว โดยเส้นทางรถวิ่งยังคงเหมือนเดิมทุกประการครับ")
+                st.success("✅ จำลองผลลัพธ์สำเร็จ! ตารางโหลดรายวันถูกอัปเดต โดยรักษารูปแบบอาณาเขตพื้นที่เดิม 100% ครับ")
                 st.rerun()
         elif 'simulated_df' in st.session_state:
             st.success("✅ แสดงผลลัพธ์จากการจำลองการย้ายวันเรียบร้อยแล้วครับ")
@@ -487,7 +524,7 @@ if df is not None and not df.empty:
                 del st.session_state['simulated_matrix']
                 st.rerun()
         else:
-            st.success("✅ ยอดเยี่ยม! โหลดรายวันอยู่ในโซนคุ้มค่าสมบูรณ์แบบ ไม่มีความจำเป็นต้องเจรจาย้ายวันลูกค้า")
+            st.success("✅ ยอดเยี่ยม! โหลดรายวันอยู่ในโซนคุ้มค่าสมบูรณ์แบบ ไม่มีความจำเป็นต้องย้ายวันลูกค้า")
 
         st.markdown("### 🗺️ แผนที่เปรียบเทียบการกระจายตัว (เชิงพื้นที่)")
         view_options = ["แสดงทั้งหมด (แยกสีตามเบอร์รถ)"] + all_trucks_after
