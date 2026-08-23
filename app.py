@@ -143,7 +143,6 @@ if df is not None and not df.empty:
         st.session_state['new_truck'] = new_truck_name
 
     def on_slider_change(changed_truck):
-        # สมการ Strict Summation ป้องกันไม่ให้เป้าหมายรวมเกินปริมาณน้ำจริง
         new_val = st.session_state[f"slider_{changed_truck}"]
         old_val = st.session_state.truck_pcts[changed_truck]
         diff = new_val - old_val
@@ -154,7 +153,6 @@ if df is not None and not df.empty:
             split_diff = diff / len(unlocked)
             can_move = True
             for t in unlocked:
-                # ถ้าหักแล้วติดลบ แปลว่าน้ำในระบบหมด ไม่อนุญาตให้เลื่อนต่อ
                 if st.session_state.truck_pcts[t] - split_diff < -0.01:
                     can_move = False
                     break
@@ -165,9 +163,9 @@ if df is not None and not df.empty:
                     st.session_state[f"slider_{t}"] = st.session_state.truck_pcts[t]
                 st.session_state.truck_pcts[changed_truck] = round(new_val, 1)
             else:
-                st.session_state[f"slider_{changed_truck}"] = old_val # ดีดกลับ
+                st.session_state[f"slider_{changed_truck}"] = old_val 
         elif len(unlocked) == 0 and abs(diff) > 0.01:
-            st.session_state[f"slider_{changed_truck}"] = old_val # ดีดกลับ
+            st.session_state[f"slider_{changed_truck}"] = old_val 
             
         reset_results() 
 
@@ -199,6 +197,7 @@ if df is not None and not df.empty:
     st.sidebar.markdown("### 🔒 4. ล็อก Key Account")
     manual_vips = st.sidebar.multiselect("เลือกรหัสสมาชิกที่ห้ามย้ายสาย", options=df[id_col].astype(str).unique().tolist(), default=[], on_change=reset_results)
 
+    # 📌 อัปเดตตัวแยกแยะวันจัดส่ง ให้ฉลาดขึ้นและรองรับรูปแบบที่หลากหลาย
     def get_daily_vols(data_df, override_day_col=None):
         col_to_use = override_day_col if override_day_col else day_col
         daily_matrix = np.zeros((len(data_df), 6)) 
@@ -207,13 +206,17 @@ if df is not None and not df.empty:
             day_str = str(row.get(col_to_use, '')).replace(' ', '').lower()
             days = []
             
-            if 'จันทร์' in day_str or 'จ.' in day_str or day_str == '1' or day_str == 'จ': days.append(0)
-            if 'อังคาร' in day_str or 'อ.' in day_str or day_str == '2' or day_str == 'อ': days.append(1)
-            if ('พุธ' in day_str or 'พ.' in day_str or day_str == '3' or day_str == 'พ') and 'พฤ' not in day_str: days.append(2)
-            if 'พฤหัส' in day_str or 'พฤ.' in day_str or 'พฤ' in day_str or day_str == '4': days.append(3)
-            if 'ศุกร์' in day_str or 'ศ.' in day_str or day_str == '5' or day_str == 'ศ': days.append(4)
-            if 'เสาร์' in day_str or 'ส.' in day_str or day_str == '6' or day_str == 'ส': days.append(5)
+            if 'จันทร์' in day_str or 'จ.' in day_str or day_str == 'จ' or '1' in day_str: days.append(0)
+            if 'อังคาร' in day_str or 'อ.' in day_str or day_str == 'อ' or '2' in day_str: days.append(1)
+            # ป้องกัน 'พุธ' ทับซ้อน 'พฤหัส'
+            if 'พุธ' in day_str or 'พ.' in day_str or day_str == 'พ' or '3' in day_str:
+                if not ('พฤ' in day_str and day_str.count('พ') == 1):
+                    days.append(2)
+            if 'พฤหัส' in day_str or 'พฤ' in day_str or '4' in day_str: days.append(3)
+            if 'ศุกร์' in day_str or 'ศ.' in day_str or day_str == 'ศ' or '5' in day_str: days.append(4)
+            if 'เสาร์' in day_str or 'ส.' in day_str or day_str == 'ส' or '6' in day_str: days.append(5)
             
+            # ถ้าข้อมูลไม่ได้ระบุวันจริงๆ ถึงจะเกลี่ย 6 วัน
             if not days: 
                 days = [0, 1, 2, 3, 4, 5] 
             
@@ -222,96 +225,121 @@ if df is not None and not df.empty:
                 daily_matrix[i, d] = vol_per_day
         return daily_matrix
 
+    # 📌 แกนสมองใหม่ (Border-Transfer Algorithm) รักษาสายเดิม 100% ย้ายเฉพาะตะเข็บชายแดน
     def run_fast_allocation(data, base_t, new_t, pct_dict, manual_locks, locked_ui_list, override_col=None):
         opt_df = data.copy()
-        opt_df['เบอร์รถใหม่'] = 'ยังไม่จัด'
+        
+        # 1. กำหนดให้ทุกคนเริ่มต้นด้วยการ "อยู่เบอร์รถเดิม" เพื่อรักษาวันจัดส่งและเส้นทางเดิมให้มากที่สุด
+        opt_df['เบอร์รถใหม่'] = opt_df[truck_col].astype(str)
         opt_df['is_locked'] = (opt_df['VIP_Status'].astype(str).str.upper() == 'VIP') | (opt_df[id_col].astype(str).isin(manual_locks))
         
         has_base = base_t != "(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)"
         active_trucks = [t for t in available_trucks if t != base_t]
         if new_t not in active_trucks: active_trucks.append(new_t)
             
+        monthly_targets = {t: 4160 * (pct_dict.get(t, 100) / 100) for t in active_trucks}
         vols = opt_df[vol_col].values
         coords = opt_df[[lat_col, lon_col]].values
-        current_loads = {t: 0 for t in active_trucks}
         
-        # 1. จัดสรรงานให้กลุ่มลูกค้า VIP ที่ถูกล็อกไว้กับรถคันเดิม
-        locked_indices = np.where(opt_df['is_locked'].values)[0]
-        for idx in locked_indices:
-            orig_t = str(opt_df.at[idx, truck_col])
-            if orig_t == base_t: orig_t = new_t
-            if orig_t in current_loads:
-                opt_df.at[idx, 'เบอร์รถใหม่'] = orig_t
-                current_loads[orig_t] += vols[idx]
-            else:
-                opt_df.at[idx, 'เบอร์รถใหม่'] = new_t
-                current_loads[new_t] += vols[idx]
-                
-        # 2. ปรับสมดุลสมการ (Proportional Allocation) เมื่อน้ำหรือ VIP ไม่สมดุล
-        raw_targets = {t: 4160 * (pct_dict.get(t, 100) / 100) for t in active_trucks}
-        total_water = vols.sum()
-        assigned_water = sum(current_loads.values())
-        rem_water = total_water - assigned_water
-        
-        rem_targets = {t: max(0, raw_targets[t] - current_loads[t]) for t in active_trucks}
-        sum_rem_targets = sum(rem_targets.values())
-        
-        if sum_rem_targets > 0:
-            scale_factor = rem_water / sum_rem_targets
-            final_targets = {t: current_loads[t] + (rem_targets[t] * scale_factor) for t in active_trucks}
-        else:
-            final_targets = {t: current_loads[t] + (rem_water / len(active_trucks)) for t in active_trucks}
-
-        # 3. กำหนดศูนย์กลางพื้นที่
+        # หาจุดศูนย์กลางของแต่ละรถจากข้อมูลเดิม
         centers = {}
-        for t in active_trucks:
-            t_data = opt_df[(opt_df[truck_col].astype(str) == t) & (~opt_df['is_locked'])]
+        for t in available_trucks:
+            t_data = opt_df[opt_df[truck_col].astype(str) == t]
             if not t_data.empty: centers[t] = (np.average(t_data[lat_col]), np.average(t_data[lon_col]))
-        if new_t not in centers:
-            base_data = opt_df[opt_df[truck_col].astype(str) == base_t]
-            if not base_data.empty: centers[new_t] = (np.average(base_data[lat_col]), np.average(base_data[lon_col]))
-            else: centers[new_t] = (np.average(coords[:, 0]), np.average(coords[:, 1]))
-        for t in active_trucks:
-            if t not in centers: centers[t] = (np.average(coords[:, 0]), np.average(coords[:, 1]))
             
-        # 4. จ่ายงานโดยอิงศูนย์กลาง และควบคุมเพดาน (Greedy Distribution)
-        remaining_mask = opt_df['เบอร์รถใหม่'] == 'ยังไม่จัด'
+        if has_base and base_t in centers: centers[new_t] = centers[base_t]
+        else: centers[new_t] = (np.average(coords[:, 0]), np.average(coords[:, 1]))
         
-        while remaining_mask.any():
-            rem_indices = np.where(remaining_mask)[0]
-            rem_coords = coords[rem_indices]
+        # ถ้ารถคันไหนถูกยุบ เอาลูกค้าทุกคนไปกองไว้ใน POOL กลาง
+        pool_indices = []
+        if has_base:
+            base_mask = (opt_df['เบอร์รถใหม่'] == base_t) & (~opt_df['is_locked'])
+            pool_idx = np.where(base_mask)[0]
+            pool_indices.extend(pool_idx.tolist())
+            opt_df.loc[base_mask, 'เบอร์รถใหม่'] = 'POOL'
             
-            best_truck = None
-            max_deficit = -float('inf')
+        current_loads = {t: 0 for t in active_trucks}
+        for t in active_trucks:
+            current_loads[t] = opt_df[opt_df['เบอร์รถใหม่'] == t][vol_col].sum()
             
-            # หารถที่ขาดโควตามากที่สุดเทียบกับเป้าหมายที่คำนวณใหม่
-            for t in active_trucks:
-                if final_targets[t] > 0:
-                    deficit = (final_targets[t] - current_loads[t]) / final_targets[t]
-                else:
-                    deficit = -1
-                if deficit > max_deficit:
-                    max_deficit = deficit
-                    best_truck = t
+        # 2. กระบวนการ "สลัดงาน (Shedding)" สำหรับรถที่ยอดเกินเป้า (ดึงเฉพาะคนที่อยู่ไกลศูนย์กลางที่สุดออกมา)
+        for t in active_trucks:
+            excess = current_loads[t] - monthly_targets.get(t, 0)
+            if excess > 0:
+                t_mask = (opt_df['เบอร์รถใหม่'] == t) & (~opt_df['is_locked'])
+                t_idx = np.where(t_mask)[0]
+                
+                if len(t_idx) > 0:
+                    t_coords = coords[t_idx]
+                    c_lat, c_lon = centers[t]
+                    # คำนวณระยะห่าง ใครอยู่ขอบๆ ไกลสุด จะถูกดึงออกไปก่อน
+                    dists = (t_coords[:, 0] - c_lat)**2 + (t_coords[:, 1] - c_lon)**2
+                    sorted_rel_idx = np.argsort(dists)[::-1] 
                     
-            if best_truck is None: best_truck = active_trucks[0]
+                    shed_vol = 0
+                    for rel_i in sorted_rel_idx:
+                        if shed_vol >= excess: break
+                        global_i = t_idx[rel_i]
+                        pool_indices.append(global_i)
+                        opt_df.at[global_i, 'เบอร์รถใหม่'] = 'POOL'
+                        shed_vol += vols[global_i]
+                        current_loads[t] -= vols[global_i]
+                        
+        pool_indices = list(set(pool_indices))
+        
+        # 3. กระบวนการ "รับงาน (Gaining)" สำหรับรถที่เป้ายังไม่เต็ม (ดึงคนใน POOL ที่อยู่ใกล้ที่สุดมาเติม)
+        while len(pool_indices) > 0:
+            under_trucks = [t for t in active_trucks if current_loads[t] < monthly_targets.get(t, 0)]
+            if not under_trucks: under_trucks = active_trucks 
             
-            c_lat, c_lon = centers[best_truck]
-            dists = (rem_coords[:, 0] - c_lat)**2 + (rem_coords[:, 1] - c_lon)**2
-            best_local_idx = np.argmin(dists)
-            best_global_idx = rem_indices[best_local_idx]
+            max_deficit_ratio = -float('inf')
+            starving_truck = None
+            for t in under_trucks:
+                target = monthly_targets.get(t, 0)
+                ratio = (target - current_loads[t]) / target if target > 0 else 0
+                if ratio > max_deficit_ratio:
+                    max_deficit_ratio = ratio
+                    starving_truck = t
+                    
+            if starving_truck is None: starving_truck = active_trucks[0]
             
-            opt_df.at[best_global_idx, 'เบอร์รถใหม่'] = best_truck
-            current_loads[best_truck] += vols[best_global_idx]
-            remaining_mask[best_global_idx] = False
+            c_lat, c_lon = centers[starving_truck]
+            pool_coords = coords[pool_indices]
+            dists = (pool_coords[:, 0] - c_lat)**2 + (pool_coords[:, 1] - c_lon)**2
             
-            # ขยับศูนย์กลางหาลูกค้ากลุ่มใหม่เล็กน้อย เพื่อไม่ให้กระจุกตัว
-            centers[best_truck] = (
-                centers[best_truck][0] * 0.95 + coords[best_global_idx][0] * 0.05,
-                centers[best_truck][1] * 0.95 + coords[best_global_idx][1] * 0.05
+            # การควบคุมเป้าหมายอย่างเข้มงวด (Strict Cap)
+            if starving_truck in locked_ui_list:
+                remaining_need = monthly_targets[starving_truck] - current_loads[starving_truck]
+                pool_vols = vols[pool_indices]
+                valid_mask = pool_vols <= (remaining_need + 60) # อนุโลมให้ทะลุได้ไม่เกิน 60 ถัง (ไม่ถึง 1 เที่ยว)
+                valid_local_indices = np.where(valid_mask)[0]
+                
+                if len(valid_local_indices) > 0:
+                    valid_dists = dists[valid_local_indices]
+                    best_local_idx = valid_local_indices[np.argmin(valid_dists)]
+                else:
+                    # ถ้ายอดลูกค้าใหญ่เกินไป ปล่อยให้รถคันอื่นรับไปแทนเพื่อรักษาเป้าหมาย
+                    current_loads[starving_truck] = monthly_targets[starving_truck]
+                    continue
+            else:
+                best_local_idx = np.argmin(dists)
+                
+            best_global_idx = pool_indices[best_local_idx]
+            opt_df.at[best_global_idx, 'เบอร์รถใหม่'] = starving_truck
+            current_loads[starving_truck] += vols[best_global_idx]
+            pool_indices.pop(best_local_idx)
+            
+            centers[starving_truck] = (
+                centers[starving_truck][0] * 0.95 + coords[best_global_idx][0] * 0.05,
+                centers[starving_truck][1] * 0.95 + coords[best_global_idx][1] * 0.05
             )
             
         opt_df['สถานะ'] = np.where(opt_df[truck_col].astype(str) == opt_df['เบอร์รถใหม่'], 'คงเดิม', 'ย้ายไปสาย ' + opt_df['เบอร์รถใหม่'])
+        
+        # จัดการคนของรถที่ถูกยุบให้ชื่อสถานะชัดเจนขึ้น
+        if has_base:
+            opt_df['สถานะ'] = np.where(opt_df[truck_col].astype(str) == base_t, 'ย้ายไปสาย ' + opt_df['เบอร์รถใหม่'], opt_df['สถานะ'])
+            
         daily_matrix = get_daily_vols(opt_df, override_col)
         return opt_df, daily_matrix
 
