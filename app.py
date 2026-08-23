@@ -38,7 +38,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (What-If Day-Shift Simulation)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Dynamic What-If Simulation)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...")
@@ -307,6 +307,7 @@ if df is not None and not df.empty:
         st.session_state['result_df'] = res_df
         st.session_state['daily_matrix'] = daily_matrix
         if 'simulated_df' in st.session_state: del st.session_state['simulated_df']
+        if 'simulated_matrix' in st.session_state: del st.session_state['simulated_matrix']
         time.sleep(0.5) 
         calc_placeholder.empty()
 
@@ -315,25 +316,32 @@ if df is not None and not df.empty:
         daily_matrix = st.session_state['daily_matrix']
         all_trucks_after = sorted(res_df['เบอร์รถใหม่'].dropna().unique().tolist())
         
+        # 📌 สลับข้อมูลหลักไปใช้ตัวจำลองทันที ถ้ามีการกดปุ่มจำลองแล้ว
+        active_res_df = st.session_state.get('simulated_df', res_df)
+        active_matrix = st.session_state.get('simulated_matrix', daily_matrix)
+        
         st.markdown("### 📊 สรุปภาพรวมยอดการจัดส่ง")
+        if 'simulated_df' in st.session_state:
+            st.info("🧪 **กำลังแสดงผลลัพธ์จำลอง (After Simulation)** - ตารางสรุปและโหลดรายวันด้านล่างถูกคำนวณใหม่ตามการย้ายวันเรียบร้อยแล้ว")
+            
         col1, col2 = st.columns(2)
         
         sum_before = df.groupby(truck_col).agg(จำนวนสมาชิก=pd.NamedAgg(column=truck_col, aggfunc='count'), **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}).reset_index()
-        sum_after = res_df.groupby('เบอร์รถใหม่').agg(จำนวนสมาชิก=pd.NamedAgg(column='เบอร์รถใหม่', aggfunc='count'), **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}).reset_index()
+        sum_after = active_res_df.groupby('เบอร์รถใหม่').agg(จำนวนสมาชิก=pd.NamedAgg(column='เบอร์รถใหม่', aggfunc='count'), **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}).reset_index()
         sum_after['ปริมาณงาน(%)'] = (sum_after['ยอดรับน้ำ(ถัง/เดือน)'] / (150*26) * 100).round(1).astype(str) + '%'
 
         with col1:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
             st.dataframe(sum_before, use_container_width=True)
         with col2:
-            st.markdown("**หลังปรับโครงสร้าง**")
+            st.markdown("**หลังปรับโครงสร้าง (อัปเดตตามผลจำลอง)**" if 'simulated_df' in st.session_state else "**หลังปรับโครงสร้าง**")
             st.dataframe(sum_after, use_container_width=True)
             
         st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)")
         daily_summary = []
         for t in all_trucks_after:
-            t_mask = res_df['เบอร์รถใหม่'] == t
-            t_daily = daily_matrix[t_mask].sum(axis=0)
+            t_mask = active_res_df['เบอร์รถใหม่'] == t
+            t_daily = active_matrix[t_mask].sum(axis=0)
             daily_summary.append({
                 'เบอร์รถ': t,
                 'จันทร์': round(t_daily[0]),
@@ -346,15 +354,14 @@ if df is not None and not df.empty:
             })
         st.dataframe(pd.DataFrame(daily_summary), use_container_width=True)
         
-        # 📌 ระบบ AI แนะนำและปุ่มจำลองผลลัพธ์ (What-If Simulation)
+        # 📌 ระบบ AI แนะนำและปุ่มจำลองผลลัพธ์
         st.markdown("#### 💡 ระบบผู้ช่วยอัจฉริยะ (AI Day-Shift Optimization)")
         recs_df = get_recommendations(res_df, daily_matrix)
         
-        if not recs_df.empty:
+        if not recs_df.empty and 'simulated_df' not in st.session_state:
             st.warning("พบจุดที่อยู่นอกโซนคุ้มค่า ระบบมีคำแนะนำให้ย้ายวันจัดส่งดังตารางด้านล่าง:")
             st.dataframe(recs_df[['เบอร์รถ', 'รหัสสมาชิก', 'ชื่อ', 'ยอด(ถัง/วัน)', 'วันเดิม', 'แนะนำย้ายไป', 'เหตุผล']], use_container_width=True)
             
-            # ปุ่มกดจำลองดูผลลัพธ์ล่วงหน้า
             if st.button("🧪 จำลองผลลัพธ์หลังทำตามคำแนะนำ (What-If Simulation)"):
                 sim_df = res_df.copy()
                 sim_col_name = day_col + '_simulated'
@@ -365,38 +372,19 @@ if df is not None and not df.empty:
                     target_day = r['แนะนำย้ายไป']
                     sim_df.at[idx, sim_col_name] = target_day
                     
-                # รันผลจำลองใหม่
                 sim_res_df, sim_daily_mat = run_fast_allocation(df, base_truck, new_truck_name, target_pcts, manual_vips, override_col=sim_col_name)
                 st.session_state['simulated_df'] = sim_res_df
                 st.session_state['simulated_matrix'] = sim_daily_mat
-                st.success("✅ จำลองผลลัพธ์สำเร็จ! เลื่อนดูตารางและแผนที่เปรียบเทียบจำลองด้านล่างได้เลยครับ")
-        else:
-            st.success("✅ ยอดเยี่ยม! โหลดรายวันอยู่ในโซนคุ้มค่าสมบูรณ์แบบ ไม่มีความจำเป็นต้องย้ายวัน")
-
-        # แสดงผลจำลอง (ถ้ามีการกดปุ่มจำลอง)
-        if 'simulated_df' in st.session_state:
-            st.markdown("---")
-            st.markdown("### 🧪 ผลลัพธ์จำลองล่วงหน้า (After Simulation Preview)")
-            sim_res = st.session_state['simulated_df']
-            sim_mat = st.session_state['simulated_matrix']
-            
-            sim_daily_summary = []
-            for t in all_trucks_after:
-                t_mask = sim_res['เบอร์รถใหม่'] == t
-                t_daily = sim_mat[t_mask].sum(axis=0)
-                sim_daily_summary.append({
-                    'เบอร์รถ': t,
-                    'จันทร์': round(t_daily[0]), 'อังคาร': round(t_daily[1]), 'พุธ': round(t_daily[2]),
-                    'พฤหัสฯ': round(t_daily[3]), 'ศุกร์': round(t_daily[4]), 'เสาร์': round(t_daily[5]),
-                    'โหลดสูงสุด (ถัง/วัน)': round(max(t_daily))
-                })
-            st.markdown("**ตารางโหลดรายวัน (หลังจำลองการย้ายวัน):**")
-            st.dataframe(pd.DataFrame(sim_daily_summary), use_container_width=True)
-            
+                st.success("✅ จำลองผลลัพธ์สำเร็จ! ตารางสรุปด้านบนอัปเดตเรียบร้อยแล้วครับ")
+                st.rerun()
+        elif 'simulated_df' in st.session_state:
+            st.success("✅ แสดงผลลัพธ์จากการจำลองการย้ายวันเรียบร้อยแล้วครับ")
             if st.button("❌ ล้างผลการจำลอง (Reset Simulation)"):
                 del st.session_state['simulated_df']
                 del st.session_state['simulated_matrix']
                 st.rerun()
+        else:
+            st.success("✅ ยอดเยี่ยม! โหลดรายวันอยู่ในโซนคุ้มค่าสมบูรณ์แบบ ไม่มีความจำเป็นต้องย้ายวัน")
 
         st.markdown("### 🗺️ แผนที่เปรียบเทียบการกระจายตัว (เชิงพื้นที่)")
         view_options = ["แสดงทั้งหมด (แยกสีตามเบอร์รถ)"] + all_trucks_after
@@ -409,18 +397,16 @@ if df is not None and not df.empty:
         color_map = {str(t): standard_palette[i % len(standard_palette)] for i, t in enumerate(all_trucks_after) if str(t) != new_truck_name}
         color_map[new_truck_name] = 'red' 
 
-        active_map_df = st.session_state.get('simulated_df', res_df)
-
         if selected_view == "แสดงทั้งหมด (แยกสีตามเบอร์รถ)":
-            map_df_before, map_df_after = df, active_map_df
+            map_df_before, map_df_after = df, active_res_df
             color_mode = 'truck'
         else:
             if selected_view == new_truck_name and base_truck == "(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)": map_df_before = pd.DataFrame(columns=df.columns) 
             else: map_df_before = df[df[truck_col].astype(str) == (base_truck if selected_view == new_truck_name else selected_view)]
-            map_df_after = active_map_df[active_map_df['เบอร์รถใหม่'].astype(str) == selected_view]
+            map_df_after = active_res_df[active_res_df['เบอร์รถใหม่'].astype(str) == selected_view]
             color_mode = 'day'
 
-        c_lat, c_lon = (map_df_after[lat_col].mean(), map_df_after[lon_col].mean()) if not map_df_after.empty else (active_map_df[lat_col].mean(), active_map_df[lon_col].mean())
+        c_lat, c_lon = (map_df_after[lat_col].mean(), map_df_after[lon_col].mean()) if not map_df_after.empty else (active_res_df[lat_col].mean(), active_res_df[lon_col].mean())
         if pd.isna(c_lat): c_lat, c_lon = df[lat_col].mean(), df[lon_col].mean()
 
         map_col1, map_col2 = st.columns(2)
@@ -439,7 +425,7 @@ if df is not None and not df.empty:
             components.html(m1.get_root().render(), height=450)
 
         with map_col2:
-            st.markdown("<div style='text-align:center; color:#002D62: font-weight:bold;'>โซนการวิ่งสายใหม่ (After Simulation)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#002D62; font-weight:bold;'>โซนการวิ่งสายใหม่ (After Simulation)</div>", unsafe_allow_html=True)
             m2 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m2)
             for _, r in map_df_after.iterrows():
@@ -457,7 +443,7 @@ if df is not None and not df.empty:
         if day_col: display_cols.append(day_col) 
         display_cols.extend([vol_col, truck_col, 'เบอร์รถใหม่', 'สถานะ'])
         
-        detail_df = active_map_df[display_cols].rename(columns={truck_col: 'เบอร์รถเดิม (ก่อนปรับ)'})
+        detail_df = active_res_df[display_cols].rename(columns={truck_col: 'เบอร์รถเดิม (ก่อนปรับ)'})
         st.dataframe(detail_df, use_container_width=True)
         
         st.markdown("---")
