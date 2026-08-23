@@ -100,7 +100,7 @@ if df is not None and not df.empty:
     st.sidebar.markdown("---")
     
     # -------------------------------------------------------------
-    # ระบบ Auto-Balancing Slider (อิงปริมาณงานจริง และเกลี่ยอัตโนมัติ)
+    # ระบบ Auto-Balancing Slider 
     # -------------------------------------------------------------
     st.sidebar.markdown("### 🎛️ 3. ปรับเป้าหมายรายวัน (%)")
     
@@ -109,7 +109,6 @@ if df is not None and not df.empty:
     
     active_trucks = [t for t in available_trucks if t != base_truck] + [new_truck_name]
     
-    # คำนวณเปอร์เซ็นต์เริ่มต้นจากยอดน้ำจริงในไฟล์
     if 'slider_init' not in st.session_state or st.session_state.get('base_truck') != base_truck or st.session_state.get('new_truck') != new_truck_name:
         st.session_state.truck_pcts = {}
         for t in active_trucks:
@@ -119,7 +118,6 @@ if df is not None and not df.empty:
                 vol = df[df[truck_col].astype(str) == t][vol_col].sum()
                 st.session_state.truck_pcts[t] = float(round((vol / 4160) * 100, 1))
         
-        # ถ้ายุบสาย รถคันที่ยุบจะถูกนำยอดมาหารเฉลี่ยให้คันอื่นๆ
         if base_truck != "(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)":
             base_vol = df[df[truck_col].astype(str) == base_truck][vol_col].sum()
             base_pct = float(round((base_vol / 4160) * 100, 1))
@@ -140,7 +138,6 @@ if df is not None and not df.empty:
         old_val = st.session_state.truck_pcts[changed_truck]
         diff = new_val - old_val
         
-        # ค้นหารถที่ไม่ได้ถูกล็อก และไม่ใช่รถคันที่กำลังปรับสไลเดอร์
         unlocked = [t for t in active_trucks if not st.session_state.get(f"lock_{t}", False) and t != changed_truck]
         
         if len(unlocked) > 0 and diff != 0:
@@ -151,7 +148,6 @@ if df is not None and not df.empty:
                 st.session_state.truck_pcts[t] = float(round(new_t_val, 1))
                 st.session_state[f"slider_{t}"] = st.session_state.truck_pcts[t]
         elif len(unlocked) == 0 and diff != 0:
-            # ถ้าล็อกทุกคันไว้หมดแล้ว จะไม่สามารถเลื่อนสไลเดอร์คันนี้ได้ (ดึงกลับค่าเดิม)
             st.session_state[f"slider_{changed_truck}"] = old_val
             return
             
@@ -178,6 +174,9 @@ if df is not None and not df.empty:
             )
             target_pcts[t] = val
             st.session_state.truck_pcts[t] = val
+
+    # จับค่าว่า UI ตัวไหนถูกล็อกไว้บ้าง เพื่อส่งต่อให้ AI Algorithm รับรู้
+    locked_ui_trucks = [t for t in active_trucks if st.session_state.get(f"lock_{t}", False)]
     # -------------------------------------------------------------
 
     st.sidebar.markdown("---")
@@ -205,7 +204,7 @@ if df is not None and not df.empty:
                 daily_matrix[i, d] = vol_per_day
         return daily_matrix
 
-    def run_fast_allocation(data, base_t, new_t, pct_dict, manual_locks, override_col=None):
+    def run_fast_allocation(data, base_t, new_t, pct_dict, manual_locks, locked_ui_list, override_col=None):
         opt_df = data.copy()
         opt_df['เบอร์รถใหม่'] = 'ยังไม่จัด'
         opt_df['is_locked'] = (opt_df['VIP_Status'].astype(str).str.upper() == 'VIP') | (opt_df[id_col].astype(str).isin(manual_locks))
@@ -213,7 +212,7 @@ if df is not None and not df.empty:
         has_base = base_t != "(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)"
         active_trucks = [t for t in available_trucks if t != base_t] + [new_t]
         
-        # 📌 กำหนดเป้าหมายโควตารายเดือนตามเปอร์เซ็นต์ที่ผู้ใช้ปรับ (100% = 4,160 ถัง)
+        # กำหนดเป้าหมายโควตารายเดือนตามเปอร์เซ็นต์ที่ผู้ใช้ปรับ
         monthly_targets = {t: 4160 * (pct_dict.get(t, 100) / 100) for t in active_trucks}
         if has_base: monthly_targets[base_t] = 0 
         
@@ -244,11 +243,21 @@ if df is not None and not df.empty:
             remaining_mask = ~opt_df['is_locked'].values
             
             while remaining_mask.any():
-                # หารรถที่ขาดโควตารายเดือนมากที่สุด
+                # ✨ STRICT CAP LOGIC: กรองเฉพาะรถที่โควตายังไม่เต็ม
+                eligible_trucks = [t for t in active_trucks if current_loads[t] < monthly_targets[t]]
+                
+                # Fallback 1: ถ้ารถทุกคันโควตาเต็มแล้ว ให้ดันงานส่วนเกินไปให้รถที่ "ไม่ได้ล็อก" รับกรรมแทน
+                if not eligible_trucks:
+                    eligible_trucks = [t for t in active_trucks if t not in locked_ui_list]
+                    
+                # Fallback 2: แต่ถ้าผู้ใช้ดันกดล็อกรถทุกคันเลย ก็ต้องยอมเกลี่ยให้รถทุกคันเท่าๆ กัน
+                if not eligible_trucks:
+                    eligible_trucks = active_trucks
+                
                 max_deficit_ratio = -float('inf')
                 starving_truck = None
                 
-                for t in active_trucks:
+                for t in eligible_trucks:
                     if monthly_targets[t] <= 0: continue
                     ratio = (monthly_targets[t] - current_loads[t]) / monthly_targets[t]
                     if ratio > max_deficit_ratio:
@@ -367,7 +376,7 @@ if df is not None and not df.empty:
             
         calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
         
-        res_df, daily_matrix = run_fast_allocation(df, base_truck, new_truck_name, target_pcts, manual_vips)
+        res_df, daily_matrix = run_fast_allocation(df, base_truck, new_truck_name, target_pcts, manual_vips, locked_ui_trucks)
         st.session_state['result_df'] = res_df
         st.session_state['daily_matrix'] = daily_matrix
         if 'simulated_df' in st.session_state: del st.session_state['simulated_df']
@@ -434,7 +443,7 @@ if df is not None and not df.empty:
                     target_day = r['แนะนำย้ายไป']
                     sim_df.at[idx, sim_col_name] = target_day
                     
-                sim_res_df, sim_daily_mat = run_fast_allocation(df, base_truck, new_truck_name, target_pcts, manual_vips, override_col=sim_col_name)
+                sim_res_df, sim_daily_mat = run_fast_allocation(df, base_truck, new_truck_name, target_pcts, manual_vips, locked_ui_trucks, override_col=sim_col_name)
                 st.session_state['simulated_df'] = sim_res_df
                 st.session_state['simulated_matrix'] = sim_daily_mat
                 st.success("✅ จำลองผลลัพธ์สำเร็จ! ตารางสรุปด้านบนอัปเดตเรียบร้อยแล้วครับ")
