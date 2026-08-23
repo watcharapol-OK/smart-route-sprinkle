@@ -38,7 +38,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Dynamic What-If Simulation)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Anti-Overlap Zone & 2-Trip Fleet Model)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...")
@@ -60,7 +60,7 @@ if sheet_url:
     try:
         with open("truck.jpg", "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode()
-        loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังเชื่อมต่อฐานข้อมูล... 💦</div>'''
+        loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังจัดระเบียบพื้นที่และตัดสายส่ง... 💦</div>'''
     except FileNotFoundError:
         loader_html = '<div class="custom-truck-loader">กำลังโหลดข้อมูล...</div>'
         
@@ -130,6 +130,7 @@ if df is not None and not df.empty:
                 daily_matrix[i, d] = vol_per_day
         return daily_matrix
 
+    # 📌 อัปเกรดสมองกล: ป้องกันรถวิ่งทับซ้อนในพื้นที่ย่อย (Anti-Overlap Zone Allocation)
     def run_fast_allocation(data, base_t, new_t, pct_dict, manual_locks, override_col=None):
         opt_df = data.copy()
         opt_df['เบอร์รถใหม่'] = 'ยังไม่จัด'
@@ -154,6 +155,16 @@ if df is not None and not df.empty:
             ul_data = opt_df[~opt_df['is_locked']]
             if not ul_data.empty: centers[new_t] = (np.average(ul_data[lat_col]), np.average(ul_data[lon_col]))
 
+        # 📌 ขั้นตอนพิเศษ: จัดกลุ่มหมุดที่อยู่ใกล้กันมากๆ (Micro-Clusters) ให้ไปอยู่รถคันเดียวกันแบบ 100%
+        # เพื่อตัดปัญหาการส่งซ้ำซ้อนในพื้นที่ย่อย (Anti-Overlap)
+        from sklearn.cluster import DBSCAN
+        if len(coords) > 5:
+            # ใช้พิกัดกรองกลุ่มย่อยในรัศมีใกล้เคียงกัน
+            clustering = DBSCAN(eps=0.003, min_samples=2).fit(coords)
+            opt_df['cluster_id'] = clustering.labels_
+        else:
+            opt_df['cluster_id'] = -1
+
         for iteration in range(2):
             current_daily_loads = {t: np.zeros(6) for t in active_trucks + ([base_t] if has_base else [])}
             locked_indices = np.where(opt_df['is_locked'].values)[0]
@@ -166,6 +177,34 @@ if df is not None and not df.empty:
                 
             remaining_mask = ~opt_df['is_locked'].values
             
+            # จัดสรรแบบเหมายกกลุ่มย่อย (Cluster-based Allocation) เพื่อความต่อเนื่องของพื้นที่
+            unique_clusters = opt_df['cluster_id'].unique()
+            for c_id in unique_clusters:
+                if c_id == -1: continue # ข้ามจุดเดี่ยวที่ไม่อยู่ในกลุ่ม
+                c_indices = opt_df[(opt_df['cluster_id'] == c_id) & remaining_mask].index.tolist()
+                if not c_indices: continue
+                
+                # หาว่ากลุ่มนี้อยู่ใกล้รถคันไหนที่สุด
+                c_lat = opt_df.loc[c_indices, lat_col].mean()
+                c_lon = opt_df.loc[c_indices, lon_col].mean()
+                
+                best_t = None
+                min_c_dist = float('inf')
+                for t in active_trucks:
+                    if t not in centers: continue
+                    dist = (centers[t][0] - c_lat)**2 + (centers[t][1] - c_lon)**2
+                    if dist < min_c_dist:
+                        min_c_dist = dist
+                        best_t = t
+                if not best_t: best_t = active_trucks[0]
+                
+                # เหมาทั้งกลุ่มให้รถคันนี้
+                for idx in c_indices:
+                    opt_df.at[idx, 'เบอร์รถใหม่'] = best_t
+                    current_daily_loads[best_t] += daily_matrix[idx]
+                    remaining_mask[idx] = False
+
+            # จัดสรรจุดที่เหลือรายจุด
             while remaining_mask.any():
                 max_deficit_ratio = -float('inf')
                 starving_truck = None
@@ -297,7 +336,7 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังจัดสรรเส้นทาง... 🚚💨</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังจัดระเบียบพื้นที่และตัดสายส่ง... 🚚💨</div>'''
         except FileNotFoundError:
             loader_html = '<div class="custom-truck-loader">กำลังประมวลผล...</div>'
             
@@ -316,7 +355,6 @@ if df is not None and not df.empty:
         daily_matrix = st.session_state['daily_matrix']
         all_trucks_after = sorted(res_df['เบอร์รถใหม่'].dropna().unique().tolist())
         
-        # 📌 สลับข้อมูลหลักไปใช้ตัวจำลองทันที ถ้ามีการกดปุ่มจำลองแล้ว
         active_res_df = st.session_state.get('simulated_df', res_df)
         active_matrix = st.session_state.get('simulated_matrix', daily_matrix)
         
@@ -354,7 +392,6 @@ if df is not None and not df.empty:
             })
         st.dataframe(pd.DataFrame(daily_summary), use_container_width=True)
         
-        # 📌 ระบบ AI แนะนำและปุ่มจำลองผลลัพธ์
         st.markdown("#### 💡 ระบบผู้ช่วยอัจฉริยะ (AI Day-Shift Optimization)")
         recs_df = get_recommendations(res_df, daily_matrix)
         
@@ -425,7 +462,7 @@ if df is not None and not df.empty:
             components.html(m1.get_root().render(), height=450)
 
         with map_col2:
-            st.markdown("<div style='text-align:center; color:#002D62; font-weight:bold;'>โซนการวิ่งสายใหม่ (After Simulation)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#002D62; font-weight:bold;'>โซนการวิ่งสายใหม่ (Anti-Overlap Optimized)</div>", unsafe_allow_html=True)
             m2 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m2)
             for _, r in map_df_after.iterrows():
@@ -447,7 +484,7 @@ if df is not None and not df.empty:
         st.dataframe(detail_df, use_container_width=True)
         
         st.markdown("---")
-        st.markdown("<div style='text-align:center; margin-bottom: 10px;'><b>📌 เมื่อผลลัพธ์จำลองเป็นที่น่าพอใจแล้ว สามารถดาวน์โหลดข้อมูลไปใช้งานได้ทันที</b></div>", unsafe_allow_html=True)
+        st.markdown("<div style='text-align:center; margin-bottom: 10px;'><b>📌 เมื่อผลลัพธ์สมบูรณ์แบบแล้ว สามารถดาวน์โหลดข้อมูลไปใช้งานได้ทันที</b></div>", unsafe_allow_html=True)
         
         @st.cache_data
         def convert_df_to_bytes(df):
