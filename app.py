@@ -107,7 +107,9 @@ if df is not None and not df.empty:
     total_vol_available = df[vol_col].sum()
     sys_pct = (total_vol_available / 4160) * 100
     
-    active_trucks = [t for t in available_trucks if t != base_truck] + [new_truck_name]
+    active_trucks = [t for t in available_trucks if t != base_truck]
+    if new_truck_name not in active_trucks:
+        active_trucks.append(new_truck_name)
     
     if 'slider_init' not in st.session_state or st.session_state.get('base_truck') != base_truck or st.session_state.get('new_truck') != new_truck_name:
         st.session_state.truck_pcts = {}
@@ -175,7 +177,7 @@ if df is not None and not df.empty:
             target_pcts[t] = val
             st.session_state.truck_pcts[t] = val
 
-    # จับค่าว่า UI ตัวไหนถูกล็อกไว้บ้าง เพื่อส่งต่อให้ AI Algorithm รับรู้
+    # จับค่าว่า UI ตัวไหนถูกล็อกไว้บ้าง เพื่อส่งต่อให้ AI Algorithm
     locked_ui_trucks = [t for t in active_trucks if st.session_state.get(f"lock_{t}", False)]
     # -------------------------------------------------------------
 
@@ -210,9 +212,10 @@ if df is not None and not df.empty:
         opt_df['is_locked'] = (opt_df['VIP_Status'].astype(str).str.upper() == 'VIP') | (opt_df[id_col].astype(str).isin(manual_locks))
         
         has_base = base_t != "(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)"
-        active_trucks = [t for t in available_trucks if t != base_t] + [new_t]
-        
-        # กำหนดเป้าหมายโควตารายเดือนตามเปอร์เซ็นต์ที่ผู้ใช้ปรับ
+        active_trucks = [t for t in available_trucks if t != base_t]
+        if new_t not in active_trucks:
+            active_trucks.append(new_t)
+            
         monthly_targets = {t: 4160 * (pct_dict.get(t, 100) / 100) for t in active_trucks}
         if has_base: monthly_targets[base_t] = 0 
         
@@ -228,7 +231,10 @@ if df is not None and not df.empty:
         if has_base and base_t in centers: centers[new_t] = centers[base_t]
         else:
             ul_data = opt_df[~opt_df['is_locked']]
-            if not ul_data.empty: centers[new_t] = (np.average(ul_data[lat_col]), np.average(ul_data[lon_col]))
+            if not ul_data.empty: 
+                centers[new_t] = (np.average(ul_data[lat_col]), np.average(ul_data[lon_col]))
+            elif active_trucks:
+                centers[new_t] = centers[active_trucks[0]]
 
         for iteration in range(2):
             current_loads = {t: 0 for t in active_trucks + ([base_t] if has_base else [])}
@@ -243,29 +249,37 @@ if df is not None and not df.empty:
             remaining_mask = ~opt_df['is_locked'].values
             
             while remaining_mask.any():
-                # ✨ STRICT CAP LOGIC: กรองเฉพาะรถที่โควตายังไม่เต็ม
-                eligible_trucks = [t for t in active_trucks if current_loads[t] < monthly_targets[t]]
+                # ✨ PRIORITY TIER LOGIC (คัดกรองรถที่จะได้รับงาน)
+                # Tier 1: รถที่ถูกกด "ล็อก" จะต้องได้รับงานจนเต็มเป้าก่อน
+                tier1 = [t for t in active_trucks if t in locked_ui_list and current_loads[t] < monthly_targets.get(t, 0)]
+                # Tier 2: รถที่ไม่ได้ล็อก (Buffer) รอรับงานที่เหลือเมื่อ Tier 1 อิ่มแล้ว
+                tier2 = [t for t in active_trucks if t not in locked_ui_list and current_loads[t] < monthly_targets.get(t, 0)]
                 
-                # Fallback 1: ถ้ารถทุกคันโควตาเต็มแล้ว ให้ดันงานส่วนเกินไปให้รถที่ "ไม่ได้ล็อก" รับกรรมแทน
-                if not eligible_trucks:
-                    eligible_trucks = [t for t in active_trucks if t not in locked_ui_list]
-                    
-                # Fallback 2: แต่ถ้าผู้ใช้ดันกดล็อกรถทุกคันเลย ก็ต้องยอมเกลี่ยให้รถทุกคันเท่าๆ กัน
-                if not eligible_trucks:
-                    eligible_trucks = active_trucks
+                if tier1:
+                    eligible_trucks = tier1
+                elif tier2:
+                    eligible_trucks = tier2
+                else:
+                    # Fallback กรณีน้ำเหลือเกินโควตาทุกคัน (เศษจุดทศนิยม) ให้ยัดลงรถที่ไม่ได้ล็อก
+                    unlocked = [t for t in active_trucks if t not in locked_ui_list]
+                    eligible_trucks = unlocked if unlocked else active_trucks
                 
                 max_deficit_ratio = -float('inf')
                 starving_truck = None
                 
                 for t in eligible_trucks:
-                    if monthly_targets[t] <= 0: continue
+                    if monthly_targets.get(t, 0) <= 0: continue
                     ratio = (monthly_targets[t] - current_loads[t]) / monthly_targets[t]
                     if ratio > max_deficit_ratio:
                         max_deficit_ratio = ratio
                         starving_truck = t
                         
-                if starving_truck is None: starving_truck = new_t
+                if starving_truck is None: 
+                    starving_truck = eligible_trucks[0] if eligible_trucks else new_t
                 
+                if starving_truck not in centers:
+                    centers[starving_truck] = (np.average(coords[:, 0]), np.average(coords[:, 1]))
+                    
                 c_lat, c_lon = centers[starving_truck]
                 rem_indices = np.where(remaining_mask)[0]
                 rem_coords = coords[rem_indices]
