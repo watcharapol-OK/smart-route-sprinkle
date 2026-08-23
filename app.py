@@ -28,34 +28,17 @@ st.markdown('''
         #MainMenu {visibility: hidden;} footer {visibility: hidden;}
         
         .stSpinner > div > div { display: none !important; }
-        @keyframes drive {
-            0% { transform: translateX(-100%); }
-            50% { transform: translateX(100%); }
-            100% { transform: translateX(-100%); }
-        }
-        .custom-truck-loader {
-            text-align: center; padding: 2rem; color: #002D62; font-weight: bold; font-size: 1.2rem;
-            overflow: hidden; border-radius: 10px; background-color: #E8F4F8; border: 2px dashed #002D62; margin-bottom: 20px;
-        }
+        @keyframes drive { 0% { transform: translateX(-100%); } 50% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
+        .custom-truck-loader { text-align: center; padding: 2rem; color: #002D62; font-weight: bold; font-size: 1.2rem; overflow: hidden; border-radius: 10px; background-color: #E8F4F8; border: 2px dashed #002D62; margin-bottom: 20px; }
         .custom-truck-loader img { width: 150px; animation: drive 3s infinite ease-in-out; }
         
-        /* สไตล์ปุ่มดาวน์โหลด */
-        [data-testid="stDownloadButton"] > button {
-            background-color: #28A745 !important;
-            color: white !important;
-            border: none !important;
-            padding: 0.8rem 2rem;
-            font-size: 1.1rem;
-        }
-        [data-testid="stDownloadButton"] > button:hover {
-            background-color: #218838 !important;
-            box-shadow: 0 4px 8px rgba(40, 167, 69, 0.4);
-        }
+        [data-testid="stDownloadButton"] > button { background-color: #28A745 !important; color: white !important; border: none !important; padding: 0.8rem 2rem; font-size: 1.1rem; }
+        [data-testid="stDownloadButton"] > button:hover { background-color: #218838 !important; box-shadow: 0 4px 8px rgba(40, 167, 69, 0.4); }
     </style>
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Proportional Target Allocation)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Daily Load Constraint & Day-Shift Optimizer)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...")
@@ -77,17 +60,11 @@ if sheet_url:
     try:
         with open("truck.jpg", "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode()
-        loader_html = f'''
-        <div class="custom-truck-loader">
-            <img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>
-            กำลังเชื่อมต่อฐานข้อมูล กรุณารอสักครู่... 💦
-        </div>
-        '''
+        loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังเชื่อมต่อฐานข้อมูล... 💦</div>'''
     except FileNotFoundError:
         loader_html = '<div class="custom-truck-loader">กำลังโหลดข้อมูล...</div>'
         
     loading_placeholder.markdown(loader_html, unsafe_allow_html=True)
-    
     df = load_data_from_sheet(sheet_url)
     time.sleep(1) 
     loading_placeholder.empty() 
@@ -121,8 +98,8 @@ if df is not None and not df.empty:
     new_truck_name = st.sidebar.text_input("ตั้งชื่อเบอร์รถคันใหม่", value="15112")
     
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### 🎛️ 3. ปรับโควตางานรายคัน (%)")
-    st.sidebar.caption("100% = 4,160 ถัง/เดือน")
+    st.sidebar.markdown("### 🎛️ 3. ล็อกเพดานรายวัน (%)")
+    st.sidebar.caption("100% = 160 ถัง/วัน (รับประกันไม่เกินเพดาน)")
     
     target_pcts = {}
     for t in available_trucks:
@@ -134,6 +111,26 @@ if df is not None and not df.empty:
     st.sidebar.markdown("### 🔒 4. ล็อก Key Account")
     manual_vips = st.sidebar.multiselect("เลือกรหัสสมาชิกที่ห้ามย้ายสาย", options=df[id_col].astype(str).unique().tolist(), default=[])
 
+    def get_daily_vols(data_df):
+        daily_matrix = np.zeros((len(data_df), 6)) 
+        for i, row in data_df.iterrows():
+            vol = row[vol_col]
+            day_str = str(row.get(day_col, '')).replace(' ', '')
+            days = []
+            if 'จันทร์' in day_str or 'จ.' in day_str: days.append(0)
+            if 'อังคาร' in day_str or 'อ.' in day_str: days.append(1)
+            if 'พุธ' in day_str or 'พ.' in day_str and 'พฤ' not in day_str: days.append(2)
+            if 'พฤหัส' in day_str or 'พฤ.' in day_str: days.append(3)
+            if 'ศุกร์' in day_str or 'ศ.' in day_str: days.append(4)
+            if 'เสาร์' in day_str or 'ส.' in day_str: days.append(5)
+            
+            if not days: days = [0, 1, 2, 3, 4, 5] 
+            
+            vol_per_day = vol / (len(days) * 4.333) 
+            for d in days:
+                daily_matrix[i, d] = vol_per_day
+        return daily_matrix
+
     def run_fast_allocation(data, base_t, new_t, pct_dict, manual_locks):
         opt_df = data.copy()
         opt_df['เบอร์รถใหม่'] = 'ยังไม่จัด'
@@ -142,35 +139,31 @@ if df is not None and not df.empty:
         has_base = base_t != "(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)"
         active_trucks = [t for t in available_trucks if t != base_t] + [new_t]
         
-        targets = {t: math.floor(4160 * (pct_dict.get(t, 100) / 100)) for t in active_trucks}
-        if has_base: targets[base_t] = 0 
-        current_loads = {t: 0 for t in active_trucks + ([base_t] if has_base else [])}
+        daily_targets = {t: 160.0 * (pct_dict.get(t, 100) / 100) for t in active_trucks}
+        if has_base: daily_targets[base_t] = 0 
         
+        daily_matrix = get_daily_vols(opt_df)
         coords = opt_df[[lat_col, lon_col]].values
-        vols = opt_df[vol_col].values
         
-        locked_indices = np.where(opt_df['is_locked'].values)[0]
-        for idx in locked_indices:
-            orig_t = str(opt_df.at[idx, truck_col])
-            opt_df.at[idx, 'เบอร์รถใหม่'] = orig_t
-            if orig_t in current_loads:
-                current_loads[orig_t] += vols[idx]
-            
         centers = {}
         for t in available_trucks:
             t_data = opt_df[opt_df[truck_col].astype(str) == t]
             if not t_data.empty: centers[t] = (np.average(t_data[lat_col]), np.average(t_data[lon_col]))
             
-        if has_base and base_t in centers:
-            centers[new_t] = centers[base_t]
+        if has_base and base_t in centers: centers[new_t] = centers[base_t]
         else:
             ul_data = opt_df[~opt_df['is_locked']]
             if not ul_data.empty: centers[new_t] = (np.average(ul_data[lat_col]), np.average(ul_data[lon_col]))
 
         for iteration in range(2):
-            current_loads = {t: 0 for t in active_trucks + ([base_t] if has_base else [])}
+            current_daily_loads = {t: np.zeros(6) for t in active_trucks + ([base_t] if has_base else [])}
+            locked_indices = np.where(opt_df['is_locked'].values)[0]
+            
             for idx in locked_indices:
-                current_loads[str(opt_df.at[idx, truck_col])] += vols[idx]
+                orig_t = str(opt_df.at[idx, truck_col])
+                opt_df.at[idx, 'เบอร์รถใหม่'] = orig_t
+                if orig_t in current_daily_loads:
+                    current_daily_loads[orig_t] += daily_matrix[idx]
                 
             remaining_mask = ~opt_df['is_locked'].values
             
@@ -179,8 +172,9 @@ if df is not None and not df.empty:
                 starving_truck = None
                 
                 for t in active_trucks:
-                    if targets[t] <= 0: continue
-                    ratio = (targets[t] - current_loads[t]) / targets[t]
+                    if daily_targets[t] <= 0: continue
+                    busiest_day_load = np.max(current_daily_loads[t])
+                    ratio = (daily_targets[t] - busiest_day_load) / daily_targets[t]
                     if ratio > max_deficit_ratio:
                         max_deficit_ratio = ratio
                         starving_truck = t
@@ -192,12 +186,25 @@ if df is not None and not df.empty:
                 rem_coords = coords[rem_indices]
                 
                 dists = (rem_coords[:, 0] - c_lat)**2 + (rem_coords[:, 1] - c_lon)**2
-                best_local_idx = np.argmin(dists)
-                best_global_idx = rem_indices[best_local_idx]
+                sorted_local_indices = np.argsort(dists)
                 
-                opt_df.at[best_global_idx, 'เบอร์รถใหม่'] = starving_truck
-                current_loads[starving_truck] += vols[best_global_idx]
-                remaining_mask[best_global_idx] = False
+                assigned = False
+                for local_idx in sorted_local_indices:
+                    global_idx = rem_indices[local_idx]
+                    pt_daily = daily_matrix[global_idx]
+                    
+                    if np.all(current_daily_loads[starving_truck] + pt_daily <= daily_targets[starving_truck] * 1.05):
+                        opt_df.at[global_idx, 'เบอร์รถใหม่'] = starving_truck
+                        current_daily_loads[starving_truck] += pt_daily
+                        remaining_mask[global_idx] = False
+                        assigned = True
+                        break
+                
+                if not assigned:
+                    global_idx = rem_indices[sorted_local_indices[0]]
+                    opt_df.at[global_idx, 'เบอร์รถใหม่'] = starving_truck
+                    current_daily_loads[starving_truck] += daily_matrix[global_idx]
+                    remaining_mask[global_idx] = False
                 
             for t in active_trucks:
                 t_mask = opt_df['เบอร์รถใหม่'] == t
@@ -205,7 +212,90 @@ if df is not None and not df.empty:
                     centers[t] = (np.average(coords[t_mask, 0]), np.average(coords[t_mask, 1]))
                 
         opt_df['สถานะ'] = np.where(opt_df[truck_col].astype(str) == opt_df['เบอร์รถใหม่'], 'คงเดิม', 'ย้ายไปสาย ' + opt_df['เบอร์รถใหม่'])
-        return opt_df
+        return opt_df, daily_matrix
+
+    # 📌 สมองกลใหม่: คำนวณแนะนำการย้ายวันเชิงพื้นที่ (AI Day-Shift Assistant)
+    def recommend_day_shifts(data_df, daily_mat):
+        recs = []
+        days_str_map = {0: 'จันทร์', 1: 'อังคาร', 2: 'พุธ', 3: 'พฤหัสฯ', 4: 'ศุกร์', 5: 'เสาร์'}
+        trucks = data_df['เบอร์รถใหม่'].dropna().unique()
+        
+        for t in trucks:
+            t_mask = data_df['เบอร์รถใหม่'] == t
+            if not t_mask.any(): continue
+            
+            t_indices = data_df[t_mask].index.tolist()
+            t_daily_vols = daily_mat[t_indices].sum(axis=0)
+            
+            # หาวันที่โหลดทะลุเป้า (>160) และวันที่ว่าง (<150)
+            over_days = [d for d in range(6) if t_daily_vols[d] > 160]
+            under_days = [d for d in range(6) if t_daily_vols[d] < 150]
+            
+            if not over_days or not under_days: continue
+            
+            # หาจุดศูนย์กลางของแต่ละวัน
+            day_centers = {}
+            pts_by_day = {i: [] for i in range(6)}
+            
+            for idx in t_indices:
+                pt_daily = daily_mat[idx]
+                # กรองเอาเฉพาะลูกค้าที่ลงวันเดียวเพียวๆ (เพื่อง่ายต่อการย้าย)
+                active_days = np.where(pt_daily > 0)[0]
+                if len(active_days) == 1:
+                    pts_by_day[active_days[0]].append(idx)
+                    
+            for d in range(6):
+                if pts_by_day[d]:
+                    day_centers[d] = (data_df.loc[pts_by_day[d], lat_col].mean(), data_df.loc[pts_by_day[d], lon_col].mean())
+            
+            for d_over in over_days:
+                excess = t_daily_vols[d_over] - 155 # พยายามย้ายออกให้เหลือ 155 ถัง
+                if excess <= 0 or d_over not in day_centers: continue
+                
+                # หาวันที่ว่างและ "ศูนย์กลางอยู่ใกล้กันมากที่สุด"
+                best_under_day = None
+                min_dist = float('inf')
+                for d_under in under_days:
+                    if d_under in day_centers:
+                        dist = (day_centers[d_over][0] - day_centers[d_under][0])**2 + (day_centers[d_over][1] - day_centers[d_under][1])**2
+                        if dist < min_dist:
+                            min_dist = dist
+                            best_under_day = d_under
+                            
+                if best_under_day is None: continue
+                
+                # เลือกลูกค้าที่อยู่ "ขอบ" ของวันเดิม และใกล้กับวันใหม่มากที่สุด
+                c_under = day_centers[best_under_day]
+                c_over = day_centers[d_over]
+                
+                candidates = []
+                for idx in pts_by_day[d_over]:
+                    lat, lon = data_df.loc[idx, lat_col], data_df.loc[idx, lon_col]
+                    dist_under = (lat - c_under[0])**2 + (lon - c_under[1])**2
+                    dist_over = (lat - c_over[0])**2 + (lon - c_over[1])**2
+                    # คะแนนความเหมาะสม (ยิ่งติดขอบยิ่งติดลบเยอะ)
+                    score = dist_under - dist_over 
+                    candidates.append({'idx': idx, 'score': score, 'vol': daily_mat[idx][d_over]})
+                    
+                # เรียงลำดับจากลูกค้าที่อยู่ชิดขอบมากที่สุด
+                candidates.sort(key=lambda x: x['score'])
+                
+                shifted_vol = 0
+                for cand in candidates:
+                    if shifted_vol >= excess: break
+                    idx = cand['idx']
+                    recs.append({
+                        'เบอร์รถ': t,
+                        'รหัสสมาชิก': data_df.loc[idx, id_col],
+                        'ชื่อ': data_df.loc[idx, name_col] if name_col else '',
+                        'ยอด(ถัง/วัน)': round(cand['vol'], 1),
+                        'วันเดิม': days_str_map[d_over],
+                        'แนะนำย้ายไป': days_str_map[best_under_day],
+                        'เหตุผล': f"จุดส่งอยู่ชิดรอยต่อของพื้นที่วัน{days_str_map[best_under_day]}"
+                    })
+                    shifted_vol += cand['vol']
+                    
+        return pd.DataFrame(recs)
 
     st.sidebar.markdown("---")
     if st.sidebar.button("🚀 ประมวลผลตัดสายส่ง", use_container_width=True):
@@ -213,37 +303,28 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''
-            <div class="custom-truck-loader">
-                <img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>
-                กำลังคำนวณและเกลี่ยเส้นทางให้คุ้มค่าที่สุด... 🚚💨
-            </div>
-            '''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังจัดสรรเส้นทาง (คุมเข้มรายวัน 160 ถัง)... 🚚💨</div>'''
         except FileNotFoundError:
             loader_html = '<div class="custom-truck-loader">กำลังประมวลผล...</div>'
             
         calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
         
-        st.session_state['result_df'] = run_fast_allocation(df, base_truck, new_truck_name, target_pcts, manual_vips)
+        res_df, daily_matrix = run_fast_allocation(df, base_truck, new_truck_name, target_pcts, manual_vips)
+        st.session_state['result_df'] = res_df
+        st.session_state['daily_matrix'] = daily_matrix
         time.sleep(0.5) 
         calc_placeholder.empty()
 
     if 'result_df' in st.session_state:
         res_df = st.session_state['result_df']
+        daily_matrix = st.session_state['daily_matrix']
+        all_trucks_after = sorted(res_df['เบอร์รถใหม่'].dropna().unique().tolist())
         
         st.markdown("### 📊 สรุปภาพรวมยอดการจัดส่ง")
         col1, col2 = st.columns(2)
         
-        sum_before = df.groupby(truck_col).agg(
-            จำนวนสมาชิก=pd.NamedAgg(column=truck_col, aggfunc='count'), 
-            **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}
-        ).reset_index()
-        
-        sum_after = res_df.groupby('เบอร์รถใหม่').agg(
-            จำนวนสมาชิก=pd.NamedAgg(column='เบอร์รถใหม่', aggfunc='count'), 
-            **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}
-        ).reset_index()
-        
+        sum_before = df.groupby(truck_col).agg(จำนวนสมาชิก=pd.NamedAgg(column=truck_col, aggfunc='count'), **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}).reset_index()
+        sum_after = res_df.groupby('เบอร์รถใหม่').agg(จำนวนสมาชิก=pd.NamedAgg(column='เบอร์รถใหม่', aggfunc='count'), **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}).reset_index()
         sum_after['ปริมาณงาน(%)'] = (sum_after['ยอดรับน้ำ(ถัง/เดือน)'] / 4160 * 100).round(1).astype(str) + '%'
 
         with col1:
@@ -252,9 +333,34 @@ if df is not None and not df.empty:
         with col2:
             st.markdown("**หลังปรับโครงสร้าง**")
             st.dataframe(sum_after, use_container_width=True)
+            
+        st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)")
+        daily_summary = []
+        for t in all_trucks_after:
+            t_mask = res_df['เบอร์รถใหม่'] == t
+            t_daily = daily_matrix[t_mask].sum(axis=0)
+            daily_summary.append({
+                'เบอร์รถ': t,
+                'จันทร์': round(t_daily[0]),
+                'อังคาร': round(t_daily[1]),
+                'พุธ': round(t_daily[2]),
+                'พฤหัสฯ': round(t_daily[3]),
+                'ศุกร์': round(t_daily[4]),
+                'เสาร์': round(t_daily[5]),
+                'โหลดหนักสุด (ถัง/วัน)': round(max(t_daily))
+            })
+        st.dataframe(pd.DataFrame(daily_summary), use_container_width=True)
+        
+        # 📌 แสดงตาราง AI ผู้ช่วยแนะนำการย้ายวัน
+        st.markdown("#### 💡 ระบบผู้ช่วยอัจฉริยะ (AI Day-Shift Assistant)")
+        shift_recs_df = recommend_day_shifts(res_df, daily_matrix)
+        if not shift_recs_df.empty:
+            st.warning("พบรถที่มีงานบางวันกระจุกตัวเกิน 160 ถัง ระบบขอแนะนำให้โทรเจรจาย้ายวันจัดส่งกับลูกค้ารายต่อไปนี้ (เนื่องจากเป็นจุดที่อยู่ติดกับพื้นที่ของวันที่งานยังว่าง):")
+            st.dataframe(shift_recs_df, use_container_width=True)
+        else:
+            st.success("✅ ยอดเยี่ยมมาก! โหลดรายวันของรถทุกคันอยู่ในเกณฑ์สมดุล ไม่มีความจำเป็นต้องย้ายวันจัดส่งของลูกค้าครับ")
 
         st.markdown("### 🗺️ แผนที่เปรียบเทียบการกระจายตัว (เชิงพื้นที่)")
-        all_trucks_after = sorted(res_df['เบอร์รถใหม่'].dropna().unique().tolist())
         view_options = ["แสดงทั้งหมด (แยกสีตามเบอร์รถ)"] + all_trucks_after
         
         col_filter, _ = st.columns([1, 1])
@@ -306,10 +412,9 @@ if df is not None and not df.empty:
 
         st.markdown("### 📋 รายละเอียดข้อมูลการโยกย้ายสมาชิก")
         
-        # 📌 จัดเรียงคอลัมน์ใหม่ (เพิ่มคอลัมน์ รอบส่ง/วันจัดส่ง เข้าไปด้วย)
         display_cols = [id_col]
         if name_col: display_cols.append(name_col)
-        if day_col: display_cols.append(day_col) # <-- เพิ่มคอลัมน์นี้
+        if day_col: display_cols.append(day_col) 
         display_cols.extend([vol_col, truck_col, 'เบอร์รถใหม่', 'สถานะ'])
         
         detail_df = res_df[display_cols].rename(columns={truck_col: 'เบอร์รถเดิม (ก่อนปรับ)'})
