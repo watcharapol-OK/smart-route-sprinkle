@@ -11,7 +11,6 @@ import base64
 
 st.set_page_config(page_title="Smart Route Rebalancer", layout="wide", initial_sidebar_state="expanded")
 
-# 📌 CSS ธีม Ultra Premium
 st.markdown('''
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap');
@@ -43,7 +42,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Proportional Allocation - High Speed)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Proportional Target Allocation)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...")
@@ -61,8 +60,24 @@ def load_data_from_sheet(url):
 
 df = None
 if sheet_url:
-    with st.spinner('กำลังโหลดข้อมูล...'):
-        df = load_data_from_sheet(sheet_url)
+    loading_placeholder = st.empty()
+    try:
+        with open("truck.jpg", "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode()
+        loader_html = f'''
+        <div class="custom-truck-loader">
+            <img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>
+            กำลังเชื่อมต่อฐานข้อมูล กรุณารอสักครู่... 💦
+        </div>
+        '''
+    except FileNotFoundError:
+        loader_html = '<div class="custom-truck-loader">กำลังโหลดข้อมูล...</div>'
+        
+    loading_placeholder.markdown(loader_html, unsafe_allow_html=True)
+    
+    df = load_data_from_sheet(sheet_url)
+    time.sleep(1) 
+    loading_placeholder.empty() 
 
 if df is not None and not df.empty:
     vol_col = next((c for c in df.columns if 'ยอด' in str(c) or 'เดือน' in str(c)), df.columns[-1])
@@ -78,7 +93,7 @@ if df is not None and not df.empty:
 
     df[lat_col] = pd.to_numeric(df[lat_col], errors='coerce')
     df[lon_col] = pd.to_numeric(df[lon_col], errors='coerce')
-    df = df.dropna(subset=[lat_col, lon_col]).reset_index(drop=True) # Reset index ป้องกันบั๊กการดึงพิกัด
+    df = df.dropna(subset=[lat_col, lon_col]).reset_index(drop=True) 
     df[vol_col] = pd.to_numeric(df[vol_col], errors='coerce').fillna(0)
     df['VIP_Status'] = df[vip_col] if vip_col in df.columns else 'ปกติ'
 
@@ -106,9 +121,6 @@ if df is not None and not df.empty:
     st.sidebar.markdown("### 🔒 4. ล็อก Key Account")
     manual_vips = st.sidebar.multiselect("เลือกรหัสสมาชิกที่ห้ามย้ายสาย", options=df[id_col].astype(str).unique().tolist(), default=[])
 
-    # ---------------------------------------------------------
-    # ⚡ สมองกลความเร็วสูง (Vectorized NumPy Execution)
-    # ---------------------------------------------------------
     def run_fast_allocation(data, base_t, new_t, pct_dict, manual_locks):
         opt_df = data.copy()
         opt_df['เบอร์รถใหม่'] = 'ยังไม่จัด'
@@ -121,7 +133,6 @@ if df is not None and not df.empty:
         if has_base: targets[base_t] = 0 
         current_loads = {t: 0 for t in active_trucks + ([base_t] if has_base else [])}
         
-        # คืนค่า VIP เข้าเบอร์รถเดิม
         for idx in opt_df[opt_df['is_locked']].index:
             orig_t = str(opt_df.at[idx, truck_col])
             opt_df.at[idx, 'เบอร์รถใหม่'] = orig_t
@@ -138,13 +149,11 @@ if df is not None and not df.empty:
             ul_data = opt_df[~opt_df['is_locked']]
             if not ul_data.empty: centers[new_t] = (np.average(ul_data[lat_col]), np.average(ul_data[lon_col]))
 
-        # แปลงเป็น NumPy Array เพื่อความเร็วระดับวินาที (Vectorization)
         coords = opt_df[[lat_col, lon_col]].values
         vols = opt_df[vol_col].values
         remaining_mask = ~opt_df['is_locked'].values
         
         for iteration in range(2):
-            # รีเซ็ตโหลดในแต่ละรอบ
             current_loads = {t: 0 for t in active_trucks + ([base_t] if has_base else [])}
             locked_indices = np.where(opt_df['is_locked'].values)[0]
             for idx in locked_indices:
@@ -153,7 +162,6 @@ if df is not None and not df.empty:
             remaining_mask = ~opt_df['is_locked'].values
             
             while remaining_mask.any():
-                # หาระถที่ขาดโควตามากที่สุด
                 max_deficit_ratio = -float('inf')
                 starving_truck = None
                 
@@ -166,22 +174,18 @@ if df is not None and not df.empty:
                         
                 if starving_truck is None: starving_truck = new_t
                 
-                # ประมวลผลระยะทางหลายพันจุด "พร้อมกัน" ด้วย NumPy
                 c_lat, c_lon = centers[starving_truck]
                 rem_indices = np.where(remaining_mask)[0]
                 rem_coords = coords[rem_indices]
                 
-                # สูตรคำนวณระยะทางแบบเวกเตอร์
                 dists = (rem_coords[:, 0] - c_lat)**2 + (rem_coords[:, 1] - c_lon)**2
                 best_local_idx = np.argmin(dists)
                 best_global_idx = rem_indices[best_local_idx]
                 
-                # จ่ายงาน
                 opt_df.at[best_global_idx, 'เบอร์รถใหม่'] = starving_truck
                 current_loads[starving_truck] += vols[best_global_idx]
                 remaining_mask[best_global_idx] = False
                 
-            # อัปเดตศูนย์กลาง
             for t in active_trucks:
                 t_mask = opt_df['เบอร์รถใหม่'] == t
                 if t_mask.any():
@@ -191,10 +195,7 @@ if df is not None and not df.empty:
         return opt_df
 
     st.sidebar.markdown("---")
-    
-    # 📌 นำปุ่มประมวลผลกลับมา ป้องกันเซิร์ฟเวอร์ค้างจากการเปลี่ยนสไลเดอร์รัวๆ
     if st.sidebar.button("🚀 ประมวลผลตัดสายส่ง", use_container_width=True):
-        
         calc_placeholder = st.empty()
         try:
             with open("truck.jpg", "rb") as image_file:
@@ -210,9 +211,7 @@ if df is not None and not df.empty:
             
         calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
         
-        # รันการคำนวณด้วยความเร็วสูง
         st.session_state['result_df'] = run_fast_allocation(df, base_truck, new_truck_name, target_pcts, manual_vips)
-        
         time.sleep(0.5) 
         calc_placeholder.empty()
 
@@ -221,9 +220,19 @@ if df is not None and not df.empty:
         
         st.markdown("### 📊 สรุปภาพรวมยอดการจัดส่ง")
         col1, col2 = st.columns(2)
-        sum_before = df.groupby(truck_col).agg(จำนวนร้าน=pd.NamedAgg(column=truck_col, aggfunc='count'), ยอดรวม=pd.NamedAgg(column=vol_col, aggfunc='sum')).reset_index()
-        sum_after = res_df.groupby('เบอร์รถใหม่').agg(จำนวนร้าน=pd.NamedAgg(column='เบอร์รถใหม่', aggfunc='count'), ยอดรวม=pd.NamedAgg(column=vol_col, aggfunc='sum')).reset_index()
-        sum_after['ความหนาแน่น (%)'] = (sum_after['ยอดรวม'] / 4160 * 100).round(1).astype(str) + '%'
+        
+        # 📌 อัปเดตชื่อคอลัมน์ใหม่ตามที่ต้องการ
+        sum_before = df.groupby(truck_col).agg(
+            จำนวนสมาชิก=pd.NamedAgg(column=truck_col, aggfunc='count'), 
+            **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}
+        ).reset_index()
+        
+        sum_after = res_df.groupby('เบอร์รถใหม่').agg(
+            จำนวนสมาชิก=pd.NamedAgg(column='เบอร์รถใหม่', aggfunc='count'), 
+            **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}
+        ).reset_index()
+        
+        sum_after['ปริมาณงาน(%)'] = (sum_after['ยอดรับน้ำ(ถัง/เดือน)'] / 4160 * 100).round(1).astype(str) + '%'
 
         with col1:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
