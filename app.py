@@ -305,8 +305,12 @@ if df is not None and not df.empty:
             components.html(m2.get_root().render(), height=450)
 
         st.markdown("### 📋 รายละเอียดข้อมูลการโยกย้ายสมาชิก")
-        display_cols = [id_col, vol_col, truck_col, 'เบอร์รถใหม่', 'สถานะ']
-        if name_col: display_cols.insert(1, name_col)
+        
+        # 📌 จัดเรียงคอลัมน์ใหม่ (เพิ่มคอลัมน์ รอบส่ง/วันจัดส่ง เข้าไปด้วย)
+        display_cols = [id_col]
+        if name_col: display_cols.append(name_col)
+        if day_col: display_cols.append(day_col) # <-- เพิ่มคอลัมน์นี้
+        display_cols.extend([vol_col, truck_col, 'เบอร์รถใหม่', 'สถานะ'])
         
         detail_df = res_df[display_cols].rename(columns={truck_col: 'เบอร์รถเดิม (ก่อนปรับ)'})
         st.dataframe(detail_df, use_container_width=True)
@@ -314,7 +318,6 @@ if df is not None and not df.empty:
         st.markdown("---")
         st.markdown("<div style='text-align:center; margin-bottom: 10px;'><b>📌 เมื่อจัดสายส่งเป็นที่น่าพอใจแล้ว สามารถดาวน์โหลดข้อมูลเพื่อนำไปใช้อัปเดตได้เลย</b></div>", unsafe_allow_html=True)
         
-        # 📌 แปลง DataFrame เป็น Bytes พร้อมเข้ารหัส utf-8-sig
         @st.cache_data
         def convert_df_to_bytes(df):
             return df.to_csv(index=False).encode('utf-8-sig')
