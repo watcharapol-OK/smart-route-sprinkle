@@ -75,7 +75,6 @@ if df is not None and not df.empty:
     lon_col = next((c for c in df.columns if 'ลอง' in str(c) or 'lon' in str(c).lower()), None)
     truck_col = next((c for c in df.columns if 'เบอร์รถ' in str(c) or 'รถ' in str(c)), None)
     vip_col = next((c for c in df.columns if 'VIP' in str(c).upper() or 'เงื่อนไข' in str(c)), None)
-    day_col = next((c for c in df.columns if 'สัปดาห์' in str(c) or 'วัน' in str(c)), None)
     id_col = next((c for c in df.columns if 'รหัส' in str(c) or 'ID' in str(c).upper()), df.columns[0])
     name_col = next((c for c in df.columns if 'ชื่อ' in str(c) or 'name' in str(c).lower()), None)
     
@@ -88,9 +87,16 @@ if df is not None and not df.empty:
     df['VIP_Status'] = df[vip_col] if vip_col in df.columns else 'ปกติ'
 
     st.sidebar.success(f"✅ โหลดข้อมูลสำเร็จ: {len(df)} รายการ")
-    st.sidebar.markdown("---")
     
-    st.sidebar.markdown("### ⚙️ 2. รูปแบบการสร้างสายใหม่")
+    # -------------------------------------------------------------
+    # เพิ่มเมนูให้ผู้ใช้เลือกคอลัมน์รอบวันจัดส่งเอง ป้องกันระบบคำนวณพลาด
+    # -------------------------------------------------------------
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### ⚙️ 2. ตั้งค่าคอลัมน์และสายใหม่")
+    
+    guessed_day = next((c for c in df.columns if 'สัปดาห์' in str(c) or 'วัน' in str(c) or 'รอบ' in str(c) or 'day' in str(c).lower()), df.columns[0])
+    day_col = st.sidebar.selectbox("📅 เลือกคอลัมน์ 'วันจัดส่ง':", options=df.columns, index=df.columns.tolist().index(guessed_day) if guessed_day in df.columns else 0)
+    
     available_trucks = [str(x) for x in df[truck_col].unique() if str(x) != 'nan']
     base_truck_options = ["(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)"] + available_trucks
     
@@ -99,9 +105,6 @@ if df is not None and not df.empty:
     
     st.sidebar.markdown("---")
     
-    # -------------------------------------------------------------
-    # ระบบ Auto-Balancing Slider 
-    # -------------------------------------------------------------
     st.sidebar.markdown("### 🎛️ 3. ปรับเป้าหมายรายวัน (%)")
     
     total_vol_available = df[vol_col].sum()
@@ -177,29 +180,33 @@ if df is not None and not df.empty:
             target_pcts[t] = val
             st.session_state.truck_pcts[t] = val
 
-    # จับค่าว่า UI ตัวไหนถูกล็อกไว้บ้าง เพื่อส่งต่อให้ AI Algorithm
     locked_ui_trucks = [t for t in active_trucks if st.session_state.get(f"lock_{t}", False)]
-    # -------------------------------------------------------------
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🔒 4. ล็อก Key Account")
     manual_vips = st.sidebar.multiselect("เลือกรหัสสมาชิกที่ห้ามย้ายสาย", options=df[id_col].astype(str).unique().tolist(), default=[])
 
+    # -------------------------------------------------------------
+    # ปรับปรุงลอจิกอ่านค่ารอบวันจัดส่งให้แม่นยำขึ้นมาก ป้องกันยอดราบเป็นหน้ากลอง
+    # -------------------------------------------------------------
     def get_daily_vols(data_df, override_day_col=None):
         col_to_use = override_day_col if override_day_col else day_col
         daily_matrix = np.zeros((len(data_df), 6)) 
         for i, row in data_df.iterrows():
             vol = row[vol_col]
-            day_str = str(row.get(col_to_use, '')).replace(' ', '')
+            day_str = str(row.get(col_to_use, '')).replace(' ', '').lower()
             days = []
-            if 'จันทร์' in day_str or 'จ.' in day_str: days.append(0)
-            if 'อังคาร' in day_str or 'อ.' in day_str: days.append(1)
-            if 'พุธ' in day_str or 'พ.' in day_str and 'พฤ' not in day_str: days.append(2)
-            if 'พฤหัส' in day_str or 'พฤ.' in day_str: days.append(3)
-            if 'ศุกร์' in day_str or 'ศ.' in day_str: days.append(4)
-            if 'เสาร์' in day_str or 'ส.' in day_str: days.append(5)
             
-            if not days: days = [0, 1, 2, 3, 4, 5] 
+            if 'จันทร์' in day_str or 'จ.' in day_str or day_str == '1' or day_str == 'จ': days.append(0)
+            if 'อังคาร' in day_str or 'อ.' in day_str or day_str == '2' or day_str == 'อ': days.append(1)
+            if ('พุธ' in day_str or 'พ.' in day_str or day_str == '3' or day_str == 'พ') and 'พฤ' not in day_str: days.append(2)
+            if 'พฤหัส' in day_str or 'พฤ.' in day_str or 'พฤ' in day_str or day_str == '4': days.append(3)
+            if 'ศุกร์' in day_str or 'ศ.' in day_str or day_str == '5' or day_str == 'ศ': days.append(4)
+            if 'เสาร์' in day_str or 'ส.' in day_str or day_str == '6' or day_str == 'ส': days.append(5)
+            
+            # ถ้าระบุไม่ได้จริงๆ ค่อยจำยอมให้ไปเกลี่ย 6 วัน (Fallback)
+            if not days: 
+                days = [0, 1, 2, 3, 4, 5] 
             
             vol_per_day = vol / (len(days) * 4.333) 
             for d in days:
@@ -249,10 +256,7 @@ if df is not None and not df.empty:
             remaining_mask = ~opt_df['is_locked'].values
             
             while remaining_mask.any():
-                # ✨ PRIORITY TIER LOGIC (คัดกรองรถที่จะได้รับงาน)
-                # Tier 1: รถที่ถูกกด "ล็อก" จะต้องได้รับงานจนเต็มเป้าก่อน
                 tier1 = [t for t in active_trucks if t in locked_ui_list and current_loads[t] < monthly_targets.get(t, 0)]
-                # Tier 2: รถที่ไม่ได้ล็อก (Buffer) รอรับงานที่เหลือเมื่อ Tier 1 อิ่มแล้ว
                 tier2 = [t for t in active_trucks if t not in locked_ui_list and current_loads[t] < monthly_targets.get(t, 0)]
                 
                 if tier1:
@@ -260,7 +264,6 @@ if df is not None and not df.empty:
                 elif tier2:
                     eligible_trucks = tier2
                 else:
-                    # Fallback กรณีน้ำเหลือเกินโควตาทุกคัน (เศษจุดทศนิยม) ให้ยัดลงรถที่ไม่ได้ล็อก
                     unlocked = [t for t in active_trucks if t not in locked_ui_list]
                     eligible_trucks = unlocked if unlocked else active_trucks
                 
