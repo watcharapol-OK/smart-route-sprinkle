@@ -38,7 +38,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Daily Load Constraint & Day-Shift Optimizer)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Sprinkle 2-Trip Fleet Model: 140-155 / 110-120 ถัง/วัน)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...")
@@ -98,13 +98,13 @@ if df is not None and not df.empty:
     new_truck_name = st.sidebar.text_input("ตั้งชื่อเบอร์รถคันใหม่", value="15112")
     
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### 🎛️ 3. ล็อกเพดานรายวัน (%)")
-    st.sidebar.caption("100% = 160 ถัง/วัน (รับประกันไม่เกินเพดาน)")
+    st.sidebar.markdown("### 🎛️ 3. ปรับเป้าหมายรายวัน (%)")
+    st.sidebar.caption("100% = 150 ถัง/วัน (โมเดลวิ่ง 2 เที่ยวคุ้มค่าที่สุด)")
     
     target_pcts = {}
     for t in available_trucks:
         if t == base_truck: continue
-        target_pcts[t] = st.sidebar.slider(f"เป้าหมายของรถ {t} (%)", min_value=0, max_value=120, value=95, step=1)
+        target_pcts[t] = st.sidebar.slider(f"เป้าหมายของรถ {t} (%)", min_value=0, max_value=120, value=100, step=1)
     target_pcts[new_truck_name] = st.sidebar.slider(f"เป้าหมายของรถสายใหม่ {new_truck_name} (%)", min_value=10, max_value=120, value=100, step=1)
 
     st.sidebar.markdown("---")
@@ -139,7 +139,8 @@ if df is not None and not df.empty:
         has_base = base_t != "(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)"
         active_trucks = [t for t in available_trucks if t != base_t] + [new_t]
         
-        daily_targets = {t: 160.0 * (pct_dict.get(t, 100) / 100) for t in active_trucks}
+        # 📌 อิงเป้าหมายที่ 150 ถัง/วัน
+        daily_targets = {t: 150.0 * (pct_dict.get(t, 100) / 100) for t in active_trucks}
         if has_base: daily_targets[base_t] = 0 
         
         daily_matrix = get_daily_vols(opt_df)
@@ -193,7 +194,8 @@ if df is not None and not df.empty:
                     global_idx = rem_indices[local_idx]
                     pt_daily = daily_matrix[global_idx]
                     
-                    if np.all(current_daily_loads[starving_truck] + pt_daily <= daily_targets[starving_truck] * 1.05):
+                    # 📌 ห้ามวันใดวันหนึ่งเกิน 155 ถัง (เพื่อไม่ให้หลุดโซนคุ้มค่า 140-155)
+                    if np.all(current_daily_loads[starving_truck] + pt_daily <= 155.0):
                         opt_df.at[global_idx, 'เบอร์รถใหม่'] = starving_truck
                         current_daily_loads[starving_truck] += pt_daily
                         remaining_mask[global_idx] = False
@@ -214,7 +216,7 @@ if df is not None and not df.empty:
         opt_df['สถานะ'] = np.where(opt_df[truck_col].astype(str) == opt_df['เบอร์รถใหม่'], 'คงเดิม', 'ย้ายไปสาย ' + opt_df['เบอร์รถใหม่'])
         return opt_df, daily_matrix
 
-    # 📌 สมองกลใหม่: คำนวณแนะนำการย้ายวันเชิงพื้นที่ (AI Day-Shift Assistant)
+    # 📌 สมองกลอัจฉริยะแนะนำการเกลี่ยวัน (Day-Shift Optimizer for 2-Trip Model)
     def recommend_day_shifts(data_df, daily_mat):
         recs = []
         days_str_map = {0: 'จันทร์', 1: 'อังคาร', 2: 'พุธ', 3: 'พฤหัสฯ', 4: 'ศุกร์', 5: 'เสาร์'}
@@ -227,19 +229,18 @@ if df is not None and not df.empty:
             t_indices = data_df[t_mask].index.tolist()
             t_daily_vols = daily_mat[t_indices].sum(axis=0)
             
-            # หาวันที่โหลดทะลุเป้า (>160) และวันที่ว่าง (<150)
-            over_days = [d for d in range(6) if t_daily_vols[d] > 160]
-            under_days = [d for d in range(6) if t_daily_vols[d] < 150]
+            # โซนอันตราย 1: งานล้นเกิน 155 ถัง (เสี่ยงเที่ยว 3)
+            # โซนอันตราย 2: งานตกอยู่ในช่วง 121-139 ถัง (ลักกะปิดลักกะเปิด เที่ยว 2 หลวมเกินไป)
+            over_days = [d for d in range(6) if t_daily_vols[d] > 155 or (121 <= t_daily_vols[d] <= 139)]
+            under_days = [d for d in range(6) if t_daily_vols[d] < 140]
             
             if not over_days or not under_days: continue
             
-            # หาจุดศูนย์กลางของแต่ละวัน
             day_centers = {}
             pts_by_day = {i: [] for i in range(6)}
             
             for idx in t_indices:
                 pt_daily = daily_mat[idx]
-                # กรองเอาเฉพาะลูกค้าที่ลงวันเดียวเพียวๆ (เพื่อง่ายต่อการย้าย)
                 active_days = np.where(pt_daily > 0)[0]
                 if len(active_days) == 1:
                     pts_by_day[active_days[0]].append(idx)
@@ -249,14 +250,14 @@ if df is not None and not df.empty:
                     day_centers[d] = (data_df.loc[pts_by_day[d], lat_col].mean(), data_df.loc[pts_by_day[d], lon_col].mean())
             
             for d_over in over_days:
-                excess = t_daily_vols[d_over] - 155 # พยายามย้ายออกให้เหลือ 155 ถัง
+                target_drop = 150 if t_daily_vols[d_over] > 155 else (t_daily_vols[d_over] - 115) # ดึงลงมาอยู่ในโซน 110-120 หรือ 140-150
+                excess = t_daily_vols[d_over] - target_drop
                 if excess <= 0 or d_over not in day_centers: continue
                 
-                # หาวันที่ว่างและ "ศูนย์กลางอยู่ใกล้กันมากที่สุด"
                 best_under_day = None
                 min_dist = float('inf')
                 for d_under in under_days:
-                    if d_under in day_centers:
+                    if d_under != d_over and d_under in day_centers:
                         dist = (day_centers[d_over][0] - day_centers[d_under][0])**2 + (day_centers[d_over][1] - day_centers[d_under][1])**2
                         if dist < min_dist:
                             min_dist = dist
@@ -264,7 +265,6 @@ if df is not None and not df.empty:
                             
                 if best_under_day is None: continue
                 
-                # เลือกลูกค้าที่อยู่ "ขอบ" ของวันเดิม และใกล้กับวันใหม่มากที่สุด
                 c_under = day_centers[best_under_day]
                 c_over = day_centers[d_over]
                 
@@ -273,17 +273,16 @@ if df is not None and not df.empty:
                     lat, lon = data_df.loc[idx, lat_col], data_df.loc[idx, lon_col]
                     dist_under = (lat - c_under[0])**2 + (lon - c_under[1])**2
                     dist_over = (lat - c_over[0])**2 + (lon - c_over[1])**2
-                    # คะแนนความเหมาะสม (ยิ่งติดขอบยิ่งติดลบเยอะ)
-                    score = dist_under - dist_over 
+                    score = dist_under - dist_over # เลือกตัวที่อยู่ขอบรอยต่อ
                     candidates.append({'idx': idx, 'score': score, 'vol': daily_mat[idx][d_over]})
                     
-                # เรียงลำดับจากลูกค้าที่อยู่ชิดขอบมากที่สุด
                 candidates.sort(key=lambda x: x['score'])
                 
                 shifted_vol = 0
                 for cand in candidates:
                     if shifted_vol >= excess: break
                     idx = cand['idx']
+                    reason = "ยอดอยู่ในโซนไม่คุ้มค่า (121-139 ถัง) ควรกระจายออก" if t_daily_vols[d_over] <= 139 else "ยอดทะลุ 155 ถัง เสี่ยงเบิกเที่ยว 3"
                     recs.append({
                         'เบอร์รถ': t,
                         'รหัสสมาชิก': data_df.loc[idx, id_col],
@@ -291,7 +290,7 @@ if df is not None and not df.empty:
                         'ยอด(ถัง/วัน)': round(cand['vol'], 1),
                         'วันเดิม': days_str_map[d_over],
                         'แนะนำย้ายไป': days_str_map[best_under_day],
-                        'เหตุผล': f"จุดส่งอยู่ชิดรอยต่อของพื้นที่วัน{days_str_map[best_under_day]}"
+                        'คำแนะนำพื้นที่': f"{reason} (จุดส่งชิดรอยต่อวัน{days_str_map[best_under_day]})"
                     })
                     shifted_vol += cand['vol']
                     
@@ -303,7 +302,7 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังจัดสรรเส้นทาง (คุมเข้มรายวัน 160 ถัง)... 🚚💨</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังจัดสรรเส้นทาง (โมเดลวิ่ง 2 เที่ยวคุ้มค่าที่สุด)... 🚚💨</div>'''
         except FileNotFoundError:
             loader_html = '<div class="custom-truck-loader">กำลังประมวลผล...</div>'
             
@@ -325,7 +324,7 @@ if df is not None and not df.empty:
         
         sum_before = df.groupby(truck_col).agg(จำนวนสมาชิก=pd.NamedAgg(column=truck_col, aggfunc='count'), **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}).reset_index()
         sum_after = res_df.groupby('เบอร์รถใหม่').agg(จำนวนสมาชิก=pd.NamedAgg(column='เบอร์รถใหม่', aggfunc='count'), **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}).reset_index()
-        sum_after['ปริมาณงาน(%)'] = (sum_after['ยอดรับน้ำ(ถัง/เดือน)'] / 4160 * 100).round(1).astype(str) + '%'
+        sum_after['ปริมาณงาน(%)'] = (sum_after['ยอดรับน้ำ(ถัง/เดือน)'] / (150*26) * 100).round(1).astype(str) + '%'
 
         with col1:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
@@ -335,6 +334,7 @@ if df is not None and not df.empty:
             st.dataframe(sum_after, use_container_width=True)
             
         st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)")
+        st.info("💡 เกณฑ์ความคุ้มค่า: **140-155 ถัง** (วิ่ง 2 เที่ยวเต็มอิ่ม) หรือ **110-120 ถัง** (วิ่ง 2 เที่ยวแบบประหยัด เที่ยวสอง 30-40 ถัง) | **หลีกเลี่ยงช่วง 121-139 ถัง** เพราะเที่ยวสองจะหลวมเกินไป")
         daily_summary = []
         for t in all_trucks_after:
             t_mask = res_df['เบอร์รถใหม่'] == t
@@ -347,18 +347,18 @@ if df is not None and not df.empty:
                 'พฤหัสฯ': round(t_daily[3]),
                 'ศุกร์': round(t_daily[4]),
                 'เสาร์': round(t_daily[5]),
-                'โหลดหนักสุด (ถัง/วัน)': round(max(t_daily))
+                'โหลดสูงสุด (ถัง/วัน)': round(max(t_daily))
             })
         st.dataframe(pd.DataFrame(daily_summary), use_container_width=True)
         
-        # 📌 แสดงตาราง AI ผู้ช่วยแนะนำการย้ายวัน
-        st.markdown("#### 💡 ระบบผู้ช่วยอัจฉริยะ (AI Day-Shift Assistant)")
+        # 📌 แสดงตาราง AI แนะนำการเกลี่ยวัน
+        st.markdown("#### 💡 ระบบผู้ช่วยอัจฉริยะ (AI 2-Trip Optimization Assistant)")
         shift_recs_df = recommend_day_shifts(res_df, daily_matrix)
         if not shift_recs_df.empty:
-            st.warning("พบรถที่มีงานบางวันกระจุกตัวเกิน 160 ถัง ระบบขอแนะนำให้โทรเจรจาย้ายวันจัดส่งกับลูกค้ารายต่อไปนี้ (เนื่องจากเป็นจุดที่อยู่ติดกับพื้นที่ของวันที่งานยังว่าง):")
+            st.warning("พบวันที่มีโหลดอยู่ใน **'โซนไม่คุ้มค่า (121-139 ถัง)'** หรือ **'โซนทะลุ 155 ถัง'** ระบบขอแนะนำให้พิจารณาโทรขอเปลี่ยนวันจัดส่งกับลูกค้ารายต่อไปนี้ (เลือกจุดที่อยู่ชิดรอยต่อกับวันอื่น เพื่อให้ต้นทุนน้ำมันต่ำที่สุด):")
             st.dataframe(shift_recs_df, use_container_width=True)
         else:
-            st.success("✅ ยอดเยี่ยมมาก! โหลดรายวันของรถทุกคันอยู่ในเกณฑ์สมดุล ไม่มีความจำเป็นต้องย้ายวันจัดส่งของลูกค้าครับ")
+            st.success("✅ ยอดเยี่ยมมาก! โหลดรายวันของรถทุกคันอยู่ในโซนคุ้มค่า (140-155 ถัง หรือ 110-120 ถัง) สมบูรณ์แบบตามโมเดล 2 เที่ยวครับ")
 
         st.markdown("### 🗺️ แผนที่เปรียบเทียบการกระจายตัว (เชิงพื้นที่)")
         view_options = ["แสดงทั้งหมด (แยกสีตามเบอร์รถ)"] + all_trucks_after
