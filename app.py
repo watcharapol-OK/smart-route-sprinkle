@@ -220,26 +220,7 @@ if df is not None and not df.empty:
         if len(days_list) == 6: return 'จ-ส'
         return ', '.join([day_names[d] for d in sorted(days_list)])
 
-    def get_daily_vols(data_df, override_day_col=None):
-        col_to_use = override_day_col if override_day_col else day_col
-        daily_matrix = np.zeros((len(data_df), 6)) 
-        for i, row in data_df.iterrows():
-            vol = row[vol_col]
-            val = str(row.get(col_to_use, ''))
-
-            if override_day_col and 'จำลอง' not in override_day_col:
-                days = parse_days_from_string(val)
-            else:
-                days = parse_days_from_string(val)
-
-            # ป้องกัน ZeroDivisionError หาก days ว่างเปล่า
-            len_days = len(days) if len(days) > 0 else 1
-            vol_per_day = vol / (len_days * 4.333) 
-            for d in days:
-                daily_matrix[i, d] = vol_per_day
-        return daily_matrix
-
-    # 📌 แกนสมอง: จัดสายหลักตามเป้าหมาย (Knapsack) -> ค่อยเกลี่ยวันล้นให้สมดุล (Cluster Day-Shift)
+    # 📌 แกนสมองใหม่: Balanced Spatial K-Means -> ค่อยเกลี่ยวันล้นให้สมดุล
     def run_fast_allocation_with_auto_shift(data, base_t, new_t, pct_dict, manual_locks, locked_ui_list):
         opt_df = data.copy()
         opt_df['เบอร์รถใหม่'] = 'ยังไม่จัด'
@@ -258,72 +239,76 @@ if df is not None and not df.empty:
         for idx in opt_df.index:
             assigned_days_dict[idx] = parse_days_from_string(opt_df.at[idx, day_col])
 
+        # -------------------------------------------------------------
+        # STEP 1: Balanced Spatial K-Means (จัดกลุ่มพื้นที่แบบมีน้ำหนัก)
+        # แก้ปัญหาจุดกระจัดกระจายแบบไข่ปลา สร้างขอบเขตสายส่งที่คมชัด
+        # -------------------------------------------------------------
         centers = {}
-        for t in available_trucks:
-            t_data = opt_df[opt_df[truck_col].astype(str) == t]
-            if not t_data.empty: centers[t] = (np.average(t_data[lat_col]), np.average(t_data[lon_col]))
-        if has_base and base_t in centers: centers[new_t] = centers[base_t]
-        else: centers[new_t] = (np.average(coords[:, 0]), np.average(coords[:, 1]))
+        for i, t in enumerate(active_trucks):
+            offset = i * 0.001 # ออฟเซ็ตเล็กน้อยป้องกันจุดทับกันสนิท
+            if t == new_t and has_base and base_t in df[truck_col].astype(str).unique():
+                b_data = df[df[truck_col].astype(str) == base_t]
+                if not b_data.empty:
+                    centers[t] = np.array([b_data[lat_col].mean() + 0.005, b_data[lon_col].mean() + 0.005])
+                else:
+                    centers[t] = np.array([np.average(coords[:, 0]) + offset, np.average(coords[:, 1]) + offset])
+            else:
+                t_data = df[df[truck_col].astype(str) == t]
+                if not t_data.empty:
+                    centers[t] = np.array([t_data[lat_col].mean(), t_data[lon_col].mean()])
+                else:
+                    centers[t] = np.array([np.average(coords[:, 0]) + offset, np.average(coords[:, 1]) + offset])
 
-        current_loads = {t: 0 for t in active_trucks}
-
-        # -------------------------------------------------------------
-        # STEP 1: จัดเบอร์รถ (Knapsack Optimization - เน้นพิกัดภูมิศาสตร์ 100%)
-        # -------------------------------------------------------------
         locked_indices = np.where(opt_df['is_locked'].values)[0]
+        unlocked_indices = np.where(~opt_df['is_locked'].values)[0]
+
+        locked_loads = {t: 0.0 for t in active_trucks}
         for idx in locked_indices:
             orig_t = str(opt_df.at[idx, truck_col])
             target_t = orig_t if orig_t in active_trucks else new_t
             opt_df.at[idx, 'เบอร์รถใหม่'] = target_t
-            current_loads[target_t] += vols[idx]
+            locked_loads[target_t] += vols[idx]
 
-        unlocked_indices = np.where(~opt_df['is_locked'].values)[0]
-        sorted_unlocked = unlocked_indices[np.argsort(vols[unlocked_indices])[::-1]]
+        penalties = {t: 1.0 for t in active_trucks}
+        best_assignments = {idx: None for idx in unlocked_indices}
 
-        for idx in sorted_unlocked:
-            vol = vols[idx]
-            pt = coords[idx]
-            orig_t = str(opt_df.at[idx, truck_col])
-            if orig_t == base_t: orig_t = new_t
-
-            best_truck = None
-            min_dist = float('inf')
-
-            # เลือกรถที่ยังมีโควตารองรับได้โดยยอดไม่ทะลุ (อนุโลมไม่เกิน 20 ถัง)
-            eligible_trucks = [t for t in active_trucks if current_loads[t] + vol <= monthly_targets[t] + 20]
-
-            if eligible_trucks:
-                for t in eligible_trucks:
-                    # คำนวณระยะทางเพียวๆ โดยไม่มีตัวคูณดึงกลับสายเดิมแล้ว
-                    dist = (pt[0] - centers[t][0])**2 + (pt[1] - centers[t][1])**2
-                    if dist < min_dist:
-                        min_dist = dist
-                        best_truck = t
-            else:
-                # ถ้ารถเต็มแล้ว บังคับส่งให้รถกันชน (ไม่ได้ล็อกเป้าหมายไว้)
-                unlocked_trucks = [t for t in active_trucks if t not in locked_ui_list]
-                if unlocked_trucks:
-                    for t in unlocked_trucks:
-                        dist = (pt[0] - centers[t][0])**2 + (pt[1] - centers[t][1])**2
-                        if dist < min_dist:
-                            min_dist = dist
-                            best_truck = t
+        # ให้ AI วนลูป 25 รอบเพื่อหาจุดสมดุลที่อาณาเขตสวยที่สุดและยอดตรงเป้าหมายที่สุด
+        for iteration in range(25):
+            current_loads = {t: locked_loads[t] for t in active_trucks}
+            
+            for idx in unlocked_indices:
+                pt = coords[idx]
+                vol = vols[idx]
+                
+                min_cost = float('inf')
+                best_t = None
+                
+                for t in active_trucks:
+                    dist = np.sum((pt - centers[t])**2)
+                    # ถ้ารถยอดเกินเป้า Penalty จะสูง ทำให้ระยะทางเสมือนไกลขึ้น ดันงานให้คันอื่น
+                    cost = dist * penalties[t] 
+                    if cost < min_cost:
+                        min_cost = cost
+                        best_t = t
+                        
+                best_assignments[idx] = best_t
+                current_loads[best_t] += vol
+                
+            # อัปเดตจุดศูนย์กลางใหม่และปรับ Penalty
+            for t in active_trucks:
+                pts = [coords[idx] for idx in unlocked_indices if best_assignments[idx] == t]
+                if pts: centers[t] = np.mean(pts, axis=0)
+                    
+                target_v = monthly_targets[t]
+                if target_v <= 0:
+                    penalties[t] = 1e6 # ล็อกไม่ให้รับงานเพิ่ม
                 else:
-                    for t in active_trucks:
-                        dist = (pt[0] - centers[t][0])**2 + (pt[1] - centers[t][1])**2
-                        if dist < min_dist:
-                            min_dist = dist
-                            best_truck = t
+                    ratio = current_loads[t] / target_v
+                    penalties[t] *= max(0.5, min(2.0, ratio ** 0.4)) # ปรับรัศมีวงกลมอย่างนุ่มนวล
 
-            if best_truck is None: best_truck = active_trucks[0]
-            opt_df.at[idx, 'เบอร์รถใหม่'] = best_truck
-            current_loads[best_truck] += vol
-
-            # อัปเดตจุดศูนย์กลางใหม่เบาๆ เพื่อให้ Cluster เคลื่อนตัวเข้าหาศูนย์กลางจริง
-            centers[best_truck] = (
-                centers[best_truck][0] * 0.98 + pt[0] * 0.02,
-                centers[best_truck][1] * 0.98 + pt[1] * 0.02
-            )
+        # บันทึกผลลัพธ์
+        for idx in unlocked_indices:
+            opt_df.at[idx, 'เบอร์รถใหม่'] = best_assignments[idx]
 
         opt_df['สถานะ'] = np.where(opt_df[truck_col].astype(str) == opt_df['เบอร์รถใหม่'], 'คงเดิม', 'ย้ายไปสาย ' + opt_df['เบอร์รถใหม่'])
         if has_base:
@@ -333,9 +318,9 @@ if df is not None and not df.empty:
         # STEP 2: สมองกลเกลี่ยวันรายวัน (Smart Auto-Day-Shift) 
         # -------------------------------------------------------------
         MAX_CAP = 156
-        TARGET_CAP = 148 # เผื่อบัฟเฟอร์ให้ปลอดภัย
+        TARGET_CAP = 148
 
-        for iteration in range(4): # วนลูปสแกนหาจุดวิกฤต (ยอดล้น)
+        for iteration in range(4):
             daily_loads = {t: np.zeros(6) for t in active_trucks}
             for idx in opt_df.index:
                 t = opt_df.at[idx, 'เบอร์รถใหม่']
