@@ -7,6 +7,7 @@ from folium import plugins
 import re
 import math
 import time
+import base64
 
 # กำหนด Layout หน้าจอ
 st.set_page_config(page_title="Sprinkle Smart Route Rebalancer", layout="wide", initial_sidebar_state="expanded")
@@ -18,15 +19,53 @@ def hard_reset():
             del st.session_state[k]
 
 # ==========================================
-# 💎 PREMIUM UI/UX + DYNAMIC ISLAND STYLING
+# 💎 PREMIUM UI/UX + WATERMARK BACKGROUND
 # ==========================================
+# 1. แปลงภาพรถเป็น Base64 สำหรับทำลายน้ำพื้นหลัง
+truck_b64 = ""
+try:
+    with open("truck.jpg", "rb") as image_file:
+        truck_b64 = base64.b64encode(image_file.read()).decode()
+except FileNotFoundError:
+    pass
+
+# 2. นำภาพมาสร้างเป็นลายน้ำ (Watermark) แบบพรีเมียม
+if truck_b64:
+    watermark_html = f'''
+    <div class="sprinkle-watermark"></div>
+    <style>
+        .sprinkle-watermark {{
+            position: fixed;
+            top: 50%;
+            left: 55%; /* ขยับศูนย์กลางมาทางขวาเล็กน้อย เผื่อพื้นที่ Sidebar */
+            transform: translate(-50%, -50%);
+            width: 100vw;
+            height: 100vh;
+            background-image: url("data:image/jpeg;base64,{truck_b64}");
+            background-size: 500px; /* ขนาดรถกำลังดี ไม่ล้นจอ */
+            background-repeat: no-repeat;
+            background-position: center;
+            opacity: 0.04; /* จางมากๆ เพื่อไม่ให้รบกวนสายตาเวลาอ่านข้อมูล */
+            filter: grayscale(100%); /* ปรับเป็นสีเทาให้ดูแพงและเรียบหรู */
+            z-index: 0;
+            pointer-events: none; /* กดทะลุผ่านได้ ไม่ขวางการใช้งาน */
+        }}
+        /* ดันให้ Content กล่องข้อมูลลอยอยู่เหนือลายน้ำ */
+        .block-container {{
+            position: relative;
+            z-index: 1;
+        }}
+    </style>
+    '''
+    st.markdown(watermark_html, unsafe_allow_html=True)
+
 st.markdown('''
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
         
         /* Typography & Main Background */
         html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
-        .stApp { background-color: #F4F7FB; }
+        .stApp { background-color: #F4F7FB; } /* พื้นหลังหลักยังคงสีเทาอมฟ้าอ่อนๆ สบายตา */
         
         /* Headings */
         h1, h2, h3, h4 { color: #00205B !important; font-weight: 700; letter-spacing: -0.5px; }
@@ -75,15 +114,17 @@ st.markdown('''
             transform: translateY(-2px);
         }
         
-        /* Floating DataFrames */
+        /* Floating DataFrames (Premium Cards) - เพิ่มสีขาวพื้นหลังให้ทึบ 95% จะได้ไม่กวนกับลายน้ำ */
         div[data-testid="stDataFrame"] > div { 
-            background-color: white; border-radius: 12px; 
+            background-color: rgba(255, 255, 255, 0.95); 
+            border-radius: 12px; 
             box-shadow: 0 6px 16px rgba(0,0,0,0.06); 
-            border: 1px solid #E2E8F0; border-top: 4px solid #00A3E0; 
+            border: 1px solid #E2E8F0; 
+            border-top: 4px solid #00A3E0; 
             overflow: hidden;
         }
         
-        .stAlert { border-radius: 10px; border: none; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        .stAlert { border-radius: 10px; border: none; box-shadow: 0 4px 10px rgba(0,0,0,0.05); background-color: rgba(255, 255, 255, 0.95); }
         iframe { border-radius: 12px; box-shadow: 0 6px 16px rgba(0,0,0,0.08); border: 1px solid #E2E8F0; }
         div[data-testid="stVerticalBlock"] > div.element-container { background-color: transparent; }
         #MainMenu {visibility: hidden;} footer {visibility: hidden;}
@@ -115,15 +156,9 @@ st.markdown('''
             overflow: hidden;
             white-space: nowrap;
         }
-        .island-icon { 
-            font-size: 1.3rem; 
-            display: flex; 
-            align-items: center; 
-        }
+        .island-icon { font-size: 1.3rem; display: flex; align-items: center; }
         .pulse-dot {
-            width: 12px; height: 12px;
-            background-color: #00A3E0;
-            border-radius: 50%;
+            width: 12px; height: 12px; background-color: #00A3E0; border-radius: 50%;
             animation: pulsing 1.2s infinite alternate;
         }
         @keyframes island-pop {
@@ -138,7 +173,7 @@ st.markdown('''
         .text-fade-in {
             opacity: 0;
             animation: fade-in 0.4s ease-in forwards;
-            animation-delay: 0.4s; /* รอให้แคปซูลยืดเสร็จก่อนค่อยโชว์ตัวหนังสือ */
+            animation-delay: 0.4s; 
         }
         @keyframes fade-in { to { opacity: 1; } }
     </style>
@@ -167,7 +202,6 @@ if sheet_url:
     if 'cached_raw_url' not in st.session_state or st.session_state['cached_raw_url'] != sheet_url:
         loading_placeholder = st.empty()
         
-        # 🍎 เรียกใช้ Dynamic Island แจ้งสถานะการโหลดข้อมูล
         island_html = '''
         <div class="island-wrapper">
             <div class="dynamic-island">
@@ -183,7 +217,7 @@ if sheet_url:
         if raw_df is not None:
             st.session_state['cached_raw_df'] = raw_df
         st.session_state['cached_raw_url'] = sheet_url
-        time.sleep(0.8) # ให้เวลา UI แสดงอนิเมชันให้ผู้ใช้เห็นความพรีเมียม
+        time.sleep(0.8) 
         loading_placeholder.empty()
     
     df = st.session_state.get('cached_raw_df', None)
@@ -537,7 +571,6 @@ if df is not None and not df.empty:
     if st.sidebar.button("🚀 ประมวลผลตัดสายส่ง", use_container_width=True):
         calc_placeholder = st.empty()
         
-        # 🍎 เรียกใช้ Dynamic Island แจ้งสถานะประมวลผลหลัก
         island_html = '''
         <div class="island-wrapper">
             <div class="dynamic-island">
@@ -551,7 +584,7 @@ if df is not None and not df.empty:
         res_df, daily_matrix = run_fast_allocation_with_auto_shift(df, base_truck, new_truck_name, target_pcts, manual_vips, locked_ui_trucks)
         st.session_state['result_df'] = res_df
         st.session_state['daily_matrix'] = daily_matrix
-        time.sleep(1) # ให้เวลาแสดงอนิเมชันความสวยงาม
+        time.sleep(1) 
         calc_placeholder.empty()
 
     if 'result_df' in st.session_state:
@@ -600,7 +633,6 @@ if df is not None and not df.empty:
             if st.button("✨ คลิกที่นี่เพื่อให้ AI เกลี่ยงานที่ล้น ไปใส่วันว่าง (เฉพาะในรถคันเดิม + อิงพิกัดพื้นที่ใกล้เคียง)", use_container_width=True):
                 day_shift_placeholder = st.empty()
                 
-                # 🍎 เรียกใช้ Dynamic Island แจ้งสถานะตอนกดปุ่มพิเศษ
                 island_html_shift = '''
                 <div class="island-wrapper">
                     <div class="dynamic-island" style="background-color: #00205B;">
@@ -614,7 +646,7 @@ if df is not None and not df.empty:
                 new_res_df, new_daily_matrix = run_smart_day_shift(st.session_state['result_df'])
                 st.session_state['result_df'] = new_res_df
                 st.session_state['daily_matrix'] = new_daily_matrix
-                time.sleep(1) # ให้เวลาอนิเมชันโชว์ความลื่นไหล
+                time.sleep(1)
                 day_shift_placeholder.empty()
                 st.rerun()
         else:
