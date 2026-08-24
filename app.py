@@ -29,7 +29,7 @@ try:
 except FileNotFoundError:
     pass
 
-# 2. ลายน้ำ (Watermark) ปรับความเข้มขึ้นเป็น 15%
+# 2. ลายน้ำ (Watermark)
 if truck_b64:
     watermark_html = f'''
     <div class="sprinkle-watermark"></div>
@@ -42,10 +42,10 @@ if truck_b64:
             width: 100vw;
             height: 100vh;
             background-image: url("data:image/jpeg;base64,{truck_b64}");
-            background-size: 650px; /* ขยายสเกลภาพรถให้ใหญ่ขึ้นอีกนิด */
+            background-size: 650px; 
             background-repeat: no-repeat;
             background-position: center;
-            opacity: 0.15; /* เพิ่มความเข้มให้เห็นชัดเจนขึ้น */
+            opacity: 0.15; 
             filter: grayscale(100%); 
             z-index: 0;
             pointer-events: none; 
@@ -58,7 +58,7 @@ if truck_b64:
     '''
     st.markdown(watermark_html, unsafe_allow_html=True)
 
-# 3. สไตล์ Liquid Glass (Glassmorphism)
+# 3. สไตล์ Liquid Glass (Glassmorphism) + ซ่อนคนวิ่ง
 st.markdown('''
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
@@ -151,12 +151,15 @@ st.markdown('''
         
         div[data-testid="stVerticalBlock"] > div.element-container { background-color: transparent; }
         #MainMenu {visibility: hidden;} footer {visibility: hidden;}
+        
+        /* 🚨 ซ่อนนักกีฬา/คนปั่นจักรยานของ Streamlit อย่างเด็ดขาด */
+        [data-testid="stStatusWidget"] { display: none !important; }
         .stSpinner > div > div { display: none !important; }
 
         /* 🍎 DYNAMIC ISLAND CSS (Liquid Glass Style) */
         .island-wrapper {
             position: fixed; 
-            top: 25px; 
+            top: 65px; /* ขยับลงมาเพื่อไม่ให้ทับแถบเมนูด้านบน */
             left: 50%; 
             transform: translateX(-50%); 
             z-index: 999999;
@@ -182,19 +185,22 @@ st.markdown('''
             overflow: hidden;
             white-space: nowrap;
         }
-        .island-icon { font-size: 1.3rem; display: flex; align-items: center; }
-        .pulse-dot {
-            width: 12px; height: 12px; background-color: #00A3E0; border-radius: 50%;
-            animation: pulsing 1.2s infinite alternate;
+        
+        /* ไอคอนหยดน้ำกระเพื่อม */
+        .island-icon { font-size: 1.4rem; display: flex; align-items: center; }
+        .water-pulse {
+            display: inline-block;
+            animation: water-bounce 1s infinite alternate ease-in-out;
         }
+        
         @keyframes island-pop {
             0% { width: 40px; opacity: 0; transform: scale(0.7); border-radius: 50%; padding: 12px; }
             50% { width: 40px; opacity: 1; transform: scale(1.05); border-radius: 50%; padding: 12px; }
             100% { width: auto; opacity: 1; transform: scale(1); border-radius: 40px; }
         }
-        @keyframes pulsing {
-            0% { transform: scale(0.8); opacity: 0.5; }
-            100% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 12px #00A3E0; }
+        @keyframes water-bounce {
+            0% { transform: scale(0.85) translateY(2px); opacity: 0.7; }
+            100% { transform: scale(1.15) translateY(-2px); opacity: 1; filter: drop-shadow(0 0 5px #00A3E0); }
         }
         .text-fade-in {
             opacity: 0;
@@ -228,10 +234,11 @@ if sheet_url:
     if 'cached_raw_url' not in st.session_state or st.session_state['cached_raw_url'] != sheet_url:
         loading_placeholder = st.empty()
         
+        # 💧 เปลี่ยนไอคอนเป็นหยดน้ำแทนจุดไข่ปลา
         island_html = '''
         <div class="island-wrapper">
             <div class="dynamic-island">
-                <div class="island-icon"><div class="pulse-dot"></div></div>
+                <div class="island-icon"><span class="water-pulse">💧</span></div>
                 <span class="text-fade-in">กำลังดึงข้อมูลต้นฉบับ...</span>
             </div>
         </div>
@@ -597,10 +604,11 @@ if df is not None and not df.empty:
     if st.sidebar.button("🚀 ประมวลผลตัดสายส่ง", use_container_width=True):
         calc_placeholder = st.empty()
         
+        # 💧 ใช้ไอคอนหยดน้ำเคลื่อนไหวแทน
         island_html = '''
         <div class="island-wrapper">
             <div class="dynamic-island" style="background: rgba(10, 25, 47, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.2);">
-                <div class="island-icon"><div class="pulse-dot"></div></div>
+                <div class="island-icon"><span class="water-pulse">💧</span></div>
                 <span class="text-fade-in">กำลังวิเคราะห์พิกัดและคำนวณแบ่งเขตแดน...</span>
             </div>
         </div>
@@ -659,10 +667,11 @@ if df is not None and not df.empty:
             if st.button("✨ คลิกที่นี่เพื่อให้ AI เกลี่ยงานที่ล้น ไปใส่วันว่าง (เฉพาะในรถคันเดิม + อิงพิกัดพื้นที่ใกล้เคียง)", use_container_width=True):
                 day_shift_placeholder = st.empty()
                 
+                # 💧 ใช้ไอคอนหยดน้ำเคลื่อนไหวตอนย้ายวัน
                 island_html_shift = '''
                 <div class="island-wrapper">
                     <div class="dynamic-island" style="background: rgba(10, 25, 47, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.2);">
-                        <div class="island-icon"><div class="pulse-dot" style="background-color: #FFFFFF;"></div></div>
+                        <div class="island-icon"><span class="water-pulse">💧</span></div>
                         <span class="text-fade-in">กำลังสแกนพื้นที่และเกลี่ยวันจัดส่ง...</span>
                     </div>
                 </div>
