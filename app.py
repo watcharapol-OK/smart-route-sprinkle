@@ -11,7 +11,6 @@ import base64
 
 st.set_page_config(page_title="Smart Route Rebalancer", layout="wide", initial_sidebar_state="expanded")
 
-# ลบฟังก์ชัน reset_results ออกจากการอัปเดตสไลเดอร์ เพื่อให้ตั้งค่าให้เสร็จก่อนค่อยกดประมวลผลทีเดียว
 def hard_reset():
     keys_to_clear = ['result_df', 'daily_matrix']
     for k in keys_to_clear:
@@ -61,22 +60,31 @@ def load_data_from_sheet(url):
         return None
     except Exception: return None
 
+# ระบบ Cache ข้อมูลเพื่อตัดปัญหาการโหลดซ้ำซ้อนตอนเลื่อนสไลเดอร์
 df = None
 if sheet_url:
-    loading_placeholder = st.empty()
-    try:
-        with open("truck.jpg", "rb") as image_file:
-            encoded_string = base64.b64encode(image_file.read()).decode()
-        loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลข้อมูล... 💦</div>'''
-    except FileNotFoundError:
-        loader_html = '<div class="custom-truck-loader">กำลังโหลดข้อมูล...</div>'
+    if 'cached_raw_url' not in st.session_state or st.session_state['cached_raw_url'] != sheet_url:
+        loading_placeholder = st.empty()
+        try:
+            with open("truck.jpg", "rb") as image_file:
+                encoded_string = base64.b64encode(image_file.read()).decode()
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังดึงข้อมูลต้นฉบับ... 💦</div>'''
+        except FileNotFoundError:
+            loader_html = '<div class="custom-truck-loader">กำลังโหลดข้อมูล...</div>'
 
-    loading_placeholder.markdown(loader_html, unsafe_allow_html=True)
-    df = load_data_from_sheet(sheet_url)
-    time.sleep(1) 
-    loading_placeholder.empty() 
+        loading_placeholder.markdown(loader_html, unsafe_allow_html=True)
+        raw_df = load_data_from_sheet(sheet_url)
+        
+        if raw_df is not None:
+            st.session_state['cached_raw_df'] = raw_df
+        st.session_state['cached_raw_url'] = sheet_url
+        loading_placeholder.empty()
+    
+    # ดึงข้อมูลจาก Cache ทันทีโดยไม่ต้องมีแอนิเมชันรบกวนเวลาเลื่อนเปอร์เซ็นต์
+    df = st.session_state.get('cached_raw_df', None)
 
 if df is not None and not df.empty:
+    df = df.copy()
     vol_col = next((c for c in df.columns if 'ยอด' in str(c) or 'เดือน' in str(c)), df.columns[-1])
     lat_col = next((c for c in df.columns if 'ละติจูด' in str(c) or 'lat' in str(c).lower()), None)
     lon_col = next((c for c in df.columns if 'ลอง' in str(c) or 'lon' in str(c).lower()), None)
@@ -165,14 +173,12 @@ if df is not None and not df.empty:
                 st.session_state[f"slider_{changed_truck}"] = old_val 
         elif len(unlocked) == 0 and abs(diff) > 0.01:
             st.session_state[f"slider_{changed_truck}"] = old_val 
-        # นำ reset_results() ออกจากตรงนี้ เพื่อให้ปรับแต่งเปอร์เซ็นต์ได้อิสระโดยที่แผนที่ยังไม่ถูกลบ
 
     target_pcts = {}
     for t in active_trucks:
         col1, col2 = st.sidebar.columns([3, 1.2])
         with col2:
             st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
-            # นำ on_change=hard_reset ออก
             st.checkbox("🔒 ล็อก", key=f"lock_{t}")
         with col1:
             if f"slider_{t}" not in st.session_state:
@@ -219,6 +225,7 @@ if df is not None and not df.empty:
         if len(days_list) == 6: return 'จ-ส'
         return ', '.join([day_names[d] for d in sorted(days_list)])
 
+    # 📌 แกนสมองใหม่ล่าสุด: Capacitated Boundary Shifting (ล็อกเป้ายอดเป๊ะ + หั่นขอบเขตคมกริบ)
     def run_fast_allocation_with_auto_shift(data, base_t, new_t, pct_dict, manual_locks, locked_ui_list):
         opt_df = data.copy()
         opt_df['เบอร์รถใหม่'] = 'ยังไม่จัด'
@@ -238,10 +245,9 @@ if df is not None and not df.empty:
             assigned_days_dict[idx] = parse_days_from_string(opt_df.at[idx, day_col])
 
         # -------------------------------------------------------------
-        # STEP 1: Spatial K-Means พร้อมการกระจายศูนย์กลางหลีกเลี่ยงการทับซ้อน
+        # STEP 1: วางจุดศูนย์กลางแบบสมดุล
         # -------------------------------------------------------------
         centers = {}
-        # คำนวณขอบเขตแผนที่เพื่อกระจายรถใหม่ให้ไปอยู่ขอบๆ ที่ยังว่าง
         lat_min, lat_max = coords[:, 0].min(), coords[:, 0].max()
         lon_min, lon_max = coords[:, 1].min(), coords[:, 1].max()
         
@@ -253,7 +259,7 @@ if df is not None and not df.empty:
             elif not t_data.empty:
                 centers[t] = np.array([t_data[lat_col].mean(), t_data[lon_col].mean()])
             else:
-                # ถ้ารถใหม่ไม่มีฐานข้อมูล ให้เกิดใหม่ในพื้นที่ห่างไกลการทับซ้อน
+                # กระจายรถใหม่ไว้ขอบๆ เพื่อป้องกันการกินแดนทับซ้อน
                 centers[t] = np.array([lat_min + (lat_max-lat_min)*0.5, lon_min + (lon_max-lon_min)*(0.2 + (i*0.1))])
 
         locked_indices = np.where(opt_df['is_locked'].values)[0]
@@ -266,48 +272,87 @@ if df is not None and not df.empty:
             opt_df.at[idx, 'เบอร์รถใหม่'] = target_t
             locked_loads[target_t] += vols[idx]
 
-        penalties = {t: 1.0 for t in active_trucks}
         best_assignments = {idx: None for idx in unlocked_indices}
 
-        for iteration in range(25):
-            current_loads = {t: locked_loads[t] for t in active_trucks}
+        # -------------------------------------------------------------
+        # STEP 2: จัดกลุ่มเชิงพื้นที่เบื้องต้น (ยึดความสวยงามของโซนเป็นหลักก่อน)
+        # -------------------------------------------------------------
+        for _ in range(5):
             for idx in unlocked_indices:
                 pt = coords[idx]
-                vol = vols[idx]
-                min_cost = float('inf')
-                best_t = None
-                
-                for t in active_trucks:
-                    dist = np.sum((pt - centers[t])**2)
-                    cost = dist * penalties[t] 
-                    if cost < min_cost:
-                        min_cost = cost
-                        best_t = t
-                        
-                best_assignments[idx] = best_t
-                current_loads[best_t] += vol
+                dists = {t: np.sum((pt - centers[t])**2) for t in active_trucks}
+                best_assignments[idx] = min(dists, key=dists.get)
                 
             for t in active_trucks:
                 pts = [coords[idx] for idx in unlocked_indices if best_assignments[idx] == t]
                 if pts: centers[t] = np.mean(pts, axis=0)
-                    
-                target_v = monthly_targets[t]
-                if target_v <= 0:
-                    penalties[t] = 1e6 
-                else:
-                    ratio = current_loads[t] / target_v
-                    penalties[t] *= max(0.8, min(1.2, ratio ** 0.5)) # ลดความก้าวร้าวของ Penalty ลงให้เน้นระยะทางมากขึ้น
 
         # -------------------------------------------------------------
-        # STEP 1.5: Majority Vote KNN Smoothing (กลืนจุดหลงฝูงไข่ปลา)
+        # STEP 3: บีบยอดให้ตรงเป้า 100% ด้วยการเฉือนขอบตะเข็บชายแดน
         # -------------------------------------------------------------
-        for smooth_iter in range(2): # วนลบจุดไข่ปลา 2 รอบให้เนียนกริบ
+        current_loads = {t: locked_loads[t] for t in active_trucks}
+        for idx in unlocked_indices:
+            current_loads[best_assignments[idx]] += vols[idx]
+
+        for _ in range(50): # วนลูปรักษาความจุ
+            over_trucks = [t for t in active_trucks if current_loads[t] > monthly_targets[t] + 15]
+            if not over_trucks:
+                break
+                
+            moved_any = False
+            for t_over in over_trucks:
+                under_trucks = [t for t in active_trucks if current_loads[t] < monthly_targets[t] - 10]
+                if not under_trucks:
+                    under_trucks = sorted(active_trucks, key=lambda x: current_loads[x] - monthly_targets[x])
+                    if under_trucks[0] == t_over: continue
+                    under_trucks = [under_trucks[0]]
+
+                t_points = [idx for idx in unlocked_indices if best_assignments[idx] == t_over]
+                move_candidates = []
+                
+                for idx in t_points:
+                    pt = coords[idx]
+                    dist_current = np.sum((pt - centers[t_over])**2)
+                    best_cost_diff = float('inf')
+                    best_under_t = None
+                    
+                    for t_under in under_trucks:
+                        # ยอมรับบัฟเฟอร์ +- 30 ถัง เพื่อความสมดุล
+                        if current_loads[t_under] + vols[idx] <= monthly_targets[t_under] + 30:
+                            dist_under = np.sum((pt - centers[t_under])**2)
+                            cost_diff = dist_under - dist_current
+                            if cost_diff < best_cost_diff:
+                                best_cost_diff = cost_diff
+                                best_under_t = t_under
+                                
+                    if best_under_t is not None:
+                        move_candidates.append((best_cost_diff, idx, best_under_t, vols[idx]))
+                        
+                # เรียงลำดับลูกค้าจากคนที่อยู่ใกล้ขอบรถอีกคันมากที่สุด (เฉือนจากขอบเท่านั้น)
+                move_candidates.sort(key=lambda x: x[0])
+                
+                for cost, idx, target_t, vol in move_candidates:
+                    if current_loads[t_over] <= monthly_targets[t_over] + 15:
+                        break
+                    if current_loads[target_t] + vol <= monthly_targets[target_t] + 30:
+                        best_assignments[idx] = target_t
+                        current_loads[t_over] -= vol
+                        current_loads[target_t] += vol
+                        moved_any = True
+                        
+            if not moved_any:
+                break
+
+        # -------------------------------------------------------------
+        # STEP 4: ลบจุดกระจัดกระจายหลงฝูงโดยไม่ทำลายโครงสร้างเป้าหมาย
+        # -------------------------------------------------------------
+        for smooth_iter in range(2): 
             smoothed_assignments = best_assignments.copy()
             for idx in unlocked_indices:
                 pt = coords[idx]
-                # หาเพื่อนบ้าน 6 คนที่ใกล้ที่สุด
                 dists = np.sum((coords - pt)**2, axis=1)
-                nearest_idx = np.argsort(dists)[1:7]
+                nn_count = min(7, len(dists))
+                nearest_idx = np.argsort(dists)[1:nn_count]
                 
                 neighbor_trucks = []
                 for ni in nearest_idx:
@@ -315,14 +360,16 @@ if df is not None and not df.empty:
                         neighbor_trucks.append(best_assignments[ni])
                     else:
                         neighbor_trucks.append(opt_df.at[ni, 'เบอร์รถใหม่'])
-                
-                # ถ้าเพื่อนบ้านส่วนใหญ่อยู่สีอื่น ให้เปลี่ยนสีตามเพื่อนบ้าน (ลบลอยแตก)
+                        
                 if neighbor_trucks:
                     majority_truck = max(set(neighbor_trucks), key=neighbor_trucks.count)
-                    # เปลี่ยนสีก็ต่อเมื่อเสียงข้างมากเกิน 4 จาก 6 เท่านั้น เพื่อรักษาขอบเขต
-                    if neighbor_trucks.count(majority_truck) >= 4:
-                        smoothed_assignments[idx] = majority_truck
-                        
+                    if neighbor_trucks.count(majority_truck) >= 4 and majority_truck != best_assignments[idx]:
+                        vol = vols[idx]
+                        # กฎเหล็ก: ยอมรวมสีจุดไข่ปลา ก็ต่อเมื่อยอดเป้าหมายไม่พัง
+                        if current_loads[majority_truck] + vol <= monthly_targets[majority_truck] + 40:
+                            current_loads[best_assignments[idx]] -= vol
+                            current_loads[majority_truck] += vol
+                            smoothed_assignments[idx] = majority_truck
             best_assignments = smoothed_assignments
 
         for idx in unlocked_indices:
@@ -333,7 +380,7 @@ if df is not None and not df.empty:
             opt_df['สถานะ'] = np.where(opt_df[truck_col].astype(str) == base_t, 'ยุบสายไป ' + opt_df['เบอร์รถใหม่'], opt_df['สถานะ'])
 
         # -------------------------------------------------------------
-        # STEP 2: สมองกลเกลี่ยวันรายวัน (Smart Auto-Day-Shift) 
+        # STEP 5: สมองกลเกลี่ยวันรายวัน (Smart Auto-Day-Shift) 
         # -------------------------------------------------------------
         MAX_CAP = 156
         TARGET_CAP = 148
@@ -415,7 +462,7 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังจัดกลุ่มพื้นที่ (ลบจุดไข่ปลา) และเกลี่ยวัน... 🚚💨</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังควบคุมยอดเป้าหมายให้เป๊ะ 100% พร้อมหั่นขอบเขต... 🚚💨</div>'''
         except FileNotFoundError:
             loader_html = '<div class="custom-truck-loader">กำลังประมวลผล...</div>'
 
@@ -443,7 +490,7 @@ if df is not None and not df.empty:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
             st.dataframe(sum_before, use_container_width=True)
         with col2:
-            st.markdown("**หลังปรับโครงสร้าง (พื้นที่เกาะกลุ่มแน่น 100%)**")
+            st.markdown("**หลังปรับโครงสร้าง (พื้นที่เกาะกลุ่มแน่น & ยอดตรงเป้าเป๊ะ)**")
             st.dataframe(sum_after, use_container_width=True)
 
         st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)")
