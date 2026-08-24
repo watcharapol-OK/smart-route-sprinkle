@@ -19,7 +19,7 @@ def hard_reset():
             del st.session_state[k]
 
 # ==========================================
-# 💎 PREMIUM UI/UX + WATERMARK + LIQUID GLASS
+# 💎 ULTRA PREMIUM UI/UX (OCEAN BREEZE THEME)
 # ==========================================
 # 1. แปลงภาพรถเป็น Base64 สำหรับทำลายน้ำพื้นหลัง
 truck_b64 = ""
@@ -45,8 +45,8 @@ if truck_b64:
             background-size: 650px; 
             background-repeat: no-repeat;
             background-position: center;
-            opacity: 0.15; 
-            filter: grayscale(100%); 
+            opacity: 0.12; /* ความเข้มที่พอดี ไม่กวนสายตา */
+            filter: grayscale(90%); /* ลดความดำทึบ ให้กลืนกับพื้นหลังสีฟ้า */
             z-index: 0;
             pointer-events: none; 
         }}
@@ -58,95 +58,100 @@ if truck_b64:
     '''
     st.markdown(watermark_html, unsafe_allow_html=True)
 
-# 3. สไตล์ Liquid Glass (Glassmorphism) + ซ่อนคนวิ่ง
+# 3. สไตล์ High Contrast & Dimensional Glass
 st.markdown('''
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
         
-        /* Typography & Main Background */
+        /* Typography & Vibrant Gradient Background */
         html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
-        .stApp { background-color: #F4F7FB; } 
+        .stApp { 
+            background: linear-gradient(135deg, #E0F2FE 0%, #F1F5F9 100%); /* พื้นหลังสีฟ้าอ่อนสว่าง ขับให้กล่องสีขาวเด้งขึ้นมา */
+        } 
         
         /* Headings */
         h1, h2, h3, h4 { color: #00205B !important; font-weight: 700; letter-spacing: -0.5px; }
         
-        /* Sidebar Styling (Liquid Glass Dark Mode) */
+        /* Sidebar Styling (Deep Ocean Dark Mode) */
         [data-testid="stSidebar"] { 
-            background: rgba(10, 25, 47, 0.85) !important; 
+            background: linear-gradient(180deg, #0A192F 0%, #00205B 100%) !important; 
             backdrop-filter: blur(15px) !important;
             -webkit-backdrop-filter: blur(15px) !important;
-            border-right: 1px solid rgba(255, 255, 255, 0.1); 
-            box-shadow: 2px 0 15px rgba(0,0,0,0.2); 
+            border-right: 1px solid rgba(0, 163, 224, 0.3); /* เส้นขอบสีฟ้าสด */
+            box-shadow: 4px 0 20px rgba(0, 32, 91, 0.25); /* เงาลึกขึ้น */
         }
-        [data-testid="stSidebar"] * { color: #E2E8F0 !important; }
-        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: #00A3E0 !important; }
+        [data-testid="stSidebar"] * { color: #F8FAFC !important; }
+        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: #38BDF8 !important; text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
         
         /* Input & Select Box */
         div[data-baseweb="select"] > div, input { 
-            background-color: rgba(17, 34, 64, 0.7) !important; 
-            border: 1px solid rgba(35, 53, 84, 0.8) !important; 
+            background-color: rgba(15, 23, 42, 0.6) !important; 
+            border: 1px solid rgba(56, 189, 248, 0.4) !important; /* เส้นขอบฟ้าใส */
             color: white !important; 
             border-radius: 8px; 
-            transition: border 0.3s ease;
+            transition: all 0.3s ease;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); /* มิติหลุมลึกลงไป */
         }
-        div[data-baseweb="select"] > div:hover, input:focus { border: 1px solid #00A3E0 !important; }
+        div[data-baseweb="select"] > div:hover, input:focus { 
+            border: 1px solid #38BDF8 !important; 
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.3) !important; 
+        }
         
-        /* Primary Button */
+        /* Primary Button (Vibrant Wave) */
         .stButton>button { 
-            background: linear-gradient(135deg, #005A9C 0%, #00205B 100%) !important; 
+            background: linear-gradient(135deg, #0284C7 0%, #00205B 100%) !important; 
             color: white !important; 
-            border: none !important; 
+            border: 1px solid rgba(255,255,255,0.1) !important; 
             border-radius: 10px; 
             font-weight: 600; 
             font-size: 1.1rem;
             padding: 0.6rem 2rem; 
             width: 100%; 
-            box-shadow: 0 4px 15px rgba(0, 32, 91, 0.3); 
-            transition: all 0.3s ease; 
+            box-shadow: 0 8px 20px rgba(0, 32, 91, 0.3), inset 0 1px 0 rgba(255,255,255,0.2); /* เงาสองชั้นให้ดูป่องมีมิติ */
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); 
         }
         .stButton>button:hover { 
-            transform: translateY(-2px); 
-            box-shadow: 0 6px 20px rgba(0, 32, 91, 0.5); 
-            background: linear-gradient(135deg, #00A3E0 0%, #005A9C 100%) !important;
+            transform: translateY(-3px); 
+            box-shadow: 0 12px 25px rgba(2, 132, 199, 0.4), inset 0 1px 0 rgba(255,255,255,0.3); 
+            background: linear-gradient(135deg, #0EA5E9 0%, #0369A1 100%) !important;
         }
         
         /* Download Button */
         [data-testid="stDownloadButton"] > button { 
-            background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important; 
-            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+            background: linear-gradient(135deg, #10B981 0%, #047857 100%) !important; 
+            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.25), inset 0 1px 0 rgba(255,255,255,0.2);
         }
         [data-testid="stDownloadButton"] > button:hover { 
-            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.5); 
-            transform: translateY(-2px);
+            box-shadow: 0 12px 25px rgba(16, 185, 129, 0.4), inset 0 1px 0 rgba(255,255,255,0.3); 
+            transform: translateY(-3px);
         }
         
-        /* Floating DataFrames (Liquid Glass Cards) */
+        /* Floating DataFrames (Ultra Crisp Cards) */
         div[data-testid="stDataFrame"] > div { 
-            background: rgba(255, 255, 255, 0.65) !important; 
-            backdrop-filter: blur(12px) !important;
-            -webkit-backdrop-filter: blur(12px) !important;
+            background: rgba(255, 255, 255, 0.95) !important; 
+            backdrop-filter: blur(20px) !important;
+            -webkit-backdrop-filter: blur(20px) !important;
             border-radius: 16px; 
-            box-shadow: 0 8px 32px rgba(0, 32, 91, 0.1); 
-            border: 1px solid rgba(255, 255, 255, 0.8) !important; 
-            border-top: 4px solid #00A3E0 !important; 
+            box-shadow: 0 12px 35px rgba(0, 32, 91, 0.12), 0 4px 10px rgba(2, 132, 199, 0.05) !important; /* เลเยอร์เงาสีน้ำเงิน */
+            border: 1px solid rgba(2, 132, 199, 0.2) !important; 
+            border-top: 5px solid #0EA5E9 !important; /* แถบสีฟ้าสดด้านบนการ์ด */
             overflow: hidden;
         }
         
-        /* Alerts (Liquid Glass) */
+        /* Alerts */
         .stAlert { 
-            background: rgba(255, 255, 255, 0.65) !important; 
-            backdrop-filter: blur(12px) !important;
-            -webkit-backdrop-filter: blur(12px) !important;
+            background: rgba(255, 255, 255, 0.95) !important; 
+            backdrop-filter: blur(15px) !important;
             border-radius: 12px; 
-            border: 1px solid rgba(255, 255, 255, 0.8) !important; 
-            box-shadow: 0 8px 32px rgba(0, 32, 91, 0.08); 
+            border: 1px solid rgba(220, 38, 38, 0.3) !important; 
+            box-shadow: 0 8px 25px rgba(220, 38, 38, 0.1); 
         }
         
-        /* Map Iframe Wrapper (Liquid Glass border) */
+        /* Map Iframe Wrapper */
         iframe { 
             border-radius: 16px; 
-            box-shadow: 0 8px 32px rgba(0, 32, 91, 0.1); 
-            border: 2px solid rgba(255, 255, 255, 0.7); 
+            box-shadow: 0 12px 35px rgba(0, 32, 91, 0.15); 
+            border: 3px solid rgba(255, 255, 255, 0.9); 
         }
         
         div[data-testid="stVerticalBlock"] > div.element-container { background-color: transparent; }
@@ -156,21 +161,21 @@ st.markdown('''
         [data-testid="stStatusWidget"] { display: none !important; }
         .stSpinner > div > div { display: none !important; }
 
-        /* 🍎 DYNAMIC ISLAND CSS (Liquid Glass Style) */
+        /* 🍎 DYNAMIC ISLAND CSS */
         .island-wrapper {
             position: fixed; 
-            top: 65px; /* ขยับลงมาเพื่อไม่ให้ทับแถบเมนูด้านบน */
+            top: 65px; 
             left: 50%; 
             transform: translateX(-50%); 
             z-index: 999999;
             pointer-events: none;
         }
         .dynamic-island {
-            background: rgba(10, 25, 47, 0.75) !important; 
-            backdrop-filter: blur(16px) !important;
-            -webkit-backdrop-filter: blur(16px) !important;
-            border: 1px solid rgba(255, 255, 255, 0.15) !important;
-            color: #FFFFFF; 
+            background: rgba(15, 23, 42, 0.85) !important; 
+            backdrop-filter: blur(20px) !important;
+            -webkit-backdrop-filter: blur(20px) !important;
+            border: 1px solid rgba(56, 189, 248, 0.3) !important;
+            color: #F8FAFC; 
             font-family: 'Sarabun', sans-serif;
             border-radius: 40px; 
             padding: 12px 28px; 
@@ -180,7 +185,7 @@ st.markdown('''
             align-items: center; 
             justify-content: center;
             gap: 12px;
-            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.25), 0 0 15px rgba(2, 132, 199, 0.2);
             animation: island-pop 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
             overflow: hidden;
             white-space: nowrap;
@@ -200,7 +205,7 @@ st.markdown('''
         }
         @keyframes water-bounce {
             0% { transform: scale(0.85) translateY(2px); opacity: 0.7; }
-            100% { transform: scale(1.15) translateY(-2px); opacity: 1; filter: drop-shadow(0 0 5px #00A3E0); }
+            100% { transform: scale(1.15) translateY(-2px); opacity: 1; filter: drop-shadow(0 0 8px #38BDF8); }
         }
         .text-fade-in {
             opacity: 0;
@@ -212,8 +217,8 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 # Header
-st.markdown("<h1 style='text-align: center; color: #00205B; margin-bottom: 0;'>🚛 Sprinkle Route Optimization</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #64748B; font-size: 1.2rem; margin-bottom: 30px;'>ระบบวิเคราะห์และจัดสมดุลสายส่งน้ำอัตโนมัติ (Balanced Fleet & Micro-Routing Model)</p>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; color: #00205B; margin-bottom: 0; text-shadow: 0 2px 4px rgba(0,32,91,0.1);'>🚛 Sprinkle Route Optimization</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #0284C7; font-size: 1.2rem; font-weight: 500; margin-bottom: 30px;'>ระบบวิเคราะห์และจัดสมดุลสายส่งน้ำอัตโนมัติ (Balanced Fleet & Micro-Routing Model)</p>", unsafe_allow_html=True)
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=hard_reset)
@@ -234,7 +239,7 @@ if sheet_url:
     if 'cached_raw_url' not in st.session_state or st.session_state['cached_raw_url'] != sheet_url:
         loading_placeholder = st.empty()
         
-        # 💧 เปลี่ยนไอคอนเป็นหยดน้ำแทนจุดไข่ปลา
+        # 💧 ไอคอนหยดน้ำเคลื่อนไหวตอนโหลดข้อมูล
         island_html = '''
         <div class="island-wrapper">
             <div class="dynamic-island">
@@ -604,10 +609,10 @@ if df is not None and not df.empty:
     if st.sidebar.button("🚀 ประมวลผลตัดสายส่ง", use_container_width=True):
         calc_placeholder = st.empty()
         
-        # 💧 ใช้ไอคอนหยดน้ำเคลื่อนไหวแทน
+        # 💧 ใช้ไอคอนหยดน้ำเคลื่อนไหวตอนวิเคราะห์
         island_html = '''
         <div class="island-wrapper">
-            <div class="dynamic-island" style="background: rgba(10, 25, 47, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.2);">
+            <div class="dynamic-island">
                 <div class="island-icon"><span class="water-pulse">💧</span></div>
                 <span class="text-fade-in">กำลังวิเคราะห์พิกัดและคำนวณแบ่งเขตแดน...</span>
             </div>
@@ -667,10 +672,10 @@ if df is not None and not df.empty:
             if st.button("✨ คลิกที่นี่เพื่อให้ AI เกลี่ยงานที่ล้น ไปใส่วันว่าง (เฉพาะในรถคันเดิม + อิงพิกัดพื้นที่ใกล้เคียง)", use_container_width=True):
                 day_shift_placeholder = st.empty()
                 
-                # 💧 ใช้ไอคอนหยดน้ำเคลื่อนไหวตอนย้ายวัน
+                # 💧 ไอคอนหยดน้ำตอนย้ายวัน
                 island_html_shift = '''
                 <div class="island-wrapper">
-                    <div class="dynamic-island" style="background: rgba(10, 25, 47, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.2);">
+                    <div class="dynamic-island">
                         <div class="island-icon"><span class="water-pulse">💧</span></div>
                         <span class="text-fade-in">กำลังสแกนพื้นที่และเกลี่ยวันจัดส่ง...</span>
                     </div>
