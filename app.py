@@ -242,7 +242,8 @@ if df is not None and not df.empty:
             assigned_days_dict[idx] = parse_days_from_string(opt_df.at[idx, day_col])
 
         # -------------------------------------------------------------
-        # STEP 1: Multiplicatively Weighted K-Means (แกนมาตรฐานจัดพื้นที่)
+        # STEP 1: ลอจิกการแบ่งสายส่ง (ยังคงเป็น Multiplicatively Weighted K-Means เดิม 100%)
+        # ห้ามแก้ไขหรือเปลี่ยนแปลงโครงสร้างนี้เด็ดขาด
         # -------------------------------------------------------------
         norm_coords = np.zeros_like(coords)
         lat_min, lat_max = coords[:, 0].min(), coords[:, 0].max()
@@ -324,16 +325,18 @@ if df is not None and not df.empty:
             opt_df['สถานะ'] = np.where(opt_df[truck_col].astype(str) == base_t, 'ยุบสายไป ' + opt_df['เบอร์รถใหม่'], opt_df['สถานะ'])
 
         # -------------------------------------------------------------
-        # STEP 2: Gentle Micro-Routing (ระบบเกราะป้องกันลูกค้าเดิม)
+        # STEP 2: Smart Spatial Day-Shifting (เกลี่ยวันภายในรถคันเดิม อิงพิกัดรายวัน)
+        # กฎ: ย้ายงานเฉพาะในรถตัวเอง, หาวันว่าง, เลือกย้ายคนที่อยู่ใกล้โซนของวันว่างที่สุด
         # -------------------------------------------------------------
         MAX_CAP = 156
-        TARGET_CAP = 148
+        TARGET_CAP = 156 # อนุโลมให้วิ่งถึง 156 ได้เป๊ะๆ จะได้ไม่ย้ายพร่ำเพรื่อ
 
         for t in active_trucks:
+            # ดึงข้อมูลเฉพาะรถคันนี้
             t_indices = [idx for idx in opt_df.index if opt_df.at[idx, 'เบอร์รถใหม่'] == t]
             if not t_indices: continue
             
-            for iteration in range(5):
+            for iteration in range(10): # วนลูปจนกว่ายอดของรถคันนี้จะอยู่ในเกณฑ์ทั้งหมด
                 daily_loads = np.zeros(6)
                 for idx in t_indices:
                     d_list = assigned_days_dict[idx]
@@ -341,7 +344,7 @@ if df is not None and not df.empty:
                     v = vols[idx] / n / 4.333
                     for d in d_list: daily_loads[d] += v
 
-                # หาศูนย์กลางพิกัดของแต่ละวัน เพื่อเช็คว่าพิกัดสอดคล้องกับคิววันไหนที่สุด
+                # หาศูนย์กลางพิกัดของกลุ่มลูกค้าแยกตามรายวัน เฉพาะภายในรถคันนี้
                 day_centers = {}
                 for d in range(6):
                     d_pts = [coords[idx] for idx in t_indices if d in assigned_days_dict[idx]]
@@ -354,51 +357,60 @@ if df is not None and not df.empty:
                         needs_more_smoothing = True
                         excess = daily_loads[d_over] - TARGET_CAP
 
-                        # เลือกลูกค้าที่ย้ายได้ (ไม่ใช่ VIP และจัดส่งไม่ถี่เกินไป)
+                        # หาวันที่ยังมีที่ว่างรับงานได้ใน "รถคันเดียวกัน"
+                        under_days = [d for d in range(6) if daily_loads[d] < MAX_CAP and d != d_over]
+                        if not under_days: continue 
+
+                        # เลือกลูกค้าที่อยู่ในวันล้น และสามารถย้ายได้
                         movable = [idx for idx in t_indices if not opt_df.at[idx, 'is_locked'] and d_over in assigned_days_dict[idx] and len(assigned_days_dict[idx]) <= 3]
                         if not movable: continue
 
-                        # กฎเหล็กของระบบ: ให้ความสำคัญการย้ายคนที่ "เพิ่งโดนเปลี่ยนรถใหม่" หรือ "หลงโซนจนเปลืองน้ำมัน"
-                        def sort_key(idx):
-                            is_original = 1 if str(opt_df.at[idx, truck_col]) == str(t) else 0
-                            c_dist = np.sum((coords[idx] - day_centers.get(d_over, coords[idx]))**2)
-                            # ถ้าเป็นคนรถเดิม (is_original=1) จะถูกย้ายยากขึ้นอย่างมาก (ปกป้องวันเดิม)
-                            return c_dist - (is_original * 0.05)
-
-                        movable.sort(key=sort_key, reverse=True)
-
-                        shifted_vol = 0
+                        move_candidates = []
                         for idx in movable:
-                            if shifted_vol >= excess: break
-                            
                             old_list = assigned_days_dict[idx]
                             n = len(old_list) if len(old_list) > 0 else 1
                             v = vols[idx] / n / 4.333
-
-                            best_new_d = None
-                            min_dist = float('inf')
                             
-                            # หาวันที่โหลดว่าง และพิกัดไม่กระโดดจนสิ้นเปลืองน้ำมัน
-                            for d_under in range(6):
-                                if d_under in old_list or daily_loads[d_under] + v > MAX_CAP: continue
+                            # น้ำหนักคุ้มครองลูกค้าเดิม (บวกให้ลูกค้าเก่า เพื่อให้ย้ายยากกว่าลูกค้าที่เพิ่งจัดสายมาใหม่)
+                            is_original = 1 if str(opt_df.at[idx, truck_col]) == str(t) else 0
+
+                            for d_under in under_days:
+                                if d_under in old_list: continue 
+                                if daily_loads[d_under] + v > MAX_CAP: continue 
                                 
-                                dist = 0
+                                # คำนวณระยะทางไปหาโซนวันว่าง (เพื่อเกาะกลุ่มในพื้นที่เดียวกัน ประหยัดน้ำมัน)
                                 if d_under in day_centers:
-                                    dist = np.sum((coords[idx] - day_centers[d_under])**2)
-                                    
-                                if dist < min_dist:
-                                    min_dist = dist
-                                    best_new_d = d_under
-                                    
-                            if best_new_d is not None:
-                                new_list = [best_new_d if x == d_over else x for x in old_list]
-                                assigned_days_dict[idx] = new_list
-                                daily_loads[d_over] -= v
-                                daily_loads[best_new_d] += v
-                                shifted_vol += v
+                                    dist_to_new_day = np.sum((coords[idx] - day_centers[d_under])**2)
+                                else:
+                                    dist_to_new_day = 0.05 
                                 
-                                reason = "เกลี่ยยอดรายวัน (รถเดิม)" if str(opt_df.at[idx, truck_col]) == str(t) else "จัดกลุ่มรอบสายใหม่"
-                                opt_df.at[idx, 'สถานะการย้ายวัน'] = f"{reason}: {format_days_to_string([d_over])}->{format_days_to_string([best_new_d])}"
+                                # ต้นทุนการย้าย = ระยะทาง + ค่าปกป้องลูกค้าเดิม
+                                cost = dist_to_new_day + (is_original * 0.1) 
+                                move_candidates.append((cost, idx, d_under, v))
+                        
+                        # เรียงลำดับคัดกรอง: เลือกลูกค้าที่บ้านอยู่ใกล้วันเป้าหมายมากที่สุด ขึ้นมาก่อน
+                        move_candidates.sort(key=lambda x: x[0])
+
+                        shifted_vol = 0
+                        moved_this_round = set()
+
+                        # เริ่มย้ายลูกค้า
+                        for cost, idx, best_new_d, v in move_candidates:
+                            if shifted_vol >= excess: break
+                            if idx in moved_this_round: continue
+                            if daily_loads[best_new_d] + v > MAX_CAP: continue
+
+                            old_list = assigned_days_dict[idx]
+                            new_list = [best_new_d if x == d_over else x for x in old_list]
+                            
+                            assigned_days_dict[idx] = new_list
+                            daily_loads[d_over] -= v
+                            daily_loads[best_new_d] += v
+                            shifted_vol += v
+                            moved_this_round.add(idx)
+                            
+                            reason = "เกลี่ยวันอิงพื้นที่ (ลูกค้ารถเดิม)" if str(opt_df.at[idx, truck_col]) == str(t) else "เกลี่ยวันอิงพื้นที่ (ลูกค้าย้ายสายใหม่)"
+                            opt_df.at[idx, 'สถานะการย้ายวัน'] = f"{reason}: {format_days_to_string([d_over])} -> {format_days_to_string([best_new_d])}"
 
                 if not needs_more_smoothing:
                     break
@@ -421,7 +433,7 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกระบะตู้ทึบกำลังวิ่ง..."><br>กำลังจัดสมดุลย์ระบบปกป้องวันเดิมให้ลูกค้า... 🚚💨</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกระบะตู้ทึบกำลังวิ่ง..."><br>กำลังเกลี่ยวันจัดส่งภายในสาย และจับคู่พื้นที่ประหยัดน้ำมัน... 🚚💨</div>'''
         except FileNotFoundError:
             loader_html = '<div class="custom-truck-loader">กำลังประมวลผล...</div>'
 
@@ -474,7 +486,7 @@ if df is not None and not df.empty:
         if max_all_days > 165:
             st.error(f"🚨 **ระบบตรวจพบโหลดเกินขีดจำกัดสูงสุด ({max_all_days} ถัง/วัน)!** (หมายเหตุ: เกิดจากพื้นที่นี้มียอดสั่งน้ำหนาแน่นเกินกว่าขีดจำกัดของรถ โปรดพิจารณาเพิ่มรถ หรือเจรจาลูกค้าเพิ่มเติม)")
         else:
-            st.success("✅ **สมบูรณ์แบบ:** โหลดรายวันกระจายตัวสอดคล้องตามหน้างานจริง (ไม่แบนราบและไม่ทะลุ 156 ถัง) และระบบแบ่งเขตแดนคมกริบไร้รอยต่อแล้ว")
+            st.success("✅ **สมบูรณ์แบบ:** โหลดรายวันถูกเกลี่ยลงวันว่างภายในรถคันเดิม โดยอิงจากพิกัดใกล้เคียงและปกป้องลูกค้าเก่าแล้ว")
 
         st.markdown("### 🗺️ แผนที่เปรียบเทียบการกระจายตัว (เชิงพื้นที่)")
         view_options = ["แสดงทั้งหมด (แยกสีตามเบอร์รถ)"] + all_trucks_after
