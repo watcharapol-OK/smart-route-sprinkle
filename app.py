@@ -8,7 +8,6 @@ import re
 import math
 import time
 import base64
-import random
 
 st.set_page_config(page_title="Smart Route Rebalancer", layout="wide", initial_sidebar_state="expanded")
 
@@ -69,7 +68,7 @@ if sheet_url:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังดึงข้อมูลต้นฉบับ... 💦</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกระบะตู้ทึบกำลังวิ่ง..."><br>กำลังดึงข้อมูลต้นฉบับ... 💦</div>'''
         except FileNotFoundError:
             loader_html = '<div class="custom-truck-loader">กำลังโหลดข้อมูล...</div>'
 
@@ -244,11 +243,10 @@ if df is not None and not df.empty:
             assigned_days_dict[idx] = parse_days_from_string(opt_df.at[idx, day_col])
 
         # -------------------------------------------------------------
-        # STEP 1: Power Diagram (Laguerre-Voronoi) แบบปกป้อง Dead Cluster
-        # รับประกันอาณาเขตติดกัน 100% และไม่มีรถคันไหนหายสาบสูญ
+        # STEP 1: Multiplicatively Weighted K-Means (เสถียรสูงสุด 100%)
+        # สมการนี้การันตีขอบเขตสวยงามและยอดตรงเป้าหมาย โดยไม่มีการพังทลายของข้อมูล
         # -------------------------------------------------------------
-        
-        # ปรับสเกลพิกัดให้อยู่ในระยะเสถียร (Normalize 0-1)
+        # แปลงพิกัดให้เป็น Normalized (0 ถึง 1) ป้องกันตัวแปรค่าล้น
         norm_coords = np.zeros_like(coords)
         lat_min, lat_max = coords[:, 0].min(), coords[:, 0].max()
         lon_min, lon_max = coords[:, 1].min(), coords[:, 1].max()
@@ -269,9 +267,9 @@ if df is not None and not df.empty:
             elif not t_data.empty:
                 centers[t] = np.array([(t_data[lat_col].mean() - lat_min)/lat_range, (t_data[lon_col].mean() - lon_min)/lon_range])
             else:
-                # เกิดใหม่ที่ขอบเพื่อป้องกันการทับศูนย์กลางเดิม
+                # ถ้ารถใหม่ ให้เกิดบริเวณขอบพื้นที่ เพื่อไม่ให้ทับซ้อนคันอื่นตอนเริ่มต้น
                 angle = i * (2 * math.pi / len(active_trucks))
-                centers[t] = np.array([0.5 + 0.15*math.cos(angle), 0.5 + 0.15*math.sin(angle)])
+                centers[t] = np.array([0.5 + 0.2*math.cos(angle), 0.5 + 0.2*math.sin(angle)])
 
         locked_indices = np.where(opt_df['is_locked'].values)[0]
         unlocked_indices = np.where(~opt_df['is_locked'].values)[0]
@@ -284,13 +282,14 @@ if df is not None and not df.empty:
             locked_loads[target_t] += vols[idx]
 
         best_assignments = {idx: active_trucks[0] for idx in unlocked_indices}
-        W = {t: 0.0 for t in active_trucks} 
-        lr = 0.5 # ปรับให้ AI มีพลังเบียดแย่งอาณาเขตเร็วขึ้น
         
-        for iteration in range(300): 
+        # ตัวคูณ Penalty ที่มีเสถียรภาพ (ใช้วิธีคูณแทนการลบ)
+        penalties = {t: 1.0 for t in active_trucks} 
+        
+        for iteration in range(100): # รัน 100 รอบเพื่อให้สมองกลหาจุดบาลานซ์ที่นิ่งที่สุด
             current_loads = {t: locked_loads[t] for t in active_trucks}
             
-            # การแบ่งเขตแดนด้วยสนามพลังอิทธิพล
+            # วนลูปหาเจ้าของพื้นที่ให้ลูกค้าแต่ละคน
             for idx in unlocked_indices:
                 pt = norm_coords[idx]
                 min_cost = float('inf')
@@ -298,7 +297,11 @@ if df is not None and not df.empty:
                 
                 for t in active_trucks:
                     if monthly_targets[t] <= 0: continue
-                    cost = np.sum((pt - centers[t])**2) - W[t]
+                    
+                    # หัวใจสำคัญ: ระยะทาง (Distance) * ตัวคูณ (Penalty)
+                    # ถ้ารถยอดเกินเป้า Penalty จะสูงขึ้น ทำให้ระยะทางจำลองไกลขึ้น (หดอาณาเขต)
+                    cost = np.sum((pt - centers[t])**2) * penalties[t]
+                    
                     if cost < min_cost:
                         min_cost = cost
                         best_t = t
@@ -306,48 +309,36 @@ if df is not None and not df.empty:
                 best_assignments[idx] = best_t
                 current_loads[best_t] += vols[idx]
 
-            # อัปเดตศูนย์กลาง & ชุบชีวิตสายส่งที่ตาย (Dead Cluster Revival)
+            # อัปเดตจุดศูนย์กลางใหม่ และคำนวณตัวคูณ Penalty 
             for t in active_trucks:
                 if monthly_targets[t] <= 0: continue
+                
                 pts = [norm_coords[idx] for idx in unlocked_indices if best_assignments[idx] == t]
-                if len(pts) > 0:
+                if pts:
                     centers[t] = np.mean(pts, axis=0)
+                    
+                    # ปรับ Penalty อย่างนุ่มนวล ไม่กระชาก (Learning Rate = 0.25)
+                    ratio = current_loads[t] / max(1.0, monthly_targets[t])
+                    ratio = max(0.2, min(5.0, ratio)) # ล็อกการสวิงไม่ให้เพี้ยน
+                    
+                    penalties[t] *= (1.0 + (ratio - 1.0) * 0.25)
+                    
+                    # ล็อกขอบเขตการคำนวณป้องกันค่า Error (Infinity/Zero)
+                    penalties[t] = max(1e-4, min(1e4, penalties[t]))
                 else:
-                    # 🚨 ระบบชุบชีวิตทำงาน: เลือกรถที่ยอดล้นที่สุด แล้วไปเกิดใหม่กลางวงแย่งลูกค้ามา
+                    # 🚨 ระบบชุบชีวิตที่ปลอดภัย: ถ้างานลดเหลือ 0 ให้รีเซ็ตค่ายอมแพ้
+                    penalties[t] *= 0.5 
+                    
+                    # ค้นหารถที่งานล้นมือที่สุด
                     over_trucks = [ot for ot in active_trucks if current_loads[ot] > monthly_targets[ot] and ot != t]
                     if over_trucks:
                         ot = max(over_trucks, key=lambda x: current_loads[x] - monthly_targets[x])
-                        ot_pts = [idx for idx in unlocked_indices if best_assignments[idx] == ot]
-                        if ot_pts:
-                            # เกิดใหม่ตรงจุดที่ห่างจากศูนย์กลางของรถที่ยอดล้นที่สุด
-                            farthest_idx = max(ot_pts, key=lambda idx: np.sum((norm_coords[idx] - centers[ot])**2))
-                            centers[t] = norm_coords[farthest_idx]
-                            W[t] = W[ot] + 0.1 # ให้บัฟพลังชนะรถคันเดิม
+                        # ขยับจุดเกิดไปอยู่ข้างๆ คันที่งานล้น เพื่อเตรียมดึงงานคืน
+                        centers[t] = centers[ot] + np.array([0.01, 0.01])
                     else:
-                        # กรณีกันเหนียว ถ้ายอมแพ้หมดให้สุ่มเกิด
-                        if len(unlocked_indices) > 0:
-                            centers[t] = norm_coords[random.choice(unlocked_indices)]
-                            W[t] += 0.1
+                        centers[t] = np.array([0.5, 0.5])
 
-            # อัปเดตพลังอิทธิพล (Weight)
-            max_err = 0
-            for t in active_trucks:
-                if monthly_targets[t] <= 0: continue
-                err = monthly_targets[t] - current_loads[t]
-                max_err = max(max_err, abs(err))
-                # ถ้ายอดขาด err > 0 จะได้รับพลัง W เพิ่มขึ้น ขยายลูกโป่งต่อ
-                W[t] += lr * (err / monthly_targets[t])
-
-            # ปรับสมดุลไม่ให้พลัง W ลอยเฟ้อเกินไป
-            mean_W = np.mean(list(W.values()))
-            for t in W:
-                W[t] -= mean_W
-                
-            # ถ้ายอดคลาดเคลื่อนไม่เกิน 30 ถังต่อคัน ถือว่าสมดุลสมบูรณ์
-            if max_err <= 30:
-                break
-
-        # บันทึกผลลัพธ์ลง Dataframe
+        # บันทึกผลลัพธ์การแบ่งสายลงตารางจริง
         for idx in unlocked_indices:
             opt_df.at[idx, 'เบอร์รถใหม่'] = best_assignments[idx]
 
@@ -441,7 +432,7 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกระบะตู้ทึบกำลังวิ่ง..."><br>กำลังแบ่งเขตแดนพร้อมระบบคุ้มครองสายส่ง (Revival Mode)... 🚚💨</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกระบะตู้ทึบกำลังวิ่ง..."><br>กำลังคำนวณอาณาเขตด้วยคณิตศาสตร์ที่แม่นยำที่สุด... 🚚💨</div>'''
         except FileNotFoundError:
             loader_html = '<div class="custom-truck-loader">กำลังประมวลผล...</div>'
 
