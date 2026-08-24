@@ -9,7 +9,8 @@ import math
 import time
 import base64
 
-st.set_page_config(page_title="Smart Route Rebalancer", layout="wide", initial_sidebar_state="expanded")
+# กำหนด Layout หน้าจอ
+st.set_page_config(page_title="Sprinkle Smart Route Rebalancer", layout="wide", initial_sidebar_state="expanded")
 
 def hard_reset():
     keys_to_clear = ['result_df', 'daily_matrix']
@@ -17,34 +18,107 @@ def hard_reset():
         if k in st.session_state:
             del st.session_state[k]
 
+# ==========================================
+# 💎 PREMIUM UI/UX STYLING (SPRINKLE THEME)
+# ==========================================
 st.markdown('''
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
+        
+        /* Typography & Main Background */
         html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
-        .stApp { background-color: #F8F9FA; }
-        h1, h2, h3 { color: #002D62 !important; font-weight: 600; text-shadow: 1px 1px 2px rgba(0,0,0,0.05); }
-        [data-testid="stSidebar"] { background-color: #001F3F !important; border-right: 2px solid #D4AF37; }
-        [data-testid="stSidebar"] * { color: #E8EEF2 !important; }
-        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: #D4AF37 !important; }
-        div[data-baseweb="select"] > div, input { background-color: #003366 !important; border: 1px solid #557A95 !important; color: white !important;}
-        .stButton>button { background-color: #D4AF37 !important; color: #001F3F !important; border: none !important; border-radius: 4px; font-weight: 600; padding: 0.5rem 2rem; width: 100%; transition: all 0.3s ease; }
-        .stButton>button:hover { background-color: #F3E5AB !important; box-shadow: 0 4px 8px rgba(212, 175, 55, 0.4); transform: translateY(-2px); }
+        .stApp { background-color: #F4F7FB; }
+        
+        /* Headings */
+        h1, h2, h3, h4 { color: #00205B !important; font-weight: 700; letter-spacing: -0.5px; }
+        
+        /* Sidebar Styling (Midnight Blue) */
+        [data-testid="stSidebar"] { background-color: #0A192F !important; border-right: 1px solid #112240; box-shadow: 2px 0 10px rgba(0,0,0,0.1); }
+        [data-testid="stSidebar"] * { color: #E2E8F0 !important; }
+        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: #00A3E0 !important; }
+        
+        /* Input & Select Box in Sidebar */
+        div[data-baseweb="select"] > div, input { 
+            background-color: #112240 !important; 
+            border: 1px solid #233554 !important; 
+            color: white !important; 
+            border-radius: 8px; 
+            transition: border 0.3s ease;
+        }
+        div[data-baseweb="select"] > div:hover, input:focus { border: 1px solid #00A3E0 !important; }
+        
+        /* 🔵 Primary Main Button (Gradient Sprinkle Blue) */
+        .stButton>button { 
+            background: linear-gradient(135deg, #005A9C 0%, #00205B 100%) !important; 
+            color: white !important; 
+            border: none !important; 
+            border-radius: 8px; 
+            font-weight: 600; 
+            font-size: 1.1rem;
+            padding: 0.6rem 2rem; 
+            width: 100%; 
+            box-shadow: 0 4px 12px rgba(0, 32, 91, 0.25); 
+            transition: all 0.3s ease; 
+        }
+        .stButton>button:hover { 
+            transform: translateY(-2px); 
+            box-shadow: 0 6px 16px rgba(0, 32, 91, 0.4); 
+            background: linear-gradient(135deg, #00A3E0 0%, #005A9C 100%) !important;
+        }
+        
+        /* 🟢 Download Button */
+        [data-testid="stDownloadButton"] > button { 
+            background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important; 
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+        }
+        [data-testid="stDownloadButton"] > button:hover { 
+            box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4); 
+            transform: translateY(-2px);
+        }
+        
+        /* 🌟 Floating DataFrames (Premium Cards) */
+        div[data-testid="stDataFrame"] > div { 
+            background-color: white; 
+            border-radius: 12px; 
+            box-shadow: 0 6px 16px rgba(0,0,0,0.06); 
+            border: 1px solid #E2E8F0; 
+            border-top: 4px solid #00A3E0; 
+            overflow: hidden;
+        }
+        
+        /* Alerts & Info Boxes */
+        .stAlert { 
+            border-radius: 10px; 
+            border: none; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05); 
+        }
+        
+        /* Map Container Drop Shadow */
+        iframe { 
+            border-radius: 12px; 
+            box-shadow: 0 6px 16px rgba(0,0,0,0.08); 
+            border: 1px solid #E2E8F0; 
+        }
+
+        /* Clean UI Hiders */
         div[data-testid="stVerticalBlock"] > div.element-container { background-color: transparent; }
-        .stDataFrame { background-color: white; padding: 1rem; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.08); border-top: 4px solid #002D62; }
         #MainMenu {visibility: hidden;} footer {visibility: hidden;}
-
         .stSpinner > div > div { display: none !important; }
-        @keyframes drive { 0% { transform: translateX(-100%); } 50% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
-        .custom-truck-loader { text-align: center; padding: 2rem; color: #002D62; font-weight: bold; font-size: 1.2rem; overflow: hidden; border-radius: 10px; background-color: #E8F4F8; border: 2px dashed #002D62; margin-bottom: 20px; }
-        .custom-truck-loader img { width: 150px; animation: drive 3s infinite ease-in-out; }
 
-        [data-testid="stDownloadButton"] > button { background-color: #28A745 !important; color: white !important; border: none !important; padding: 0.8rem 2rem; font-size: 1.1rem; }
-        [data-testid="stDownloadButton"] > button:hover { background-color: #218838 !important; box-shadow: 0 4px 8px rgba(40, 167, 69, 0.4); }
+        /* Custom Loader */
+        @keyframes drive { 0% { transform: translateX(-100%); } 50% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
+        .custom-truck-loader { 
+            text-align: center; padding: 2.5rem; color: #00205B; font-weight: 700; font-size: 1.3rem; 
+            overflow: hidden; border-radius: 12px; background-color: white; 
+            border: 1px solid #E2E8F0; box-shadow: 0 8px 24px rgba(0,32,91,0.08); margin-bottom: 20px; 
+        }
+        .custom-truck-loader img { width: 160px; animation: drive 3s infinite ease-in-out; }
     </style>
 ''', unsafe_allow_html=True)
 
-st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Balanced Fleet & Daily Load Model)**")
+# Header แบบใหม่ดูเป็นทางการ
+st.markdown("<h1 style='text-align: center; color: #00205B; margin-bottom: 0;'>🚛 Sprinkle Route Optimization</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #64748B; font-size: 1.2rem; margin-bottom: 30px;'>ระบบวิเคราะห์และจัดสมดุลสายส่งน้ำอัตโนมัติ (Balanced Fleet & Micro-Routing Model)</p>", unsafe_allow_html=True)
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=hard_reset)
@@ -67,7 +141,7 @@ if sheet_url:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกระบะตู้ทึบกำลังวิ่ง..."><br>กำลังดึงข้อมูลต้นฉบับ... 💦</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกระบะตู้ทึบกำลังวิ่ง..."><br>กำลังเชื่อมต่อฐานข้อมูล... 💧</div>'''
         except FileNotFoundError:
             loader_html = '<div class="custom-truck-loader">กำลังโหลดข้อมูล...</div>'
 
@@ -99,7 +173,7 @@ if df is not None and not df.empty:
     df[vol_col] = pd.to_numeric(df[vol_col], errors='coerce').fillna(0)
     df['VIP_Status'] = df[vip_col] if vip_col in df.columns else 'ปกติ'
 
-    st.sidebar.success(f"✅ โหลดข้อมูลสำเร็จ: {len(df)} รายการ")
+    st.sidebar.success(f"✅ โหลดข้อมูลสำเร็จ: {len(df):,} รายการ")
     st.sidebar.markdown("---")
     st.sidebar.markdown("### ⚙️ 2. ตั้งค่าคอลัมน์และสายใหม่")
 
@@ -223,11 +297,10 @@ if df is not None and not df.empty:
         if len(days_list) == 6: return 'จ-ส'
         return ', '.join([day_names[d] for d in sorted(days_list)])
 
+    # ==========================================
+    # LOGIC CORE: UNTOUCHED 100% 
+    # ==========================================
     def run_fast_allocation_with_auto_shift(data, base_t, new_t, pct_dict, manual_locks, locked_ui_list):
-        # -------------------------------------------------------------
-        # STEP 1: Multiplicatively Weighted K-Means (จัดสายส่งหลัก)
-        # โครงสร้างนิ่งและสมบูรณ์แล้ว ห้ามแก้ไข
-        # -------------------------------------------------------------
         opt_df = data.copy()
         opt_df['เบอร์รถใหม่'] = 'ยังไม่จัด'
         opt_df['is_locked'] = (opt_df['VIP_Status'].astype(str).str.upper() == 'VIP') | (opt_df[id_col].astype(str).isin(manual_locks))
@@ -283,16 +356,19 @@ if df is not None and not df.empty:
         
         for iteration in range(100):
             current_loads = {t: locked_loads[t] for t in active_trucks}
+            
             for idx in unlocked_indices:
                 pt = norm_coords[idx]
                 min_cost = float('inf')
                 best_t = active_trucks[0]
+                
                 for t in active_trucks:
                     if monthly_targets[t] <= 0: continue
                     cost = np.sum((pt - centers[t])**2) * penalties[t]
                     if cost < min_cost:
                         min_cost = cost
                         best_t = t
+                        
                 best_assignments[idx] = best_t
                 current_loads[best_t] += vols[idx]
 
@@ -321,7 +397,6 @@ if df is not None and not df.empty:
         if has_base:
             opt_df['สถานะ'] = np.where(opt_df[truck_col].astype(str) == base_t, 'ยุบสายไป ' + opt_df['เบอร์รถใหม่'], opt_df['สถานะ'])
 
-        # ดึงลอจิกการเกลี่ยวันอัตโนมัติออก เพื่อให้ไปอยู่ในปุ่ม Manual ตามที่คุณโอต้องการ
         for idx in opt_df.index:
             opt_df.at[idx, 'วันจัดส่ง(ใหม่)'] = format_days_to_string(assigned_days_dict[idx])
 
@@ -334,9 +409,6 @@ if df is not None and not df.empty:
 
         return opt_df, daily_matrix
 
-    # -------------------------------------------------------------
-    # ฟังก์ชันปุ่มกดพิเศษ: เกลี่ยวันจัดส่งภายในสาย (Smart Day-Shift)
-    # -------------------------------------------------------------
     def run_smart_day_shift(res_df_input):
         opt_df = res_df_input.copy()
         vols = opt_df[vol_col].values
@@ -348,13 +420,13 @@ if df is not None and not df.empty:
             
         active_trucks = opt_df['เบอร์รถใหม่'].dropna().unique().tolist()
         MAX_CAP = 156
-        TARGET_CAP = 156 # อนุญาตให้วิ่ง 156 ได้เป๊ะๆ จะได้ไม่ต้องเกลี่ยพร่ำเพรื่อ
+        TARGET_CAP = 156 
         
         for t in active_trucks:
             t_indices = [idx for idx in opt_df.index if opt_df.at[idx, 'เบอร์รถใหม่'] == t]
             if not t_indices: continue
             
-            for iteration in range(15): # วนลูปหาทางออกที่ประหยัดน้ำมันที่สุด
+            for iteration in range(15): 
                 daily_loads = np.zeros(6)
                 for idx in t_indices:
                     d_list = assigned_days_dict[idx]
@@ -362,7 +434,6 @@ if df is not None and not df.empty:
                     v = vols[idx] / n / 4.333
                     for d in d_list: daily_loads[d] += v
                     
-                # หาจุดศูนย์กลางของพื้นที่รายวัน เฉพาะของรถคันนี้
                 day_centers = {}
                 for d in range(6):
                     d_pts = [coords[idx] for idx in t_indices if d in assigned_days_dict[idx]]
@@ -375,11 +446,9 @@ if df is not None and not df.empty:
                         needs_more_smoothing = True
                         excess = daily_loads[d_over] - TARGET_CAP
                         
-                        # หาวันว่างเฉพาะภายในรถคันเดิมเท่านั้น
                         under_days = [d for d in range(6) if daily_loads[d] < MAX_CAP and d != d_over]
                         if not under_days: continue 
                         
-                        # เลือกลูกค้าในวันที่ล้น (เพื่อความปลอดภัย ไม่บังคับย้าย VIP)
                         movable = [idx for idx in t_indices if not opt_df.at[idx, 'is_locked'] and d_over in assigned_days_dict[idx]]
                         if not movable: continue
                         
@@ -392,11 +461,10 @@ if df is not None and not df.empty:
                             
                             for d_under in under_days:
                                 if d_under in old_list: continue 
-                                if daily_loads[d_under] + v > MAX_CAP + 5: continue # ยอมเกินนิดเดียวเพื่อปิดจบงาน
+                                if daily_loads[d_under] + v > MAX_CAP + 5: continue 
                                 
-                                # คำนวณหาระยะทางที่ใกล้ที่สุดกับโซนวันว่าง
                                 dist_to_new_day = np.sum((coords[idx] - day_centers[d_under])**2) if d_under in day_centers else 0.05
-                                cost = dist_to_new_day + (is_original * 0.1) # รถเดิมจะโดนย้ายยากขึ้นนิดนึง
+                                cost = dist_to_new_day + (is_original * 0.1) 
                                 move_candidates.append((cost, idx, d_under, v))
                                 
                         move_candidates.sort(key=lambda x: x[0])
@@ -458,7 +526,7 @@ if df is not None and not df.empty:
         daily_matrix = st.session_state['daily_matrix']
         all_trucks_after = sorted(res_df['เบอร์รถใหม่'].dropna().unique().tolist())
 
-        st.markdown("### 📊 สรุปภาพรวมยอดการจัดส่ง")
+        st.markdown("<h3 style='margin-top: 30px;'>📊 สรุปภาพรวมยอดการจัดส่ง</h3>", unsafe_allow_html=True)
 
         col1, col2 = st.columns(2)
         sum_before = df.groupby(truck_col).agg(จำนวนสมาชิก=pd.NamedAgg(column=truck_col, aggfunc='count'), **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}).reset_index()
@@ -472,7 +540,7 @@ if df is not None and not df.empty:
             st.markdown("**หลังปรับโครงสร้าง (พื้นที่ติดกัน 100% & ยอดตรงเป้า)**")
             st.dataframe(sum_after, use_container_width=True)
 
-        st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)")
+        st.markdown("<h3 style='margin-top: 30px;'>📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)</h3>", unsafe_allow_html=True)
 
         daily_summary = []
         for t in all_trucks_after:
@@ -492,14 +560,11 @@ if df is not None and not df.empty:
 
         max_all_days = max([row['โหลดสูงสุด (ถัง/วัน)'] for row in daily_summary])
         
-        # ---------------------------------------------------------
-        # ระบบปุ่มกดพิเศษ: เกลี่ยงานรายวันที่ทะลุเป้าหมาย
-        # ---------------------------------------------------------
         if max_all_days > 156:
             st.error(f"🚨 **ระบบตรวจพบโหลดเกินขีดจำกัดสูงสุด ({max_all_days} ถัง/วัน)!** (หมายเหตุ: เกิดจากบางวันมียอดสั่งน้ำกระจุกตัวหนาแน่น)")
             
             st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("🛠️ คลิกที่นี่เพื่อให้ AI เกลี่ยงานที่ล้น ไปใส่วันว่าง (เฉพาะในรถคันเดิม + อิงพิกัดพื้นที่ใกล้เคียง)", use_container_width=True):
+            if st.button("✨ คลิกที่นี่เพื่อให้ AI เกลี่ยงานที่ล้น ไปใส่วันว่าง (เฉพาะในรถคันเดิม + อิงพิกัดพื้นที่ใกล้เคียง)", use_container_width=True):
                 with st.spinner("กำลังวิเคราะห์พิกัดพื้นที่และย้ายวันจัดส่งอย่างระมัดระวัง..."):
                     new_res_df, new_daily_matrix = run_smart_day_shift(st.session_state['result_df'])
                     st.session_state['result_df'] = new_res_df
@@ -507,9 +572,9 @@ if df is not None and not df.empty:
                 time.sleep(0.5)
                 st.rerun()
         else:
-            st.success("✅ **สมบูรณ์แบบ:** โหลดรายวันกระจายตัวสอดคล้องตามหน้างานจริง ไม่ทะลุเพดาน 156 ถัง")
+            st.success("✅ **สถานะยอดเยี่ยม:** โหลดรายวันกระจายตัวสอดคล้องตามหน้างานจริง 100%")
 
-        st.markdown("### 🗺️ แผนที่เปรียบเทียบการกระจายตัว (เชิงพื้นที่)")
+        st.markdown("<h3 style='margin-top: 30px;'>🗺️ แผนที่เปรียบเทียบการกระจายตัว (เชิงพื้นที่)</h3>", unsafe_allow_html=True)
         view_options = ["แสดงทั้งหมด (แยกสีตามเบอร์รถ)"] + all_trucks_after
 
         col_filter, _ = st.columns([1, 1])
@@ -536,7 +601,7 @@ if df is not None and not df.empty:
         def get_name(row): return str(row[name_col]) if name_col else "ไม่ระบุ"
 
         with map_col1:
-            st.markdown("<div style='text-align:center; color:#002D62; font-weight:bold;'>โซนการวิ่งรถเดิม (Before)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#00205B; font-weight:bold; margin-bottom: 10px;'>โซนการวิ่งรถเดิม (Before)</div>", unsafe_allow_html=True)
             m1 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m1)
             for _, r in map_df_before.iterrows():
@@ -544,11 +609,11 @@ if df is not None and not df.empty:
                 is_vip = str(r.get('VIP_Status', '')).upper() == 'VIP' or str(r[id_col]) in manual_vips
                 m_color = color_map.get(t_id, 'gray') if color_mode == 'truck' else next((c for d, c in day_color_map.items() if d in str(r.get(day_col, '')).strip()), 'gray')
                 popup_html = f"<b>รหัส:</b> {r[id_col]}<br><b>ชื่อ:</b> {get_name(r)}<br><b>ยอด:</b> {r[vol_col]} ถัง<br><b>รถ:</b> {t_id}"
-                folium.CircleMarker([r[lat_col], r[lon_col]], radius=8 if is_vip else 5, color='#002D62' if is_vip else m_color, weight=2 if is_vip else 1, fill=True, fillColor=m_color, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=300)).add_to(m1)
+                folium.CircleMarker([r[lat_col], r[lon_col]], radius=8 if is_vip else 5, color='#00205B' if is_vip else m_color, weight=2 if is_vip else 1, fill=True, fillColor=m_color, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=300)).add_to(m1)
             components.html(m1.get_root().render(), height=450)
 
         with map_col2:
-            st.markdown("<div style='text-align:center; color:#002D62; font-weight:bold;'>โซนการวิ่งสายใหม่ (Balanced Fleet)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#00205B; font-weight:bold; margin-bottom: 10px;'>โซนการวิ่งสายใหม่ (Balanced Fleet)</div>", unsafe_allow_html=True)
             m2 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m2)
             for _, r in map_df_after.iterrows():
@@ -556,10 +621,10 @@ if df is not None and not df.empty:
                 is_vip = str(r.get('VIP_Status', '')).upper() == 'VIP' or str(r[id_col]) in manual_vips
                 m_color = color_map.get(t_new, 'gray') if color_mode == 'truck' else next((c for d, c in day_color_map.items() if d in str(r.get('วันจัดส่ง(ใหม่)', '')).strip()), 'gray')
                 popup_html = f"<b>รหัส:</b> {r[id_col]}<br><b>ชื่อ:</b> {get_name(r)}<br><b>ยอด:</b> {r[vol_col]} ถัง<br><b>รถล่าสุด:</b> {t_new}"
-                folium.CircleMarker([r[lat_col], r[lon_col]], radius=8 if is_vip else 5, color='#002D62' if is_vip else m_color, weight=2 if is_vip else 1, fill=True, fillColor=m_color, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=300)).add_to(m2)
+                folium.CircleMarker([r[lat_col], r[lon_col]], radius=8 if is_vip else 5, color='#00205B' if is_vip else m_color, weight=2 if is_vip else 1, fill=True, fillColor=m_color, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=300)).add_to(m2)
             components.html(m2.get_root().render(), height=450)
 
-        st.markdown("### 📋 รายละเอียดข้อมูลการโยกย้ายสมาชิก")
+        st.markdown("<h3 style='margin-top: 30px;'>📋 รายละเอียดข้อมูลการโยกย้ายสมาชิก</h3>", unsafe_allow_html=True)
 
         display_cols = [id_col]
         if name_col: display_cols.append(name_col)
@@ -572,7 +637,7 @@ if df is not None and not df.empty:
         st.dataframe(detail_df, use_container_width=True)
 
         st.markdown("---")
-        st.markdown("<div style='text-align:center; margin-bottom: 10px;'><b>📌 เมื่อผลลัพธ์สมบูรณ์แบบแล้ว สามารถดาวน์โหลดข้อมูลไปใช้งานได้ทันที</b></div>", unsafe_allow_html=True)
+        st.markdown("<div style='text-align:center; margin-bottom: 15px; color: #64748B;'><b>📌 ข้อมูลพร้อมใช้งาน สามารถดาวน์โหลดไฟล์สรุปผลไปเปิดใน Excel ได้ทันที</b></div>", unsafe_allow_html=True)
 
         @st.cache_data
         def convert_df_to_bytes(df):
@@ -583,7 +648,7 @@ if df is not None and not df.empty:
         col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
         with col_btn2:
             st.download_button(
-                label="📥 ดาวน์โหลดข้อมูลสรุปผล (เปิดใน Excel ได้ทันที)",
+                label="📥 ดาวน์โหลดข้อมูลสรุปผล",
                 data=csv_bytes,
                 file_name='sprinkle_route_result.csv',
                 mime='text/csv',
@@ -591,6 +656,6 @@ if df is not None and not df.empty:
             )
 
     else:
-        st.info("👈 ปรับตั้งค่าเปอร์เซ็นต์และล็อกรถให้เสร็จสิ้น จากนั้นกดปุ่ม 'ประมวลผลตัดสายส่ง' เพื่อดูผลลัพธ์")
+        st.info("👈 ปรับตั้งค่าเปอร์เซ็นต์และล็อกรถให้เสร็จสิ้น จากนั้นกดปุ่ม 'ประมวลผลตัดสายส่ง' สีน้ำเงินด้านซ้ายมือ เพื่อดูผลลัพธ์")
 else:
-    st.info("👈 กรุณาวางลิงก์ Google Sheets ที่แถบเมนูด้านซ้าย เพื่อเริ่มต้นใช้งาน Dashboard")
+    st.info("👈 กรุณาวางลิงก์ Google Sheets ที่แถบเมนูด้านซ้าย เพื่อเริ่มต้นใช้งานแดชบอร์ด")
