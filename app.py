@@ -19,7 +19,7 @@ def hard_reset():
             del st.session_state[k]
 
 # ==========================================
-# 💎 PREMIUM UI/UX + WATERMARK BACKGROUND
+# 💎 PREMIUM UI/UX + WATERMARK + LIQUID GLASS
 # ==========================================
 # 1. แปลงภาพรถเป็น Base64 สำหรับทำลายน้ำพื้นหลัง
 truck_b64 = ""
@@ -29,7 +29,7 @@ try:
 except FileNotFoundError:
     pass
 
-# 2. นำภาพมาสร้างเป็นลายน้ำ (Watermark) แบบพรีเมียม
+# 2. ลายน้ำ (Watermark) ปรับความเข้มขึ้นเป็น 15%
 if truck_b64:
     watermark_html = f'''
     <div class="sprinkle-watermark"></div>
@@ -37,20 +37,19 @@ if truck_b64:
         .sprinkle-watermark {{
             position: fixed;
             top: 50%;
-            left: 55%; /* ขยับศูนย์กลางมาทางขวาเล็กน้อย เผื่อพื้นที่ Sidebar */
+            left: 55%; 
             transform: translate(-50%, -50%);
             width: 100vw;
             height: 100vh;
             background-image: url("data:image/jpeg;base64,{truck_b64}");
-            background-size: 500px; /* ขนาดรถกำลังดี ไม่ล้นจอ */
+            background-size: 650px; /* ขยายสเกลภาพรถให้ใหญ่ขึ้นอีกนิด */
             background-repeat: no-repeat;
             background-position: center;
-            opacity: 0.04; /* จางมากๆ เพื่อไม่ให้รบกวนสายตาเวลาอ่านข้อมูล */
-            filter: grayscale(100%); /* ปรับเป็นสีเทาให้ดูแพงและเรียบหรู */
+            opacity: 0.15; /* เพิ่มความเข้มให้เห็นชัดเจนขึ้น */
+            filter: grayscale(100%); 
             z-index: 0;
-            pointer-events: none; /* กดทะลุผ่านได้ ไม่ขวางการใช้งาน */
+            pointer-events: none; 
         }}
-        /* ดันให้ Content กล่องข้อมูลลอยอยู่เหนือลายน้ำ */
         .block-container {{
             position: relative;
             z-index: 1;
@@ -59,26 +58,33 @@ if truck_b64:
     '''
     st.markdown(watermark_html, unsafe_allow_html=True)
 
+# 3. สไตล์ Liquid Glass (Glassmorphism)
 st.markdown('''
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
         
         /* Typography & Main Background */
         html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
-        .stApp { background-color: #F4F7FB; } /* พื้นหลังหลักยังคงสีเทาอมฟ้าอ่อนๆ สบายตา */
+        .stApp { background-color: #F4F7FB; } 
         
         /* Headings */
         h1, h2, h3, h4 { color: #00205B !important; font-weight: 700; letter-spacing: -0.5px; }
         
-        /* Sidebar Styling */
-        [data-testid="stSidebar"] { background-color: #0A192F !important; border-right: 1px solid #112240; box-shadow: 2px 0 10px rgba(0,0,0,0.1); }
+        /* Sidebar Styling (Liquid Glass Dark Mode) */
+        [data-testid="stSidebar"] { 
+            background: rgba(10, 25, 47, 0.85) !important; 
+            backdrop-filter: blur(15px) !important;
+            -webkit-backdrop-filter: blur(15px) !important;
+            border-right: 1px solid rgba(255, 255, 255, 0.1); 
+            box-shadow: 2px 0 15px rgba(0,0,0,0.2); 
+        }
         [data-testid="stSidebar"] * { color: #E2E8F0 !important; }
         [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: #00A3E0 !important; }
         
         /* Input & Select Box */
         div[data-baseweb="select"] > div, input { 
-            background-color: #112240 !important; 
-            border: 1px solid #233554 !important; 
+            background-color: rgba(17, 34, 64, 0.7) !important; 
+            border: 1px solid rgba(35, 53, 84, 0.8) !important; 
             color: white !important; 
             border-radius: 8px; 
             transition: border 0.3s ease;
@@ -90,47 +96,64 @@ st.markdown('''
             background: linear-gradient(135deg, #005A9C 0%, #00205B 100%) !important; 
             color: white !important; 
             border: none !important; 
-            border-radius: 8px; 
+            border-radius: 10px; 
             font-weight: 600; 
             font-size: 1.1rem;
             padding: 0.6rem 2rem; 
             width: 100%; 
-            box-shadow: 0 4px 12px rgba(0, 32, 91, 0.25); 
+            box-shadow: 0 4px 15px rgba(0, 32, 91, 0.3); 
             transition: all 0.3s ease; 
         }
         .stButton>button:hover { 
             transform: translateY(-2px); 
-            box-shadow: 0 6px 16px rgba(0, 32, 91, 0.4); 
+            box-shadow: 0 6px 20px rgba(0, 32, 91, 0.5); 
             background: linear-gradient(135deg, #00A3E0 0%, #005A9C 100%) !important;
         }
         
         /* Download Button */
         [data-testid="stDownloadButton"] > button { 
             background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important; 
-            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
         }
         [data-testid="stDownloadButton"] > button:hover { 
-            box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4); 
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.5); 
             transform: translateY(-2px);
         }
         
-        /* Floating DataFrames (Premium Cards) - เพิ่มสีขาวพื้นหลังให้ทึบ 95% จะได้ไม่กวนกับลายน้ำ */
+        /* Floating DataFrames (Liquid Glass Cards) */
         div[data-testid="stDataFrame"] > div { 
-            background-color: rgba(255, 255, 255, 0.95); 
-            border-radius: 12px; 
-            box-shadow: 0 6px 16px rgba(0,0,0,0.06); 
-            border: 1px solid #E2E8F0; 
-            border-top: 4px solid #00A3E0; 
+            background: rgba(255, 255, 255, 0.65) !important; 
+            backdrop-filter: blur(12px) !important;
+            -webkit-backdrop-filter: blur(12px) !important;
+            border-radius: 16px; 
+            box-shadow: 0 8px 32px rgba(0, 32, 91, 0.1); 
+            border: 1px solid rgba(255, 255, 255, 0.8) !important; 
+            border-top: 4px solid #00A3E0 !important; 
             overflow: hidden;
         }
         
-        .stAlert { border-radius: 10px; border: none; box-shadow: 0 4px 10px rgba(0,0,0,0.05); background-color: rgba(255, 255, 255, 0.95); }
-        iframe { border-radius: 12px; box-shadow: 0 6px 16px rgba(0,0,0,0.08); border: 1px solid #E2E8F0; }
+        /* Alerts (Liquid Glass) */
+        .stAlert { 
+            background: rgba(255, 255, 255, 0.65) !important; 
+            backdrop-filter: blur(12px) !important;
+            -webkit-backdrop-filter: blur(12px) !important;
+            border-radius: 12px; 
+            border: 1px solid rgba(255, 255, 255, 0.8) !important; 
+            box-shadow: 0 8px 32px rgba(0, 32, 91, 0.08); 
+        }
+        
+        /* Map Iframe Wrapper (Liquid Glass border) */
+        iframe { 
+            border-radius: 16px; 
+            box-shadow: 0 8px 32px rgba(0, 32, 91, 0.1); 
+            border: 2px solid rgba(255, 255, 255, 0.7); 
+        }
+        
         div[data-testid="stVerticalBlock"] > div.element-container { background-color: transparent; }
         #MainMenu {visibility: hidden;} footer {visibility: hidden;}
         .stSpinner > div > div { display: none !important; }
 
-        /* 🍎 DYNAMIC ISLAND CSS */
+        /* 🍎 DYNAMIC ISLAND CSS (Liquid Glass Style) */
         .island-wrapper {
             position: fixed; 
             top: 25px; 
@@ -140,7 +163,10 @@ st.markdown('''
             pointer-events: none;
         }
         .dynamic-island {
-            background-color: #000000; 
+            background: rgba(10, 25, 47, 0.75) !important; 
+            backdrop-filter: blur(16px) !important;
+            -webkit-backdrop-filter: blur(16px) !important;
+            border: 1px solid rgba(255, 255, 255, 0.15) !important;
             color: #FFFFFF; 
             font-family: 'Sarabun', sans-serif;
             border-radius: 40px; 
@@ -151,7 +177,7 @@ st.markdown('''
             align-items: center; 
             justify-content: center;
             gap: 12px;
-            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
             animation: island-pop 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
             overflow: hidden;
             white-space: nowrap;
@@ -168,7 +194,7 @@ st.markdown('''
         }
         @keyframes pulsing {
             0% { transform: scale(0.8); opacity: 0.5; }
-            100% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 10px #00A3E0; }
+            100% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 12px #00A3E0; }
         }
         .text-fade-in {
             opacity: 0;
@@ -573,7 +599,7 @@ if df is not None and not df.empty:
         
         island_html = '''
         <div class="island-wrapper">
-            <div class="dynamic-island">
+            <div class="dynamic-island" style="background: rgba(10, 25, 47, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.2);">
                 <div class="island-icon"><div class="pulse-dot"></div></div>
                 <span class="text-fade-in">กำลังวิเคราะห์พิกัดและคำนวณแบ่งเขตแดน...</span>
             </div>
@@ -635,7 +661,7 @@ if df is not None and not df.empty:
                 
                 island_html_shift = '''
                 <div class="island-wrapper">
-                    <div class="dynamic-island" style="background-color: #00205B;">
+                    <div class="dynamic-island" style="background: rgba(10, 25, 47, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.2);">
                         <div class="island-icon"><div class="pulse-dot" style="background-color: #FFFFFF;"></div></div>
                         <span class="text-fade-in">กำลังสแกนพื้นที่และเกลี่ยวันจัดส่ง...</span>
                     </div>
