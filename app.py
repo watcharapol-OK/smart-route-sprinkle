@@ -7,7 +7,6 @@ from folium import plugins
 import re
 import math
 import time
-import base64
 
 # กำหนด Layout หน้าจอ
 st.set_page_config(page_title="Sprinkle Smart Route Rebalancer", layout="wide", initial_sidebar_state="expanded")
@@ -19,7 +18,7 @@ def hard_reset():
             del st.session_state[k]
 
 # ==========================================
-# 💎 PREMIUM UI/UX STYLING (SPRINKLE THEME)
+# 💎 PREMIUM UI/UX + DYNAMIC ISLAND STYLING
 # ==========================================
 st.markdown('''
     <style>
@@ -32,12 +31,12 @@ st.markdown('''
         /* Headings */
         h1, h2, h3, h4 { color: #00205B !important; font-weight: 700; letter-spacing: -0.5px; }
         
-        /* Sidebar Styling (Midnight Blue) */
+        /* Sidebar Styling */
         [data-testid="stSidebar"] { background-color: #0A192F !important; border-right: 1px solid #112240; box-shadow: 2px 0 10px rgba(0,0,0,0.1); }
         [data-testid="stSidebar"] * { color: #E2E8F0 !important; }
         [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: #00A3E0 !important; }
         
-        /* Input & Select Box in Sidebar */
+        /* Input & Select Box */
         div[data-baseweb="select"] > div, input { 
             background-color: #112240 !important; 
             border: 1px solid #233554 !important; 
@@ -47,7 +46,7 @@ st.markdown('''
         }
         div[data-baseweb="select"] > div:hover, input:focus { border: 1px solid #00A3E0 !important; }
         
-        /* 🔵 Primary Main Button (Gradient Sprinkle Blue) */
+        /* Primary Button */
         .stButton>button { 
             background: linear-gradient(135deg, #005A9C 0%, #00205B 100%) !important; 
             color: white !important; 
@@ -66,7 +65,7 @@ st.markdown('''
             background: linear-gradient(135deg, #00A3E0 0%, #005A9C 100%) !important;
         }
         
-        /* 🟢 Download Button */
+        /* Download Button */
         [data-testid="stDownloadButton"] > button { 
             background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important; 
             box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
@@ -76,47 +75,76 @@ st.markdown('''
             transform: translateY(-2px);
         }
         
-        /* 🌟 Floating DataFrames (Premium Cards) */
+        /* Floating DataFrames */
         div[data-testid="stDataFrame"] > div { 
-            background-color: white; 
-            border-radius: 12px; 
+            background-color: white; border-radius: 12px; 
             box-shadow: 0 6px 16px rgba(0,0,0,0.06); 
-            border: 1px solid #E2E8F0; 
-            border-top: 4px solid #00A3E0; 
+            border: 1px solid #E2E8F0; border-top: 4px solid #00A3E0; 
             overflow: hidden;
         }
         
-        /* Alerts & Info Boxes */
-        .stAlert { 
-            border-radius: 10px; 
-            border: none; 
-            box-shadow: 0 4px 10px rgba(0,0,0,0.05); 
-        }
-        
-        /* Map Container Drop Shadow */
-        iframe { 
-            border-radius: 12px; 
-            box-shadow: 0 6px 16px rgba(0,0,0,0.08); 
-            border: 1px solid #E2E8F0; 
-        }
-
-        /* Clean UI Hiders */
+        .stAlert { border-radius: 10px; border: none; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        iframe { border-radius: 12px; box-shadow: 0 6px 16px rgba(0,0,0,0.08); border: 1px solid #E2E8F0; }
         div[data-testid="stVerticalBlock"] > div.element-container { background-color: transparent; }
         #MainMenu {visibility: hidden;} footer {visibility: hidden;}
         .stSpinner > div > div { display: none !important; }
 
-        /* Custom Loader */
-        @keyframes drive { 0% { transform: translateX(-100%); } 50% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
-        .custom-truck-loader { 
-            text-align: center; padding: 2.5rem; color: #00205B; font-weight: 700; font-size: 1.3rem; 
-            overflow: hidden; border-radius: 12px; background-color: white; 
-            border: 1px solid #E2E8F0; box-shadow: 0 8px 24px rgba(0,32,91,0.08); margin-bottom: 20px; 
+        /* 🍎 DYNAMIC ISLAND CSS */
+        .island-wrapper {
+            position: fixed; 
+            top: 25px; 
+            left: 50%; 
+            transform: translateX(-50%); 
+            z-index: 999999;
+            pointer-events: none;
         }
-        .custom-truck-loader img { width: 160px; animation: drive 3s infinite ease-in-out; }
+        .dynamic-island {
+            background-color: #000000; 
+            color: #FFFFFF; 
+            font-family: 'Sarabun', sans-serif;
+            border-radius: 40px; 
+            padding: 12px 28px; 
+            font-weight: 500; 
+            font-size: 1.05rem;
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            gap: 12px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+            animation: island-pop 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+        .island-icon { 
+            font-size: 1.3rem; 
+            display: flex; 
+            align-items: center; 
+        }
+        .pulse-dot {
+            width: 12px; height: 12px;
+            background-color: #00A3E0;
+            border-radius: 50%;
+            animation: pulsing 1.2s infinite alternate;
+        }
+        @keyframes island-pop {
+            0% { width: 40px; opacity: 0; transform: scale(0.7); border-radius: 50%; padding: 12px; }
+            50% { width: 40px; opacity: 1; transform: scale(1.05); border-radius: 50%; padding: 12px; }
+            100% { width: auto; opacity: 1; transform: scale(1); border-radius: 40px; }
+        }
+        @keyframes pulsing {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            100% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 10px #00A3E0; }
+        }
+        .text-fade-in {
+            opacity: 0;
+            animation: fade-in 0.4s ease-in forwards;
+            animation-delay: 0.4s; /* รอให้แคปซูลยืดเสร็จก่อนค่อยโชว์ตัวหนังสือ */
+        }
+        @keyframes fade-in { to { opacity: 1; } }
     </style>
 ''', unsafe_allow_html=True)
 
-# Header แบบใหม่ดูเป็นทางการ
+# Header
 st.markdown("<h1 style='text-align: center; color: #00205B; margin-bottom: 0;'>🚛 Sprinkle Route Optimization</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #64748B; font-size: 1.2rem; margin-bottom: 30px;'>ระบบวิเคราะห์และจัดสมดุลสายส่งน้ำอัตโนมัติ (Balanced Fleet & Micro-Routing Model)</p>", unsafe_allow_html=True)
 
@@ -138,19 +166,24 @@ df = None
 if sheet_url:
     if 'cached_raw_url' not in st.session_state or st.session_state['cached_raw_url'] != sheet_url:
         loading_placeholder = st.empty()
-        try:
-            with open("truck.jpg", "rb") as image_file:
-                encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกระบะตู้ทึบกำลังวิ่ง..."><br>กำลังเชื่อมต่อฐานข้อมูล... 💧</div>'''
-        except FileNotFoundError:
-            loader_html = '<div class="custom-truck-loader">กำลังโหลดข้อมูล...</div>'
-
-        loading_placeholder.markdown(loader_html, unsafe_allow_html=True)
+        
+        # 🍎 เรียกใช้ Dynamic Island แจ้งสถานะการโหลดข้อมูล
+        island_html = '''
+        <div class="island-wrapper">
+            <div class="dynamic-island">
+                <div class="island-icon"><div class="pulse-dot"></div></div>
+                <span class="text-fade-in">กำลังดึงข้อมูลต้นฉบับ...</span>
+            </div>
+        </div>
+        '''
+        loading_placeholder.markdown(island_html, unsafe_allow_html=True)
+        
         raw_df = load_data_from_sheet(sheet_url)
         
         if raw_df is not None:
             st.session_state['cached_raw_df'] = raw_df
         st.session_state['cached_raw_url'] = sheet_url
+        time.sleep(0.8) # ให้เวลา UI แสดงอนิเมชันให้ผู้ใช้เห็นความพรีเมียม
         loading_placeholder.empty()
     
     df = st.session_state.get('cached_raw_df', None)
@@ -297,9 +330,6 @@ if df is not None and not df.empty:
         if len(days_list) == 6: return 'จ-ส'
         return ', '.join([day_names[d] for d in sorted(days_list)])
 
-    # ==========================================
-    # LOGIC CORE: UNTOUCHED 100% 
-    # ==========================================
     def run_fast_allocation_with_auto_shift(data, base_t, new_t, pct_dict, manual_locks, locked_ui_list):
         opt_df = data.copy()
         opt_df['เบอร์รถใหม่'] = 'ยังไม่จัด'
@@ -506,19 +536,22 @@ if df is not None and not df.empty:
     st.sidebar.markdown("---")
     if st.sidebar.button("🚀 ประมวลผลตัดสายส่ง", use_container_width=True):
         calc_placeholder = st.empty()
-        try:
-            with open("truck.jpg", "rb") as image_file:
-                encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกระบะตู้ทึบกำลังวิ่ง..."><br>กำลังคำนวณตัดแบ่งสายส่งตามเป้าหมาย... 🚚💨</div>'''
-        except FileNotFoundError:
-            loader_html = '<div class="custom-truck-loader">กำลังประมวลผล...</div>'
-
-        calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
+        
+        # 🍎 เรียกใช้ Dynamic Island แจ้งสถานะประมวลผลหลัก
+        island_html = '''
+        <div class="island-wrapper">
+            <div class="dynamic-island">
+                <div class="island-icon"><div class="pulse-dot"></div></div>
+                <span class="text-fade-in">กำลังวิเคราะห์พิกัดและคำนวณแบ่งเขตแดน...</span>
+            </div>
+        </div>
+        '''
+        calc_placeholder.markdown(island_html, unsafe_allow_html=True)
 
         res_df, daily_matrix = run_fast_allocation_with_auto_shift(df, base_truck, new_truck_name, target_pcts, manual_vips, locked_ui_trucks)
         st.session_state['result_df'] = res_df
         st.session_state['daily_matrix'] = daily_matrix
-        time.sleep(0.5) 
+        time.sleep(1) # ให้เวลาแสดงอนิเมชันความสวยงาม
         calc_placeholder.empty()
 
     if 'result_df' in st.session_state:
@@ -565,11 +598,24 @@ if df is not None and not df.empty:
             
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button("✨ คลิกที่นี่เพื่อให้ AI เกลี่ยงานที่ล้น ไปใส่วันว่าง (เฉพาะในรถคันเดิม + อิงพิกัดพื้นที่ใกล้เคียง)", use_container_width=True):
-                with st.spinner("กำลังวิเคราะห์พิกัดพื้นที่และย้ายวันจัดส่งอย่างระมัดระวัง..."):
-                    new_res_df, new_daily_matrix = run_smart_day_shift(st.session_state['result_df'])
-                    st.session_state['result_df'] = new_res_df
-                    st.session_state['daily_matrix'] = new_daily_matrix
-                time.sleep(0.5)
+                day_shift_placeholder = st.empty()
+                
+                # 🍎 เรียกใช้ Dynamic Island แจ้งสถานะตอนกดปุ่มพิเศษ
+                island_html_shift = '''
+                <div class="island-wrapper">
+                    <div class="dynamic-island" style="background-color: #00205B;">
+                        <div class="island-icon"><div class="pulse-dot" style="background-color: #FFFFFF;"></div></div>
+                        <span class="text-fade-in">กำลังสแกนพื้นที่และเกลี่ยวันจัดส่ง...</span>
+                    </div>
+                </div>
+                '''
+                day_shift_placeholder.markdown(island_html_shift, unsafe_allow_html=True)
+                
+                new_res_df, new_daily_matrix = run_smart_day_shift(st.session_state['result_df'])
+                st.session_state['result_df'] = new_res_df
+                st.session_state['daily_matrix'] = new_daily_matrix
+                time.sleep(1) # ให้เวลาอนิเมชันโชว์ความลื่นไหล
+                day_shift_placeholder.empty()
                 st.rerun()
         else:
             st.success("✅ **สถานะยอดเยี่ยม:** โหลดรายวันกระจายตัวสอดคล้องตามหน้างานจริง 100%")
