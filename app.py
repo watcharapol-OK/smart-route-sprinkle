@@ -10,7 +10,7 @@ import time
 import base64
 
 # กำหนด Layout หน้าจอ
-st.set_page_config(page_title="Sprinkle Smart Route Rebalancer", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Smart Route Sprinkle", layout="wide", initial_sidebar_state="expanded")
 
 def hard_reset():
     keys_to_clear = ['result_df', 'daily_matrix']
@@ -45,8 +45,8 @@ if truck_b64:
             background-size: 650px; 
             background-repeat: no-repeat;
             background-position: center;
-            opacity: 0.12; /* ความเข้มที่พอดี ไม่กวนสายตา */
-            filter: grayscale(90%); /* ลดความดำทึบ ให้กลืนกับพื้นหลังสีฟ้า */
+            opacity: 0.12; 
+            filter: grayscale(90%); 
             z-index: 0;
             pointer-events: none; 
         }}
@@ -66,7 +66,7 @@ st.markdown('''
         /* Typography & Vibrant Gradient Background */
         html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
         .stApp { 
-            background: linear-gradient(135deg, #E0F2FE 0%, #F1F5F9 100%); /* พื้นหลังสีฟ้าอ่อนสว่าง ขับให้กล่องสีขาวเด้งขึ้นมา */
+            background: linear-gradient(135deg, #E0F2FE 0%, #F1F5F9 100%); 
         } 
         
         /* Headings */
@@ -77,20 +77,26 @@ st.markdown('''
             background: linear-gradient(180deg, #0A192F 0%, #00205B 100%) !important; 
             backdrop-filter: blur(15px) !important;
             -webkit-backdrop-filter: blur(15px) !important;
-            border-right: 1px solid rgba(0, 163, 224, 0.3); /* เส้นขอบสีฟ้าสด */
-            box-shadow: 4px 0 20px rgba(0, 32, 91, 0.25); /* เงาลึกขึ้น */
+            border-right: 1px solid rgba(0, 163, 224, 0.3); 
+            box-shadow: 4px 0 20px rgba(0, 32, 91, 0.25); 
         }
         [data-testid="stSidebar"] * { color: #F8FAFC !important; }
         [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: #38BDF8 !important; text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
         
+        /* 🚨 แก้ไขสีตัวหนังสือในกล่องแจ้งเตือน (Alerts) ให้อ่านง่าย */
+        div[data-testid="stAlert"], div[data-testid="stAlert"] * { 
+            color: #00205B !important; 
+            font-weight: 600 !important;
+        }
+        
         /* Input & Select Box */
         div[data-baseweb="select"] > div, input { 
             background-color: rgba(15, 23, 42, 0.6) !important; 
-            border: 1px solid rgba(56, 189, 248, 0.4) !important; /* เส้นขอบฟ้าใส */
+            border: 1px solid rgba(56, 189, 248, 0.4) !important; 
             color: white !important; 
             border-radius: 8px; 
             transition: all 0.3s ease;
-            box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); /* มิติหลุมลึกลงไป */
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); 
         }
         div[data-baseweb="select"] > div:hover, input:focus { 
             border: 1px solid #38BDF8 !important; 
@@ -107,7 +113,7 @@ st.markdown('''
             font-size: 1.1rem;
             padding: 0.6rem 2rem; 
             width: 100%; 
-            box-shadow: 0 8px 20px rgba(0, 32, 91, 0.3), inset 0 1px 0 rgba(255,255,255,0.2); /* เงาสองชั้นให้ดูป่องมีมิติ */
+            box-shadow: 0 8px 20px rgba(0, 32, 91, 0.3), inset 0 1px 0 rgba(255,255,255,0.2); 
             transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); 
         }
         .stButton>button:hover { 
@@ -132,19 +138,19 @@ st.markdown('''
             backdrop-filter: blur(20px) !important;
             -webkit-backdrop-filter: blur(20px) !important;
             border-radius: 16px; 
-            box-shadow: 0 12px 35px rgba(0, 32, 91, 0.12), 0 4px 10px rgba(2, 132, 199, 0.05) !important; /* เลเยอร์เงาสีน้ำเงิน */
+            box-shadow: 0 12px 35px rgba(0, 32, 91, 0.12), 0 4px 10px rgba(2, 132, 199, 0.05) !important; 
             border: 1px solid rgba(2, 132, 199, 0.2) !important; 
-            border-top: 5px solid #0EA5E9 !important; /* แถบสีฟ้าสดด้านบนการ์ด */
+            border-top: 5px solid #0EA5E9 !important; 
             overflow: hidden;
         }
         
-        /* Alerts */
+        /* Alerts Styling */
         .stAlert { 
             background: rgba(255, 255, 255, 0.95) !important; 
             backdrop-filter: blur(15px) !important;
             border-radius: 12px; 
             border: 1px solid rgba(220, 38, 38, 0.3) !important; 
-            box-shadow: 0 8px 25px rgba(220, 38, 38, 0.1); 
+            box-shadow: 0 8px 25px rgba(0, 32, 91, 0.08); 
         }
         
         /* Map Iframe Wrapper */
@@ -157,11 +163,11 @@ st.markdown('''
         div[data-testid="stVerticalBlock"] > div.element-container { background-color: transparent; }
         #MainMenu {visibility: hidden;} footer {visibility: hidden;}
         
-        /* 🚨 ซ่อนนักกีฬา/คนปั่นจักรยานของ Streamlit อย่างเด็ดขาด */
+        /* ซ่อนอนิเมชันคนวิ่งของ Streamlit */
         [data-testid="stStatusWidget"] { display: none !important; }
         .stSpinner > div > div { display: none !important; }
 
-        /* 🍎 DYNAMIC ISLAND CSS */
+        /* 🚚 DYNAMIC ISLAND CSS (Truck Animation) */
         .island-wrapper {
             position: fixed; 
             top: 65px; 
@@ -191,11 +197,11 @@ st.markdown('''
             white-space: nowrap;
         }
         
-        /* ไอคอนหยดน้ำกระเพื่อม */
-        .island-icon { font-size: 1.4rem; display: flex; align-items: center; }
-        .water-pulse {
+        /* ไอคอนรถตู้ทึบขยับได้ */
+        .island-icon { font-size: 1.5rem; display: flex; align-items: center; }
+        .truck-drive {
             display: inline-block;
-            animation: water-bounce 1s infinite alternate ease-in-out;
+            animation: drive-bounce 0.8s infinite alternate ease-in-out;
         }
         
         @keyframes island-pop {
@@ -203,9 +209,9 @@ st.markdown('''
             50% { width: 40px; opacity: 1; transform: scale(1.05); border-radius: 50%; padding: 12px; }
             100% { width: auto; opacity: 1; transform: scale(1); border-radius: 40px; }
         }
-        @keyframes water-bounce {
-            0% { transform: scale(0.85) translateY(2px); opacity: 0.7; }
-            100% { transform: scale(1.15) translateY(-2px); opacity: 1; filter: drop-shadow(0 0 8px #38BDF8); }
+        @keyframes drive-bounce {
+            0% { transform: translateX(-3px) translateY(1px); }
+            100% { transform: translateX(3px) translateY(-1px); }
         }
         .text-fade-in {
             opacity: 0;
@@ -217,7 +223,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 # Header
-st.markdown("<h1 style='text-align: center; color: #00205B; margin-bottom: 0; text-shadow: 0 2px 4px rgba(0,32,91,0.1);'>🚛 Sprinkle Route Optimization</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; color: #00205B; margin-bottom: 0; text-shadow: 0 2px 4px rgba(0,32,91,0.1);'>🚚 Smart Route Sprinkle</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #0284C7; font-size: 1.2rem; font-weight: 500; margin-bottom: 30px;'>ระบบวิเคราะห์และจัดสมดุลสายส่งน้ำอัตโนมัติ (Balanced Fleet & Micro-Routing Model)</p>", unsafe_allow_html=True)
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
@@ -239,11 +245,11 @@ if sheet_url:
     if 'cached_raw_url' not in st.session_state or st.session_state['cached_raw_url'] != sheet_url:
         loading_placeholder = st.empty()
         
-        # 💧 ไอคอนหยดน้ำเคลื่อนไหวตอนโหลดข้อมูล
+        # 🚚 ไอคอนรูปรถกระบะวิ่งตอนโหลดข้อมูล
         island_html = '''
         <div class="island-wrapper">
             <div class="dynamic-island">
-                <div class="island-icon"><span class="water-pulse">💧</span></div>
+                <div class="island-icon"><span class="truck-drive">🚚</span></div>
                 <span class="text-fade-in">กำลังดึงข้อมูลต้นฉบับ...</span>
             </div>
         </div>
@@ -609,11 +615,11 @@ if df is not None and not df.empty:
     if st.sidebar.button("🚀 ประมวลผลตัดสายส่ง", use_container_width=True):
         calc_placeholder = st.empty()
         
-        # 💧 ใช้ไอคอนหยดน้ำเคลื่อนไหวตอนวิเคราะห์
+        # 🚚 ไอคอนรูปรถกระบะวิ่งตอนวิเคราะห์
         island_html = '''
         <div class="island-wrapper">
-            <div class="dynamic-island">
-                <div class="island-icon"><span class="water-pulse">💧</span></div>
+            <div class="dynamic-island" style="background: rgba(10, 25, 47, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.2);">
+                <div class="island-icon"><span class="truck-drive">🚚</span></div>
                 <span class="text-fade-in">กำลังวิเคราะห์พิกัดและคำนวณแบ่งเขตแดน...</span>
             </div>
         </div>
@@ -672,11 +678,11 @@ if df is not None and not df.empty:
             if st.button("✨ คลิกที่นี่เพื่อให้ AI เกลี่ยงานที่ล้น ไปใส่วันว่าง (เฉพาะในรถคันเดิม + อิงพิกัดพื้นที่ใกล้เคียง)", use_container_width=True):
                 day_shift_placeholder = st.empty()
                 
-                # 💧 ไอคอนหยดน้ำตอนย้ายวัน
+                # 🚚 ไอคอนรูปรถกระบะวิ่งตอนย้ายวัน
                 island_html_shift = '''
                 <div class="island-wrapper">
-                    <div class="dynamic-island">
-                        <div class="island-icon"><span class="water-pulse">💧</span></div>
+                    <div class="dynamic-island" style="background: rgba(10, 25, 47, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.2);">
+                        <div class="island-icon"><span class="truck-drive">🚚</span></div>
                         <span class="text-fade-in">กำลังสแกนพื้นที่และเกลี่ยวันจัดส่ง...</span>
                     </div>
                 </div>
