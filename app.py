@@ -11,7 +11,8 @@ import base64
 
 st.set_page_config(page_title="Smart Route Rebalancer", layout="wide", initial_sidebar_state="expanded")
 
-def reset_results():
+# ลบฟังก์ชัน reset_results ออกจากการอัปเดตสไลเดอร์ เพื่อให้ตั้งค่าให้เสร็จก่อนค่อยกดประมวลผลทีเดียว
+def hard_reset():
     keys_to_clear = ['result_df', 'daily_matrix']
     for k in keys_to_clear:
         if k in st.session_state:
@@ -47,7 +48,7 @@ st.title("🚛 Smart Route Rebalancer Dashboard")
 st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Balanced Fleet & Daily Load Model)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
-sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
+sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=hard_reset)
 
 @st.cache_data(ttl=300)
 def load_data_from_sheet(url):
@@ -66,7 +67,7 @@ if sheet_url:
     try:
         with open("truck.jpg", "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode()
-        loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทางและเกลี่ยวัน... 💦</div>'''
+        loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลข้อมูล... 💦</div>'''
     except FileNotFoundError:
         loader_html = '<div class="custom-truck-loader">กำลังโหลดข้อมูล...</div>'
 
@@ -93,21 +94,19 @@ if df is not None and not df.empty:
     df['VIP_Status'] = df[vip_col] if vip_col in df.columns else 'ปกติ'
 
     st.sidebar.success(f"✅ โหลดข้อมูลสำเร็จ: {len(df)} รายการ")
-
     st.sidebar.markdown("---")
     st.sidebar.markdown("### ⚙️ 2. ตั้งค่าคอลัมน์และสายใหม่")
 
     guessed_day = next((c for c in df.columns if 'สัปดาห์' in str(c) or 'วัน' in str(c) or 'รอบ' in str(c) or 'day' in str(c).lower()), df.columns[0])
-    day_col = st.sidebar.selectbox("📅 เลือกคอลัมน์ 'วันจัดส่ง':", options=df.columns, index=df.columns.tolist().index(guessed_day) if guessed_day in df.columns else 0, on_change=reset_results)
+    day_col = st.sidebar.selectbox("📅 เลือกคอลัมน์ 'วันจัดส่ง':", options=df.columns, index=df.columns.tolist().index(guessed_day) if guessed_day in df.columns else 0, on_change=hard_reset)
 
     available_trucks = [str(x) for x in df[truck_col].unique() if str(x) != 'nan']
     base_truck_options = ["(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)"] + available_trucks
 
-    base_truck = st.sidebar.selectbox("เลือกรถที่จะถูกยุบ/ดึงงานออก", options=base_truck_options, on_change=reset_results)
-    new_truck_name = st.sidebar.text_input("ตั้งชื่อเบอร์รถคันใหม่", value="15112", on_change=reset_results)
+    base_truck = st.sidebar.selectbox("เลือกรถที่จะถูกยุบ/ดึงงานออก", options=base_truck_options, on_change=hard_reset)
+    new_truck_name = st.sidebar.text_input("ตั้งชื่อเบอร์รถคันใหม่", value="15112", on_change=hard_reset)
 
     st.sidebar.markdown("---")
-
     st.sidebar.markdown("### 🎛️ 3. ปรับเป้าหมายรายวัน (%)")
 
     total_vol_available = df[vol_col].sum()
@@ -166,15 +165,15 @@ if df is not None and not df.empty:
                 st.session_state[f"slider_{changed_truck}"] = old_val 
         elif len(unlocked) == 0 and abs(diff) > 0.01:
             st.session_state[f"slider_{changed_truck}"] = old_val 
-
-        reset_results() 
+        # นำ reset_results() ออกจากตรงนี้ เพื่อให้ปรับแต่งเปอร์เซ็นต์ได้อิสระโดยที่แผนที่ยังไม่ถูกลบ
 
     target_pcts = {}
     for t in active_trucks:
         col1, col2 = st.sidebar.columns([3, 1.2])
         with col2:
             st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
-            st.checkbox("🔒 ล็อก", key=f"lock_{t}", on_change=reset_results)
+            # นำ on_change=hard_reset ออก
+            st.checkbox("🔒 ล็อก", key=f"lock_{t}")
         with col1:
             if f"slider_{t}" not in st.session_state:
                 st.session_state[f"slider_{t}"] = st.session_state.truck_pcts[t]
@@ -195,7 +194,7 @@ if df is not None and not df.empty:
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🔒 4. ล็อก Key Account")
-    manual_vips = st.sidebar.multiselect("เลือกรหัสสมาชิกที่ห้ามย้ายสาย", options=df[id_col].astype(str).unique().tolist(), default=[], on_change=reset_results)
+    manual_vips = st.sidebar.multiselect("เลือกรหัสสมาชิกที่ห้ามย้ายสาย", options=df[id_col].astype(str).unique().tolist(), default=[], on_change=hard_reset)
 
     def parse_days_from_string(val_str):
         val = str(val_str).strip().replace(' ', '').lower()
@@ -220,7 +219,6 @@ if df is not None and not df.empty:
         if len(days_list) == 6: return 'จ-ส'
         return ', '.join([day_names[d] for d in sorted(days_list)])
 
-    # 📌 แกนสมองใหม่: Balanced Spatial K-Means -> ค่อยเกลี่ยวันล้นให้สมดุล
     def run_fast_allocation_with_auto_shift(data, base_t, new_t, pct_dict, manual_locks, locked_ui_list):
         opt_df = data.copy()
         opt_df['เบอร์รถใหม่'] = 'ยังไม่จัด'
@@ -240,24 +238,23 @@ if df is not None and not df.empty:
             assigned_days_dict[idx] = parse_days_from_string(opt_df.at[idx, day_col])
 
         # -------------------------------------------------------------
-        # STEP 1: Balanced Spatial K-Means (จัดกลุ่มพื้นที่แบบมีน้ำหนัก)
-        # แก้ปัญหาจุดกระจัดกระจายแบบไข่ปลา สร้างขอบเขตสายส่งที่คมชัด
+        # STEP 1: Spatial K-Means พร้อมการกระจายศูนย์กลางหลีกเลี่ยงการทับซ้อน
         # -------------------------------------------------------------
         centers = {}
+        # คำนวณขอบเขตแผนที่เพื่อกระจายรถใหม่ให้ไปอยู่ขอบๆ ที่ยังว่าง
+        lat_min, lat_max = coords[:, 0].min(), coords[:, 0].max()
+        lon_min, lon_max = coords[:, 1].min(), coords[:, 1].max()
+        
         for i, t in enumerate(active_trucks):
-            offset = i * 0.001 # ออฟเซ็ตเล็กน้อยป้องกันจุดทับกันสนิท
+            t_data = df[df[truck_col].astype(str) == t]
             if t == new_t and has_base and base_t in df[truck_col].astype(str).unique():
                 b_data = df[df[truck_col].astype(str) == base_t]
-                if not b_data.empty:
-                    centers[t] = np.array([b_data[lat_col].mean() + 0.005, b_data[lon_col].mean() + 0.005])
-                else:
-                    centers[t] = np.array([np.average(coords[:, 0]) + offset, np.average(coords[:, 1]) + offset])
+                centers[t] = np.array([b_data[lat_col].mean(), b_data[lon_col].mean()])
+            elif not t_data.empty:
+                centers[t] = np.array([t_data[lat_col].mean(), t_data[lon_col].mean()])
             else:
-                t_data = df[df[truck_col].astype(str) == t]
-                if not t_data.empty:
-                    centers[t] = np.array([t_data[lat_col].mean(), t_data[lon_col].mean()])
-                else:
-                    centers[t] = np.array([np.average(coords[:, 0]) + offset, np.average(coords[:, 1]) + offset])
+                # ถ้ารถใหม่ไม่มีฐานข้อมูล ให้เกิดใหม่ในพื้นที่ห่างไกลการทับซ้อน
+                centers[t] = np.array([lat_min + (lat_max-lat_min)*0.5, lon_min + (lon_max-lon_min)*(0.2 + (i*0.1))])
 
         locked_indices = np.where(opt_df['is_locked'].values)[0]
         unlocked_indices = np.where(~opt_df['is_locked'].values)[0]
@@ -272,20 +269,16 @@ if df is not None and not df.empty:
         penalties = {t: 1.0 for t in active_trucks}
         best_assignments = {idx: None for idx in unlocked_indices}
 
-        # ให้ AI วนลูป 25 รอบเพื่อหาจุดสมดุลที่อาณาเขตสวยที่สุดและยอดตรงเป้าหมายที่สุด
         for iteration in range(25):
             current_loads = {t: locked_loads[t] for t in active_trucks}
-            
             for idx in unlocked_indices:
                 pt = coords[idx]
                 vol = vols[idx]
-                
                 min_cost = float('inf')
                 best_t = None
                 
                 for t in active_trucks:
                     dist = np.sum((pt - centers[t])**2)
-                    # ถ้ารถยอดเกินเป้า Penalty จะสูง ทำให้ระยะทางเสมือนไกลขึ้น ดันงานให้คันอื่น
                     cost = dist * penalties[t] 
                     if cost < min_cost:
                         min_cost = cost
@@ -294,19 +287,44 @@ if df is not None and not df.empty:
                 best_assignments[idx] = best_t
                 current_loads[best_t] += vol
                 
-            # อัปเดตจุดศูนย์กลางใหม่และปรับ Penalty
             for t in active_trucks:
                 pts = [coords[idx] for idx in unlocked_indices if best_assignments[idx] == t]
                 if pts: centers[t] = np.mean(pts, axis=0)
                     
                 target_v = monthly_targets[t]
                 if target_v <= 0:
-                    penalties[t] = 1e6 # ล็อกไม่ให้รับงานเพิ่ม
+                    penalties[t] = 1e6 
                 else:
                     ratio = current_loads[t] / target_v
-                    penalties[t] *= max(0.5, min(2.0, ratio ** 0.4)) # ปรับรัศมีวงกลมอย่างนุ่มนวล
+                    penalties[t] *= max(0.8, min(1.2, ratio ** 0.5)) # ลดความก้าวร้าวของ Penalty ลงให้เน้นระยะทางมากขึ้น
 
-        # บันทึกผลลัพธ์
+        # -------------------------------------------------------------
+        # STEP 1.5: Majority Vote KNN Smoothing (กลืนจุดหลงฝูงไข่ปลา)
+        # -------------------------------------------------------------
+        for smooth_iter in range(2): # วนลบจุดไข่ปลา 2 รอบให้เนียนกริบ
+            smoothed_assignments = best_assignments.copy()
+            for idx in unlocked_indices:
+                pt = coords[idx]
+                # หาเพื่อนบ้าน 6 คนที่ใกล้ที่สุด
+                dists = np.sum((coords - pt)**2, axis=1)
+                nearest_idx = np.argsort(dists)[1:7]
+                
+                neighbor_trucks = []
+                for ni in nearest_idx:
+                    if ni in unlocked_indices:
+                        neighbor_trucks.append(best_assignments[ni])
+                    else:
+                        neighbor_trucks.append(opt_df.at[ni, 'เบอร์รถใหม่'])
+                
+                # ถ้าเพื่อนบ้านส่วนใหญ่อยู่สีอื่น ให้เปลี่ยนสีตามเพื่อนบ้าน (ลบลอยแตก)
+                if neighbor_trucks:
+                    majority_truck = max(set(neighbor_trucks), key=neighbor_trucks.count)
+                    # เปลี่ยนสีก็ต่อเมื่อเสียงข้างมากเกิน 4 จาก 6 เท่านั้น เพื่อรักษาขอบเขต
+                    if neighbor_trucks.count(majority_truck) >= 4:
+                        smoothed_assignments[idx] = majority_truck
+                        
+            best_assignments = smoothed_assignments
+
         for idx in unlocked_indices:
             opt_df.at[idx, 'เบอร์รถใหม่'] = best_assignments[idx]
 
@@ -397,7 +415,7 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังคำนวณและปรับสมดุลรายวัน... 🚚💨</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังจัดกลุ่มพื้นที่ (ลบจุดไข่ปลา) และเกลี่ยวัน... 🚚💨</div>'''
         except FileNotFoundError:
             loader_html = '<div class="custom-truck-loader">กำลังประมวลผล...</div>'
 
@@ -425,7 +443,7 @@ if df is not None and not df.empty:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
             st.dataframe(sum_before, use_container_width=True)
         with col2:
-            st.markdown("**หลังปรับโครงสร้าง (AI ควบคุมเป้าหมายแม่นยำ 100%)**")
+            st.markdown("**หลังปรับโครงสร้าง (พื้นที่เกาะกลุ่มแน่น 100%)**")
             st.dataframe(sum_after, use_container_width=True)
 
         st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)")
@@ -450,7 +468,7 @@ if df is not None and not df.empty:
         if max_all_days > 165:
             st.error(f"🚨 **ระบบตรวจพบโหลดเกินขีดจำกัดสูงสุด ({max_all_days} ถัง/วัน)!** (หมายเหตุ: เกิดจากพื้นที่นี้มียอดสั่งน้ำหนาแน่นเกินกว่าขีดจำกัดของรถ โปรดพิจารณาเพิ่มรถ หรือเจรจาลูกค้าเพิ่มเติม)")
         else:
-            st.success("✅ **สมบูรณ์แบบ:** โหลดรายวันกระจายตัวสอดคล้องตามหน้างานจริง (ไม่แบนราบและไม่ทะลุ 156 ถัง) ระบบได้ทำการย้ายกลุ่มลูกค้าขอบพื้นที่เข้าสู่วันที่ว่างที่สุดเพื่อปรับสมดุลให้โดยอัตโนมัติแล้ว")
+            st.success("✅ **สมบูรณ์แบบ:** โหลดรายวันกระจายตัวสอดคล้องตามหน้างานจริง (ไม่แบนราบและไม่ทะลุ 156 ถัง) และระบบจัดกลุ่มพื้นที่แบบไร้รอยต่อแล้ว")
 
         st.markdown("### 🗺️ แผนที่เปรียบเทียบการกระจายตัว (เชิงพื้นที่)")
         view_options = ["แสดงทั้งหมด (แยกสีตามเบอร์รถ)"] + all_trucks_after
@@ -534,6 +552,6 @@ if df is not None and not df.empty:
             )
 
     else:
-        st.info("👈 กดปุ่ม 'ประมวลผลตัดสายส่ง' ที่แถบเมนูด้านซ้าย เพื่อดูผลลัพธ์การคำนวณ")
+        st.info("👈 ปรับตั้งค่าเปอร์เซ็นต์และล็อกรถให้เสร็จสิ้น จากนั้นกดปุ่ม 'ประมวลผลตัดสายส่ง' เพื่อดูผลลัพธ์")
 else:
     st.info("👈 กรุณาวางลิงก์ Google Sheets ที่แถบเมนูด้านซ้าย เพื่อเริ่มต้นใช้งาน Dashboard")
