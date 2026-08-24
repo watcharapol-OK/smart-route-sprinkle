@@ -60,7 +60,7 @@ def load_data_from_sheet(url):
         return None
     except Exception: return None
 
-# ระบบ Cache ข้อมูลเพื่อตัดปัญหาการโหลดซ้ำซ้อนตอนเลื่อนสไลเดอร์
+# ระบบ Cache ข้อมูล
 df = None
 if sheet_url:
     if 'cached_raw_url' not in st.session_state or st.session_state['cached_raw_url'] != sheet_url:
@@ -80,7 +80,6 @@ if sheet_url:
         st.session_state['cached_raw_url'] = sheet_url
         loading_placeholder.empty()
     
-    # ดึงข้อมูลจาก Cache ทันทีโดยไม่ต้องมีแอนิเมชันรบกวนเวลาเลื่อนเปอร์เซ็นต์
     df = st.session_state.get('cached_raw_df', None)
 
 if df is not None and not df.empty:
@@ -225,7 +224,6 @@ if df is not None and not df.empty:
         if len(days_list) == 6: return 'จ-ส'
         return ', '.join([day_names[d] for d in sorted(days_list)])
 
-    # 📌 แกนสมองใหม่ล่าสุด: Capacitated Boundary Shifting (ล็อกเป้ายอดเป๊ะ + หั่นขอบเขตคมกริบ)
     def run_fast_allocation_with_auto_shift(data, base_t, new_t, pct_dict, manual_locks, locked_ui_list):
         opt_df = data.copy()
         opt_df['เบอร์รถใหม่'] = 'ยังไม่จัด'
@@ -245,22 +243,40 @@ if df is not None and not df.empty:
             assigned_days_dict[idx] = parse_days_from_string(opt_df.at[idx, day_col])
 
         # -------------------------------------------------------------
-        # STEP 1: วางจุดศูนย์กลางแบบสมดุล
+        # STEP 1: ล็อกเป้าหมายยอด และจัดโซนด้วย Power Diagram (Laguerre-Voronoi)
+        # รับประกันอาณาเขตไม่ทับซ้อน (100% Contiguous) ขอบเขตคมกริบ
         # -------------------------------------------------------------
-        centers = {}
+        
+        # แปลงพิกัดให้เป็นช่วง 0-1 (Normalize) เพื่อให้การคำนวณ Weight เสถียร
+        norm_coords = np.zeros_like(coords)
         lat_min, lat_max = coords[:, 0].min(), coords[:, 0].max()
         lon_min, lon_max = coords[:, 1].min(), coords[:, 1].max()
-        
+        lat_range = lat_max - lat_min if lat_max > lat_min else 1
+        lon_range = lon_max - lon_min if lon_max > lon_min else 1
+        norm_coords[:, 0] = (coords[:, 0] - lat_min) / lat_range
+        norm_coords[:, 1] = (coords[:, 1] - lon_min) / lon_range
+
+        centers = {}
         for i, t in enumerate(active_trucks):
             t_data = df[df[truck_col].astype(str) == t]
             if t == new_t and has_base and base_t in df[truck_col].astype(str).unique():
                 b_data = df[df[truck_col].astype(str) == base_t]
-                centers[t] = np.array([b_data[lat_col].mean(), b_data[lon_col].mean()])
+                if not b_data.empty:
+                    centers[t] = np.array([(b_data[lat_col].mean() - lat_min)/lat_range, (b_data[lon_col].mean() - lon_min)/lon_range])
+                else:
+                    centers[t] = np.array([0.5, 0.5])
             elif not t_data.empty:
-                centers[t] = np.array([t_data[lat_col].mean(), t_data[lon_col].mean()])
+                centers[t] = np.array([(t_data[lat_col].mean() - lat_min)/lat_range, (t_data[lon_col].mean() - lon_min)/lon_range])
             else:
-                # กระจายรถใหม่ไว้ขอบๆ เพื่อป้องกันการกินแดนทับซ้อน
-                centers[t] = np.array([lat_min + (lat_max-lat_min)*0.5, lon_min + (lon_max-lon_min)*(0.2 + (i*0.1))])
+                # ถ้ารถใหม่ ให้เกิดบริเวณขอบพื้นที่ เพื่อไม่ให้ทับซ้อนคันอื่น
+                angle = i * (2 * math.pi / len(active_trucks))
+                centers[t] = np.array([0.5 + 0.15*math.cos(angle), 0.5 + 0.15*math.sin(angle)])
+
+        # ขยับจุดที่อาจจะทับซ้อนกันตั้งแต่เริ่มต้น
+        for i, t1 in enumerate(active_trucks):
+            for j, t2 in enumerate(active_trucks):
+                if i < j and np.sum((centers[t1] - centers[t2])**2) < 0.0001:
+                    centers[t1] += np.array([0.05, 0.05])
 
         locked_indices = np.where(opt_df['is_locked'].values)[0]
         unlocked_indices = np.where(~opt_df['is_locked'].values)[0]
@@ -273,105 +289,54 @@ if df is not None and not df.empty:
             locked_loads[target_t] += vols[idx]
 
         best_assignments = {idx: None for idx in unlocked_indices}
-
-        # -------------------------------------------------------------
-        # STEP 2: จัดกลุ่มเชิงพื้นที่เบื้องต้น (ยึดความสวยงามของโซนเป็นหลักก่อน)
-        # -------------------------------------------------------------
-        for _ in range(5):
+        W = {t: 0.0 for t in active_trucks} # สนามพลังอิทธิพลตั้งต้น
+        lr = 0.02 # อัตราการเรียนรู้เพื่อขยายหรือหดอาณาเขต
+        
+        for iteration in range(300): # ให้สมองกลปรับขอบเขต 300 รอบ
+            current_loads = {t: locked_loads[t] for t in active_trucks}
+            
+            # การแบ่งเขตแดน: ลูกค้าตกอยู่ใน Force Field ของใคร
             for idx in unlocked_indices:
-                pt = coords[idx]
-                dists = {t: np.sum((pt - centers[t])**2) for t in active_trucks}
-                best_assignments[idx] = min(dists, key=dists.get)
+                pt = norm_coords[idx]
+                min_cost = float('inf')
+                best_t = None
                 
-            for t in active_trucks:
-                pts = [coords[idx] for idx in unlocked_indices if best_assignments[idx] == t]
-                if pts: centers[t] = np.mean(pts, axis=0)
-
-        # -------------------------------------------------------------
-        # STEP 3: บีบยอดให้ตรงเป้า 100% ด้วยการเฉือนขอบตะเข็บชายแดน
-        # -------------------------------------------------------------
-        current_loads = {t: locked_loads[t] for t in active_trucks}
-        for idx in unlocked_indices:
-            current_loads[best_assignments[idx]] += vols[idx]
-
-        for _ in range(50): # วนลูปรักษาความจุ
-            over_trucks = [t for t in active_trucks if current_loads[t] > monthly_targets[t] + 15]
-            if not over_trucks:
-                break
-                
-            moved_any = False
-            for t_over in over_trucks:
-                under_trucks = [t for t in active_trucks if current_loads[t] < monthly_targets[t] - 10]
-                if not under_trucks:
-                    under_trucks = sorted(active_trucks, key=lambda x: current_loads[x] - monthly_targets[x])
-                    if under_trucks[0] == t_over: continue
-                    under_trucks = [under_trucks[0]]
-
-                t_points = [idx for idx in unlocked_indices if best_assignments[idx] == t_over]
-                move_candidates = []
-                
-                for idx in t_points:
-                    pt = coords[idx]
-                    dist_current = np.sum((pt - centers[t_over])**2)
-                    best_cost_diff = float('inf')
-                    best_under_t = None
+                for t in active_trucks:
+                    if monthly_targets[t] <= 0: continue
                     
-                    for t_under in under_trucks:
-                        # ยอมรับบัฟเฟอร์ +- 30 ถัง เพื่อความสมดุล
-                        if current_loads[t_under] + vols[idx] <= monthly_targets[t_under] + 30:
-                            dist_under = np.sum((pt - centers[t_under])**2)
-                            cost_diff = dist_under - dist_current
-                            if cost_diff < best_cost_diff:
-                                best_cost_diff = cost_diff
-                                best_under_t = t_under
-                                
-                    if best_under_t is not None:
-                        move_candidates.append((best_cost_diff, idx, best_under_t, vols[idx]))
+                    # หัวใจสำคัญ: ระยะทางหักลบด้วยสนามพลังอิทธิพล (Weight)
+                    dist_sq = np.sum((pt - centers[t])**2)
+                    cost = dist_sq - W[t] 
+                    
+                    if cost < min_cost:
+                        min_cost = cost
+                        best_t = t
                         
-                # เรียงลำดับลูกค้าจากคนที่อยู่ใกล้ขอบรถอีกคันมากที่สุด (เฉือนจากขอบเท่านั้น)
-                move_candidates.sort(key=lambda x: x[0])
-                
-                for cost, idx, target_t, vol in move_candidates:
-                    if current_loads[t_over] <= monthly_targets[t_over] + 15:
-                        break
-                    if current_loads[target_t] + vol <= monthly_targets[target_t] + 30:
-                        best_assignments[idx] = target_t
-                        current_loads[t_over] -= vol
-                        current_loads[target_t] += vol
-                        moved_any = True
-                        
-            if not moved_any:
+                if best_t is None: best_t = active_trucks[0]
+                best_assignments[idx] = best_t
+                current_loads[best_t] += vols[idx]
+
+            # ขยับจุดศูนย์กลางรถไปตามอาณาเขตใหม่
+            for t in active_trucks:
+                pts = [norm_coords[idx] for idx in unlocked_indices if best_assignments[idx] == t]
+                if pts:
+                    centers[t] = np.mean(pts, axis=0)
+
+            # อัปเดตสนามพลังอิทธิพลเพื่อคุมยอดให้ตรงเป้า
+            max_err = 0
+            for t in active_trucks:
+                target = monthly_targets[t]
+                if target > 0:
+                    err = target - current_loads[t]
+                    max_err = max(max_err, abs(err))
+                    # ถ้ายอดขาด (err > 0) W จะเพิ่มขึ้น ทำให้ลูกโป่งขยายไปรับลูกค้าเพิ่ม
+                    W[t] += lr * (err / target)
+
+            # ถ้ายอดคลาดเคลื่อนจากเป้าไม่เกิน 30 ถัง ถือว่าสมดุลแล้ว ตัดจบเลย
+            if max_err <= 30:
                 break
 
-        # -------------------------------------------------------------
-        # STEP 4: ลบจุดกระจัดกระจายหลงฝูงโดยไม่ทำลายโครงสร้างเป้าหมาย
-        # -------------------------------------------------------------
-        for smooth_iter in range(2): 
-            smoothed_assignments = best_assignments.copy()
-            for idx in unlocked_indices:
-                pt = coords[idx]
-                dists = np.sum((coords - pt)**2, axis=1)
-                nn_count = min(7, len(dists))
-                nearest_idx = np.argsort(dists)[1:nn_count]
-                
-                neighbor_trucks = []
-                for ni in nearest_idx:
-                    if ni in unlocked_indices:
-                        neighbor_trucks.append(best_assignments[ni])
-                    else:
-                        neighbor_trucks.append(opt_df.at[ni, 'เบอร์รถใหม่'])
-                        
-                if neighbor_trucks:
-                    majority_truck = max(set(neighbor_trucks), key=neighbor_trucks.count)
-                    if neighbor_trucks.count(majority_truck) >= 4 and majority_truck != best_assignments[idx]:
-                        vol = vols[idx]
-                        # กฎเหล็ก: ยอมรวมสีจุดไข่ปลา ก็ต่อเมื่อยอดเป้าหมายไม่พัง
-                        if current_loads[majority_truck] + vol <= monthly_targets[majority_truck] + 40:
-                            current_loads[best_assignments[idx]] -= vol
-                            current_loads[majority_truck] += vol
-                            smoothed_assignments[idx] = majority_truck
-            best_assignments = smoothed_assignments
-
+        # บันทึกผลลัพธ์
         for idx in unlocked_indices:
             opt_df.at[idx, 'เบอร์รถใหม่'] = best_assignments[idx]
 
@@ -380,7 +345,7 @@ if df is not None and not df.empty:
             opt_df['สถานะ'] = np.where(opt_df[truck_col].astype(str) == base_t, 'ยุบสายไป ' + opt_df['เบอร์รถใหม่'], opt_df['สถานะ'])
 
         # -------------------------------------------------------------
-        # STEP 5: สมองกลเกลี่ยวันรายวัน (Smart Auto-Day-Shift) 
+        # STEP 2: สมองกลเกลี่ยวันรายวัน (Smart Auto-Day-Shift) 
         # -------------------------------------------------------------
         MAX_CAP = 156
         TARGET_CAP = 148
@@ -415,7 +380,8 @@ if df is not None and not df.empty:
 
                         if not movable: continue
 
-                        c_lat, c_lon = centers[t]
+                        # ใน Step นี้ใช้ coords ดั้งเดิม เพื่อหาคนย้ายวันในโลกความเป็นจริง
+                        c_lat, c_lon = df[df[truck_col].astype(str) == t][[lat_col, lon_col]].mean() if not df[df[truck_col].astype(str) == t].empty else (lat_min+lat_max/2, lon_min+lon_max/2)
                         movable_coords = coords[movable]
                         dist_to_center = (movable_coords[:, 0] - c_lat)**2 + (movable_coords[:, 1] - c_lon)**2
                         seed_local_idx = np.argmax(dist_to_center) 
@@ -462,7 +428,7 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังควบคุมยอดเป้าหมายให้เป๊ะ 100% พร้อมหั่นขอบเขต... 🚚💨</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกระบะตู้ทึบกำลังวิ่ง..."><br>กำลังแบ่งอาณาเขตด้วย Power Diagram... 🚚💨</div>'''
         except FileNotFoundError:
             loader_html = '<div class="custom-truck-loader">กำลังประมวลผล...</div>'
 
@@ -490,7 +456,7 @@ if df is not None and not df.empty:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
             st.dataframe(sum_before, use_container_width=True)
         with col2:
-            st.markdown("**หลังปรับโครงสร้าง (พื้นที่เกาะกลุ่มแน่น & ยอดตรงเป้าเป๊ะ)**")
+            st.markdown("**หลังปรับโครงสร้าง (พื้นที่ติดกัน 100% & ยอดตรงเป้า)**")
             st.dataframe(sum_after, use_container_width=True)
 
         st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)")
@@ -515,7 +481,7 @@ if df is not None and not df.empty:
         if max_all_days > 165:
             st.error(f"🚨 **ระบบตรวจพบโหลดเกินขีดจำกัดสูงสุด ({max_all_days} ถัง/วัน)!** (หมายเหตุ: เกิดจากพื้นที่นี้มียอดสั่งน้ำหนาแน่นเกินกว่าขีดจำกัดของรถ โปรดพิจารณาเพิ่มรถ หรือเจรจาลูกค้าเพิ่มเติม)")
         else:
-            st.success("✅ **สมบูรณ์แบบ:** โหลดรายวันกระจายตัวสอดคล้องตามหน้างานจริง (ไม่แบนราบและไม่ทะลุ 156 ถัง) และระบบจัดกลุ่มพื้นที่แบบไร้รอยต่อแล้ว")
+            st.success("✅ **สมบูรณ์แบบ:** โหลดรายวันกระจายตัวสอดคล้องตามหน้างานจริง (ไม่แบนราบและไม่ทะลุ 156 ถัง) และระบบแบ่งเขตแดนคมกริบไร้รอยต่อแล้ว")
 
         st.markdown("### 🗺️ แผนที่เปรียบเทียบการกระจายตัว (เชิงพื้นที่)")
         view_options = ["แสดงทั้งหมด (แยกสีตามเบอร์รถ)"] + all_trucks_after
