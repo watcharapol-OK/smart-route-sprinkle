@@ -44,7 +44,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Balanced Sliders & Manual Trigger Model)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Flexible New Truck & Balanced Sliders Model)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
@@ -143,14 +143,17 @@ if df is not None and not df.empty:
     base_truck_options = ["(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)"] + available_trucks
 
     base_truck = st.sidebar.selectbox("เลือกรถที่จะถูกยุบ/ดึงงานออก", options=base_truck_options, on_change=reset_results)
-    new_truck_name = st.sidebar.text_input("ตั้งชื่อเบอร์รถคันใหม่", value="15112", on_change=reset_results)
+    
+    # 📌 ปรับให้ผู้ใช้พิมพ์เองอิสระ ไม่มีค่าฮาร์ดโค้ดบังคับ
+    new_truck_name = st.sidebar.text_input("ตั้งชื่อเบอร์รถคันใหม่", value="", placeholder="เช่น 15112", on_change=reset_results).strip()
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🎛️ 4. ปรับเป้าหมายรายวัน (%) พร้อมปุ่มล็อก")
     st.sidebar.caption("100% = 4,160 ถัง/เดือน (เลื่อนปรับ % และรถที่ไม่ได้ล็อกจะปรับแปรผันตามกันอัตโนมัติ)")
 
     active_trucks = [t for t in available_trucks if t != base_truck]
-    if new_truck_name not in active_trucks: active_trucks.append(new_truck_name)
+    if new_truck_name and new_truck_name not in active_trucks: 
+        active_trucks.append(new_truck_name)
 
     if 'slider_init' not in st.session_state or st.session_state.get('base_truck') != base_truck or st.session_state.get('new_truck') != new_truck_name:
         st.session_state.truck_pcts = {}
@@ -159,7 +162,7 @@ if df is not None and not df.empty:
                 st.session_state.truck_pcts[t] = 0.0
             else:
                 actual_vol = df[df[truck_col] == t][vol_col].sum()
-                st.session_state.truck_pcts[t] = float(round((actual_vol / 4160.0) * 100, 1))
+                st.session_state.truck_pcts[t] = float(round(max(0.0, min(200.0, (actual_vol / 4160.0) * 100)), 1))
                     
         for t in active_trucks:
             st.session_state[f"slider_{t}"] = float(round(st.session_state.truck_pcts[t], 1))
@@ -168,9 +171,9 @@ if df is not None and not df.empty:
         st.session_state['base_truck'] = base_truck
         st.session_state['new_truck'] = new_truck_name
 
-    # 📌 ฟังก์ชันจัดการสไลเดอร์แปรผันตามกัน (Balanced Slider Redistribution) โดยไม่รันอัลกอริทึมหนัก
     def on_slider_change(changed_truck):
-        new_val = st.session_state[f"slider_{changed_truck}"]
+        raw_new_val = st.session_state.get(f"slider_{changed_truck}", 0.0)
+        new_val = max(0.0, min(200.0, raw_new_val))
         old_val = st.session_state.truck_pcts.get(changed_truck, new_val)
         diff = new_val - old_val
         
@@ -183,20 +186,21 @@ if df is not None and not df.empty:
             split_diff = diff / len(unlocked)
             can_move = True
             for t in unlocked:
-                if st.session_state.truck_pcts.get(t, 100.0) - split_diff < 0.0:
+                if st.session_state.truck_pcts.get(t, 100.0) - split_diff < 0.0 or st.session_state.truck_pcts.get(t, 100.0) - split_diff > 200.0:
                     can_move = False
                     break
             
             if can_move:
                 for t in unlocked:
-                    new_t_val = round(st.session_state.truck_pcts[t] - split_diff, 1)
+                    new_t_val = round(max(0.0, min(200.0, st.session_state.truck_pcts[t] - split_diff)), 1)
                     st.session_state.truck_pcts[t] = new_t_val
                     st.session_state[f"slider_{t}"] = new_t_val
                 st.session_state.truck_pcts[changed_truck] = round(new_val, 1)
+                st.session_state[f"slider_{changed_truck}"] = round(new_val, 1)
             else:
                 total_available_slack = sum(st.session_state.truck_pcts[t] for t in unlocked)
                 if diff > 0:
-                    capped_new_val = old_val + total_available_slack
+                    capped_new_val = max(0.0, min(200.0, old_val + total_available_slack))
                     for t in unlocked:
                         st.session_state.truck_pcts[t] = 0.0
                         st.session_state[f"slider_{t}"] = 0.0
@@ -204,12 +208,14 @@ if df is not None and not df.empty:
                     st.session_state[f"slider_{changed_truck}"] = round(capped_new_val, 1)
                 else:
                     for t in unlocked:
-                        new_t_val = round(st.session_state.truck_pcts[t] - split_diff, 1)
+                        new_t_val = round(max(0.0, min(200.0, st.session_state.truck_pcts[t] - split_diff)), 1)
                         st.session_state.truck_pcts[t] = new_t_val
                         st.session_state[f"slider_{t}"] = new_t_val
                     st.session_state.truck_pcts[changed_truck] = round(new_val, 1)
+                    st.session_state[f"slider_{changed_truck}"] = round(new_val, 1)
         else:
             st.session_state.truck_pcts[changed_truck] = round(new_val, 1)
+            st.session_state[f"slider_{changed_truck}"] = round(new_val, 1)
             
         reset_results()
 
@@ -221,7 +227,7 @@ if df is not None and not df.empty:
             st.checkbox("🔒 ล็อก", key=f"lock_{t}", on_change=reset_results)
         with col_s1:
             if f"slider_{t}" not in st.session_state:
-                st.session_state[f"slider_{t}"] = st.session_state.truck_pcts.get(t, 100.0)
+                st.session_state[f"slider_{t}"] = float(round(max(0.0, min(200.0, st.session_state.truck_pcts.get(t, 100.0))), 1))
             val = st.slider(
                 f"รถ {t} (%)", 
                 min_value=0.0, 
@@ -231,8 +237,9 @@ if df is not None and not df.empty:
                 on_change=on_slider_change,
                 args=(t,)
             )
-            target_pcts[t] = val
-            st.session_state.truck_pcts[t] = val
+            clamped_val = max(0.0, min(200.0, val))
+            target_pcts[t] = clamped_val
+            st.session_state.truck_pcts[t] = clamped_val
 
     locked_ui_trucks = [t for t in active_trucks if st.session_state.get(f"lock_{t}", False)]
 
@@ -283,7 +290,8 @@ if df is not None and not df.empty:
         
         has_base = base_t != "(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)"
         active_trucks = [t for t in available_trucks if t != base_t]
-        if new_t not in active_trucks: active_trucks.append(new_t)
+        if new_t and new_t not in active_trucks: 
+            active_trucks.append(new_t)
             
         targets = {t: math.floor(4160 * (pct_dict.get(t, 100) / 100)) for t in active_trucks}
         if has_base: targets[base_t] = 0
@@ -303,7 +311,8 @@ if df is not None and not df.empty:
             
         branch_lat = np.mean(coords[:, 0])
         branch_lon = np.mean(coords[:, 1])
-        if new_t not in centers: centers[new_t] = (branch_lat, branch_lon)
+        if new_t and new_t not in centers: 
+            centers[new_t] = (branch_lat, branch_lon)
 
         unlocked_indices = np.where(~opt_df['is_locked'].values)[0]
         
@@ -365,6 +374,10 @@ if df is not None and not df.empty:
 
     st.sidebar.markdown("---")
     if st.sidebar.button("🚀 ประมวลผลตัดสายส่ง", use_container_width=True):
+        if not new_truck_name and base_truck == "(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)":
+            st.sidebar.error("❌ กรุณาระบุชื่อเบอร์รถคันใหม่ก่อนประมวลผล")
+            st.stop()
+            
         calc_placeholder = st.empty()
         try:
             with open("truck.jpg", "rb") as image_file:
