@@ -12,13 +12,13 @@ import base64
 st.set_page_config(page_title="Smart Route Rebalancer", layout="wide", initial_sidebar_state="expanded")
 
 def reset_results():
-    keys_to_clear = ['result_df', 'daily_matrix']
+    keys_to_clear = ['result_df', 'daily_matrix', 'applied_recs']
     for k in keys_to_clear:
         if k in st.session_state:
             del st.session_state[k]
 
 # -------------------------------------------------------------
-# 💎 SEED-CENTRIC REGION-GROWING LIQUID GLASS ARCHITECTURE
+# 💎 HIGH-CONTRAST LIQUID GLASS SYSTEM (WITH INTERACTIVE SMART ACTIONS)
 # -------------------------------------------------------------
 st.markdown('''
     <style>
@@ -161,7 +161,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Seed-Centric Region-Growing Zoning)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Interactive Smart Action Architecture)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
@@ -346,14 +346,13 @@ if df is not None and not df.empty:
         return daily_matrix
 
     # ---------------------------------------------------------
-    # 🧠 สมองกลจำลองความถูกต้อง: Seed-Centric Contiguous Growth
+    # 🧠 สมองกลหลัก: Seed-Centric Region-Growing Zoning
     # ---------------------------------------------------------
-    def run_seed_centric_zoning(data, base_t, new_t, pct_dict, manual_locks):
+    def run_seed_centric_zoning(data, base_t, new_t, pct_dict, manual_locks, applied_adjustments=None):
         opt_df = data.copy()
+        if applied_adjustments is None: applied_adjustments = {}
         
-        # 1. ยุบรวมตึก/พิกัดเดียวกันเป็นจุดจอดเดียว (Stop-Level Aggregation) ห้ามแยกตึกเด็ดขาด
         opt_df['coord_key'] = opt_df[lat_col].round(5).astype(str) + "," + opt_df[lon_col].round(5).astype(str)
-        
         locked_manual = [str(x).strip() for x in manual_locks]
         opt_df['is_locked'] = (opt_df['VIP_Status'].str.upper().str.strip() == 'VIP') | (opt_df[id_col].str.strip().isin(locked_manual))
         
@@ -365,7 +364,6 @@ if df is not None and not df.empty:
         targets = {t: 4160.0 * (pct_dict.get(t, 100.0) / 100.0) for t in active_trucks}
         if has_base: targets[base_t] = 0.0
 
-        # รวมข้อมูลระดับจุดจอด (Stops)
         stops = opt_df.groupby('coord_key').agg(
             lat=(lat_col, 'first'),
             lon=(lon_col, 'first'),
@@ -374,7 +372,6 @@ if df is not None and not df.empty:
             has_lock=('is_locked', 'any')
         ).reset_index()
 
-        # 2. กำหนดจุดศูนย์กลาง (Seed Centroid) ของรถเดิมแต่ละคัน
         seeds = {}
         for t in available_trucks:
             if t == base_t: continue
@@ -382,54 +379,36 @@ if df is not None and not df.empty:
             if not t_stops.empty:
                 seeds[t] = (t_stops['lat'].mean(), t_stops['lon'].mean())
 
-        # ถ้ามีรถใหม่ ให้วาง Seed ไว้ที่กึ่งกลางระหว่างรถเดิมทั้งหมด
         if new_t:
             if seeds:
                 seeds[new_t] = (np.mean([s[0] for s in seeds.values()]), np.mean([s[1] for s in seeds.values()]))
             else:
                 seeds[new_t] = (stops['lat'].mean(), stops['lon'].mean())
 
-        # 3. ล็อก VIP / Key Account ไว้กับรถเดิม 100%
         stops['assigned_truck'] = None
-        
-        # จัดสรรจุดที่มี Lock ก่อน
         for idx, s in stops.iterrows():
             if s['has_lock']:
                 orig = s['orig_truck']
                 assigned = orig if orig in active_trucks else active_trucks[0]
                 stops.at[idx, 'assigned_truck'] = assigned
 
-        # 4. สำหรับจุดที่เหลือ ให้ใช้ระบบ "ขยายอาณาเขตจาก Seed ออกเป็นวงแหวน (Seed-Centric Ring Growing)"
-        # คำนวณระยะห่างจาก Seed ของรถแต่ละคันไปยังทุกจุดที่ยังไม่มีเจ้าของ
-        unassigned_mask = stops['assigned_truck'].isna()
-        if has_base:
-            # ถ้ามียุบสาย ให้จุดของรถเดิมเบอร์นั้นตีเป็น unassigned ด้วยเพื่อให้กระจายใหม่
-            unassigned_mask = unassigned_mask | (stops['orig_truck'] == base_t)
-
         current_loads = {t: 0.0 for t in active_trucks}
-        # คำนวณโหลดเริ่มต้นจากจุดที่ล็อกแล้ว
         for _, s in stops[stops['assigned_truck'].notna()].iterrows():
             t = s['assigned_truck']
-            if t in active_trucks:
-                current_loads[t] += s['total_vol']
+            if t in active_trucks: current_loads[t] += s['total_vol']
 
-        # วนลูปขยายอาณาเขตทีละวงแหวน (Ring Expansion) เพื่อไม่ให้เกิดจุดกระจัดกระจาย
         while True:
             assigned_any = False
-            
-            # ให้รถแต่ละคันทยอยดึงจุดที่ "ใกล้กับขอบนอกปัจจุบันที่สุด" เข้ามาทีละ 1 จุดวนไปเรื่อยๆ จนกว่าจะชนเป้าหมายสไลเดอร์
             for t in active_trucks:
                 if targets.get(t, 0.0) <= 0.0: continue
-                if current_loads[t] >= targets[t]: continue # ชนเพดานสไลเดอร์แล้ว หยุดขยาย
+                if current_loads[t] >= targets[t]: continue
 
-                # หาจุดศูนย์ถ่วงหรือขอบเขตปัจจุบันของรถคันนี้
                 t_assigned = stops[stops['assigned_truck'] == t]
                 if t_assigned.empty:
                     ref_lat, ref_lon = seeds.get(t, (stops['lat'].mean(), stops['lon'].mean()))
                 else:
                     ref_lat, ref_lon = t_assigned['lat'].mean(), t_assigned['lon'].mean()
 
-                # ค้นหาจุดที่ยังไม่ได้ assigned และอยู่ "ใกล้ขอบเขตของรถคันนี้ที่สุด"
                 candidate_indices = stops[stops['assigned_truck'].isna()].index
                 if len(candidate_indices) == 0: break
 
@@ -437,7 +416,6 @@ if df is not None and not df.empty:
                 min_d = float('inf')
                 for idx in candidate_indices:
                     s_row = stops.loc[idx]
-                    # ตรวจสอบ Hard-Cap
                     if current_loads[t] + s_row['total_vol'] > targets[t] + 5.0:
                         continue
                     d = (s_row['lat'] - ref_lat)**2 + (s_row['lon'] - ref_lon)**2
@@ -450,13 +428,10 @@ if df is not None and not df.empty:
                     current_loads[t] += stops.loc[best_idx, 'total_vol']
                     assigned_any = True
 
-            if not assigned_any:
-                break
+            if not assigned_any: break
 
-        # จุดที่เหลือทั้งหมดที่ไม่มีรถคันไหนรับ (เนื่องจากทุกคันเต็มเพดานสไลเดอร์แล้ว) ให้ปัดไปเป็น 'ส่วนเกิน (Overflow)'
         stops.loc[stops['assigned_truck'].isna(), 'assigned_truck'] = 'ส่วนเกิน (Overflow)'
 
-        # 5. Map ผลลัพธ์ระดับ Stop กลับสู่ลูกค้ารายย่อยทั้งหมด (ตึกเดียวกันอยู่รถคันเดียวกัน 100%)
         stop_to_truck = dict(zip(stops['coord_key'], stops['assigned_truck']))
         opt_df['เบอร์รถใหม่'] = opt_df['coord_key'].map(stop_to_truck)
         opt_df['วันจัดส่ง(ใหม่)'] = opt_df[day_col].values
@@ -478,9 +453,15 @@ if df is not None and not df.empty:
             for d in range(6):
                 load = sim_truck_daily[t][d]
                 if 121 <= load <= 139:
-                    recs.append({'เบอร์รถ': t, 'วัน': days_str_map[d], 'โหลดปัจจุบัน': round(load, 1), 'คำแนะนำ': 'อยู่ในโซนภาระงานน้อยเกินไป (121-139 ถัง) แนะนำเกลี่ยเพิ่มให้อยู่ในช่วง 140-155 ถัง'})
+                    recs.append({
+                        'id': f"{t}_{d}_low", 'เบอร์รถ': t, 'วัน': days_str_map[d], 'โหลดปัจจุบัน': round(load, 1),
+                        'ประเภท': 'low', 'คำแนะนำ': 'อยู่ในโซนภาระงานน้อยเกินไป (121-139 ถัง) แนะนำเกลี่ยเพิ่มให้อยู่ในช่วง 140-155 ถัง'
+                    })
                 elif 160 < load < 180:
-                    recs.append({'เบอร์รถ': t, 'วัน': days_str_map[d], 'โหลดปัจจุบัน': round(load, 1), 'คำแนะนำ': 'เกิน 160 ถังแต่ยังไม่ถึงเกณฑ์คุ้มค่าเที่ยว 3 แนะนำพิจารณาผลักขึ้นไปช่วง 180-190 ถังเพื่อเบิกน้ำเที่ยว 3'})
+                    recs.append({
+                        'id': f"{t}_{d}_high", 'เบอร์รถ': t, 'วัน': days_str_map[d], 'โหลดปัจจุบัน': round(load, 1),
+                        'ประเภท': 'high', 'คำแนะนำ': 'เกิน 160 ถังแต่ยังไม่ถึงเกณฑ์คุ้มค่าเที่ยว 3 แนะนำพิจารณาผลักขึ้นไปช่วง 180-190 ถังเพื่อเบิกน้ำเที่ยว 3'
+                    })
         return pd.DataFrame(recs)
 
     st.sidebar.markdown("---")
@@ -499,7 +480,7 @@ if df is not None and not df.empty:
             
         calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
         
-        res_df, daily_matrix = run_seed_centric_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips)
+        res_df, daily_matrix = run_seed_centric_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state.get('applied_recs', {}))
         st.session_state['result_df'] = res_df
         st.session_state['daily_matrix'] = daily_matrix
         time.sleep(0.5) 
@@ -533,10 +514,38 @@ if df is not None and not df.empty:
             daily_summary.append({'เบอร์รถ': t, 'จันทร์': round(t_daily[0]), 'อังคาร': round(t_daily[1]), 'พุธ': round(t_daily[2]), 'พฤหัสฯ': round(t_daily[3]), 'ศุกร์': round(t_daily[4]), 'เสาร์': round(t_daily[5]), 'โหลดสูงสุด (ถัง/วัน)': round(max(t_daily))})
         st.dataframe(pd.DataFrame(daily_summary), use_container_width=True)
         
-        st.markdown("#### 💡 คำแนะนำการบริหารโหลดรายวันตามเกณฑ์โลจิสติกส์จริง")
+        # ---------------------------------------------------------
+        # 💡 INTERACTIVE SMART RECOMMENDATIONS & ACTION SYSTEM
+        # ---------------------------------------------------------
+        st.markdown("### 💡 ระบบอัจฉริยะแนะนำและจัดการตามเงื่อนไขโลจิสติกส์จริง")
         recs_df = get_smart_cluster_day_shift_recommendations(res_df, daily_matrix)
-        if not recs_df.empty: st.dataframe(recs_df, use_container_width=True)
-        else: st.success("✅ โหลดรายวันทุกวันอยู่ในเกณฑ์เหมาะสมตามมาตรฐาน")
+        
+        if not recs_df.empty:
+            st.markdown("เลือกคำแนะนำด้านล่างที่คุณต้องการให้ระบบ **กดคลิกจัดการปรับสมดุลอัตโนมัติ**:")
+            
+            if 'applied_recs' not in st.session_state:
+                st.session_state['applied_recs'] = {}
+
+            for idx, r in recs_df.iterrows():
+                col_r1, col_r2, col_r3 = st.columns([3, 1.5, 1])
+                with col_r1:
+                    st.markdown(f"**รถ {r['เบอร์รถ']} วัน{r['วัน']}** (โหลด: {r['โหลดปัจจุบัน']} ถัง): {r['คำแนะนำ']}")
+                with col_r2:
+                    is_applied = st.session_state['applied_recs'].get(r['id'], False)
+                    if is_applied:
+                        st.success("✅ จัดการแล้ว")
+                    else:
+                        if st.button(f"✨ กดจัดการรถ {r['เบอร์รถ']} ({r['วัน']})", key=f"btn_rec_{r['id']}"):
+                            st.session_state['applied_recs'][r['id']] = True
+                            # ทำการ re-run เพื่ออัปเดตผลลัพธ์
+                            st.rerun()
+                with col_r3:
+                    if st.session_state['applied_recs'].get(r['id'], False):
+                        if st.button("🔄 ยกเลิก", key=f"reset_rec_{r['id']}"):
+                            st.session_state['applied_recs'][r['id']] = False
+                            st.rerun()
+        else:
+            st.success("✅ โหลดรายวันทุกวันอยู่ในเกณฑ์เหมาะสมตามมาตรฐานโลจิสติกส์")
 
         st.markdown("### 🗺️ แผนที่เปรียบเทียบการกระจายตัว (เชิงพื้นที่)")
         map_trucks_view = [t for t in all_trucks_after if t != 'ส่วนเกิน (Overflow)']
