@@ -18,7 +18,7 @@ def reset_results():
             del st.session_state[k]
 
 # -------------------------------------------------------------
-# 💎 HIGH-CONTRAST LIQUID GLASS SYSTEM (WITH INTERACTIVE SMART ACTIONS)
+# 💎 COMPREHENSIVE LOGISTICS AUDIT & LIQUID GLASS SYSTEM
 # -------------------------------------------------------------
 st.markdown('''
     <style>
@@ -161,7 +161,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Interactive Smart Action Architecture)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Comprehensive Logistics Audit Architecture)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
@@ -452,16 +452,33 @@ if df is not None and not df.empty:
             if not t_mask.any(): continue
             for d in range(6):
                 load = sim_truck_daily[t][d]
-                if 121 <= load <= 139:
+                # ตรวจจับทุกวันที่อยู่นอกเกณฑ์ Optimal (140-155 ถัง) อย่างครบถ้วน
+                if load > 200:
                     recs.append({
-                        'id': f"{t}_{d}_low", 'เบอร์รถ': t, 'วัน': days_str_map[d], 'โหลดปัจจุบัน': round(load, 1),
-                        'ประเภท': 'low', 'คำแนะนำ': 'อยู่ในโซนภาระงานน้อยเกินไป (121-139 ถัง) แนะนำเกลี่ยเพิ่มให้อยู่ในช่วง 140-155 ถัง'
+                        'priority': 1,
+                        'id': f"{t}_{d}_crit_high", 'เบอร์รถ': t, 'วัน': days_str_map[d], 'โหลดปัจจุบัน': round(load, 1),
+                        'ประเภท': 'critical_high', 'คำแนะนำ': '🚨 โหลดวิกฤตเกินพิกัด (> 200 ถัง) สูงเกินความสามารถปกติอย่างรุนแรง ต้องเร่งตัดแบ่งภาระงานหรือเพิ่มรถเสริมด่วนที่สุด'
                     })
-                elif 160 < load < 180:
+                elif 156 <= load <= 200:
                     recs.append({
+                        'priority': 2,
                         'id': f"{t}_{d}_high", 'เบอร์รถ': t, 'วัน': days_str_map[d], 'โหลดปัจจุบัน': round(load, 1),
-                        'ประเภท': 'high', 'คำแนะนำ': 'เกิน 160 ถังแต่ยังไม่ถึงเกณฑ์คุ้มค่าเที่ยว 3 แนะนำพิจารณาผลักขึ้นไปช่วง 180-190 ถังเพื่อเบิกน้ำเที่ยว 3'
+                        'ประเภท': 'high', 'คำแนะนำ': '⚠️ โหลดสูงเกินเกณฑ์มาตรฐาน (156-200 ถัง) แนะนำบริหารจัดรอบวิ่งหรือผลักดันขึ้นช่วง 180-190 ถังเพื่อเบิกน้ำเที่ยว 3'
                     })
+                elif 121 <= load <= 139:
+                    recs.append({
+                        'priority': 3,
+                        'id': f"{t}_{d}_avoid", 'เบอร์รถ': t, 'วัน': days_str_map[d], 'โหลดปัจจุบัน': round(load, 1),
+                        'ประเภท': 'avoid', 'คำแนะนำ': '🔍 โซนต้องเลี่ยง (121-139 ถัง) ภาระงานน้อยเกินไปไม่คุ้มทุน แนะนำเกลี่ยเพิ่มให้อยู่ในช่วง 140-155 ถัง'
+                    })
+                elif 0 < load < 121:
+                    recs.append({
+                        'priority': 4,
+                        'id': f"{t}_{d}_crit_low", 'เบอร์รถ': t, 'วัน': days_str_map[d], 'โหลดปัจจุบัน': round(load, 1),
+                        'ประเภท': 'critical_low', 'คำแนะนำ': '⚠️ โหลดต่ำกว่าเกณฑ์มาตรฐานวิกฤต (< 121 ถัง) น้อยเกินไปไม่คุ้มค่ารถวิ่ง แนะนำพิจารณายบรวมหรือเกลี่ยงาน'
+                    })
+        # จัดเรียงลำดับความสำคัญ (Priority 1 โหลดวิกฤต > 200 ขึ้นก่อนเสมอ)
+        recs.sort(key=lambda x: x['priority'])
         return pd.DataFrame(recs)
 
     st.sidebar.markdown("---")
@@ -515,13 +532,13 @@ if df is not None and not df.empty:
         st.dataframe(pd.DataFrame(daily_summary), use_container_width=True)
         
         # ---------------------------------------------------------
-        # 💡 INTERACTIVE SMART RECOMMENDATIONS & ACTION SYSTEM
+        # 💡 INTERACTIVE SMART RECOMMENDATIONS & ACTION SYSTEM (AUDITED)
         # ---------------------------------------------------------
         st.markdown("### 💡 ระบบอัจฉริยะแนะนำและจัดการตามเงื่อนไขโลจิสติกส์จริง")
         recs_df = get_smart_cluster_day_shift_recommendations(res_df, daily_matrix)
         
         if not recs_df.empty:
-            st.markdown("เลือกคำแนะนำด้านล่างที่คุณต้องการให้ระบบ **กดคลิกจัดการปรับสมดุลอัตโนมัติ**:")
+            st.markdown("รายการแจ้งเตือนและคำแนะนำทั้งหมด (เรียงลำดับตามความรุนแรงและภาระงานวิกฤต):")
             
             if 'applied_recs' not in st.session_state:
                 st.session_state['applied_recs'] = {}
@@ -529,7 +546,11 @@ if df is not None and not df.empty:
             for idx, r in recs_df.iterrows():
                 col_r1, col_r2, col_r3 = st.columns([3, 1.5, 1])
                 with col_r1:
-                    st.markdown(f"**รถ {r['เบอร์รถ']} วัน{r['วัน']}** (โหลด: {r['โหลดปัจจุบัน']} ถัง): {r['คำแนะนำ']}")
+                    # เน้นข้อความเตือนพิเศษสำหรับเคสวิกฤต
+                    if r['ประเภท'] == 'critical_high':
+                        st.markdown(f"🚨 **[วิกฤต] รถ {r['เบอร์รถ']} วัน{r['วัน']}** (โหลด: **{r['โหลดปัจจุบัน']} ถัง**): {r['คำแนะนำ']}")
+                    else:
+                        st.markdown(f"⚠️ **รถ {r['เบอร์รถ']} วัน{r['วัน']}** (โหลด: {r['โหลดปัจจุบัน']} ถัง): {r['คำแนะนำ']}")
                 with col_r2:
                     is_applied = st.session_state['applied_recs'].get(r['id'], False)
                     if is_applied:
@@ -537,7 +558,6 @@ if df is not None and not df.empty:
                     else:
                         if st.button(f"✨ กดจัดการรถ {r['เบอร์รถ']} ({r['วัน']})", key=f"btn_rec_{r['id']}"):
                             st.session_state['applied_recs'][r['id']] = True
-                            # ทำการ re-run เพื่ออัปเดตผลลัพธ์
                             st.rerun()
                 with col_r3:
                     if st.session_state['applied_recs'].get(r['id'], False):
