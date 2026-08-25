@@ -18,15 +18,15 @@ def reset_results():
             del st.session_state[k]
 
 # -------------------------------------------------------------
-# 💎 HIGH-CONTRAST LIQUID GLASS & SMOOTH HIGHWAY LOADER DESIGN (CSS)
+# 💎 COMPREHENSIVE HIGH-CONTRAST LIQUID GLASS SYSTEM (CSS AUDITED)
 # -------------------------------------------------------------
 st.markdown('''
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
         
-        /* Global High-Contrast Text */
-        html, body, [class*="css"] { 
-            font-family: 'Sarabun', sans-serif; 
+        /* 1. Global High-Contrast Text Reset */
+        html, body, [class*="css"], p, span, label, div, small, li, a { 
+            font-family: 'Sarabun', sans-serif !important; 
             color: #FFFFFF !important;
         }
 
@@ -36,25 +36,32 @@ st.markdown('''
             background-attachment: fixed;
         }
 
-        /* Headings: Absolute Clarity with Gold/Cream Accent */
+        /* 2. Headings & Subtitles: Absolute Clarity with Gold Accent */
         h1, h2, h3, h4, h5, h6 { 
             color: #FFD700 !important; 
             font-weight: 700 !important; 
             letter-spacing: 0.5px;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            text-shadow: 0 2px 4px rgba(0,0,0,0.6);
+        }
+        
+        /* Subheaders, Captions and Markdown descriptions */
+        .stMarkdown p, span, div[data-testid="stMarkdownContainer"] p, [data-testid="stCaptionContainer"], .stCaption {
+            color: #F1F5F9 !important;
+            font-weight: 400 !important;
+            opacity: 1 !important;
         }
 
-        /* Sidebar: Frosted Liquid Glass with Crisp Text */
+        /* 3. Sidebar: Frosted Liquid Glass with Crisp Bright Text */
         [data-testid="stSidebar"] { 
-            background: rgba(0, 15, 31, 0.85) !important; 
+            background: rgba(0, 15, 31, 0.9) !important; 
             backdrop-filter: blur(25px);
             -webkit-backdrop-filter: blur(25px);
-            border-right: 1px solid rgba(212, 175, 55, 0.3); 
+            border-right: 1px solid rgba(212, 175, 55, 0.35); 
         }
         [data-testid="stSidebar"] * { 
             color: #FFFFFF !important; 
         }
-        [data-testid="stSidebar"] label {
+        [data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown p {
             color: #F3E5AB !important;
             font-weight: 600 !important;
         }
@@ -64,24 +71,25 @@ st.markdown('''
             padding-bottom: 8px;
         }
 
-        /* Input Fields & Selectboxes (High Contrast Glass) */
+        /* 4. Input Fields & Selectboxes (High Contrast Glass) */
         div[data-baseweb="select"] > div, input { 
-            background: rgba(0, 40, 80, 0.7) !important; 
+            background: rgba(0, 40, 80, 0.75) !important; 
             backdrop-filter: blur(12px);
-            border: 1px solid rgba(212, 175, 55, 0.5) !important; 
+            border: 1px solid rgba(212, 175, 55, 0.55) !important; 
             color: #FFFFFF !important;
             border-radius: 8px !important;
             font-weight: 500;
         }
         input::placeholder {
-            color: #A0AEC0 !important;
+            color: #CBD5E1 !important;
+            opacity: 1 !important;
         }
         input:focus, div[data-baseweb="select"] > div:focus-within {
             border-color: #FFD700 !important;
             box-shadow: 0 0 12px rgba(255, 215, 0, 0.4) !important;
         }
 
-        /* Luxury Gold Gradient Buttons */
+        /* 5. Luxury Gold Gradient Buttons */
         .stButton>button { 
             background: linear-gradient(135deg, #D4AF37 0%, #AA8C2C 100%) !important; 
             color: #000B18 !important; 
@@ -100,31 +108,32 @@ st.markdown('''
             transform: translateY(-2px); 
         }
 
-        /* DataFrames: Glass Card Container with Legible Text */
+        /* 6. DataFrames: Glass Card Container with Crystal Clear Legibility */
         .stDataFrame { 
-            background: rgba(0, 31, 63, 0.65) !important; 
+            background: rgba(0, 31, 63, 0.7) !important; 
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
             padding: 1.2rem; 
             border-radius: 14px; 
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4); 
-            border: 1px solid rgba(212, 175, 55, 0.3); 
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45); 
+            border: 1px solid rgba(212, 175, 55, 0.35); 
             border-top: 3px solid #D4AF37;
         }
-        .stDataFrame td, .stDataFrame th {
-            color: #FFFFFF !important;
+        .stDataFrame td, .stDataFrame th, .stDataFrame div {
+            color: #0F172A !important; /* Force dark crisp text inside table cells for absolute clarity against white table grid */
+            font-weight: 500 !important;
         }
 
-        /* 🚛 Premium Smooth Highway Loader (Scenery Moving, Truck Steady) */
+        /* 7. Premium Smooth Highway Loader (Truck Steady, Road Moving) */
         .stSpinner > div > div { display: none !important; }
         
         @keyframes moveRoad {
             0% { background-position: 0 0; }
-            100% { background-position: -100px 0; }
+            100% { background-position: -120px 0; }
         }
         @keyframes truckVibration {
             0% { transform: translateY(0px); }
-            50% { transform: translateY(-1.5px); }
+            50% { transform: translateY(-2px); }
             100% { transform: translateY(0px); }
         }
 
@@ -135,34 +144,33 @@ st.markdown('''
             font-weight: bold; 
             font-size: 1.2rem; 
             border-radius: 14px; 
-            background: rgba(0, 31, 63, 0.85); 
+            background: rgba(0, 31, 63, 0.9); 
             backdrop-filter: blur(16px);
-            border: 1px solid rgba(212, 175, 55, 0.4); 
+            border: 1px solid rgba(212, 175, 55, 0.5); 
             margin-bottom: 20px; 
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
             position: relative;
             overflow: hidden;
         }
-        /* Animated Highway Road Line at the bottom of loader */
         .custom-truck-loader::after {
             content: "";
             position: absolute;
-            bottom: 12px;
+            bottom: 10px;
             left: 0;
             width: 100%;
             height: 4px;
-            background: repeating-linear-gradient(90deg, #D4AF37, #D4AF37 30px, transparent 30px, transparent 60px);
-            animation: moveRoad 1.2s linear infinite;
+            background: repeating-linear-gradient(90deg, #D4AF37, #D4AF37 35px, transparent 35px, transparent 70px);
+            animation: moveRoad 1s linear infinite;
         }
         .custom-truck-loader img { 
             width: 150px; 
-            animation: truckVibration 0.4s ease-in-out infinite; 
-            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5));
+            animation: truckVibration 0.35s ease-in-out infinite; 
+            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6));
             display: inline-block;
             margin-bottom: 8px;
         }
 
-        /* Download Button: Emerald Glass Style */
+        /* 8. Download Button: Emerald Glass Style */
         [data-testid="stDownloadButton"] > button { 
             background: linear-gradient(135deg, #28A745 0%, #1E7E34 100%) !important; 
             color: #FFFFFF !important; 
@@ -180,22 +188,23 @@ st.markdown('''
             transform: translateY(-2px);
         }
 
-        /* Metric / Info Cards */
-        div.stAlert, div[data-testid="stInfo"], div[data-testid="stSuccess"] {
-            background: rgba(0, 33, 66, 0.75) !important;
+        /* 9. Metric / Info / Alert Cards */
+        div.stAlert, div[data-testid="stInfo"], div[data-testid="stSuccess"], div[data-testid="stWarning"] {
+            background: rgba(0, 33, 66, 0.85) !important;
             backdrop-filter: blur(12px);
-            border: 1px solid rgba(212, 175, 55, 0.4) !important;
+            border: 1px solid rgba(212, 175, 55, 0.45) !important;
             color: #FFFFFF !important;
             border-radius: 10px;
         }
-        div.stAlert *, div[data-testid="stInfo"] *, div[data-testid="stSuccess"] * {
+        div.stAlert *, div[data-testid="stInfo"] *, div[data-testid="stSuccess"] *, div[data-testid="stWarning"] * {
             color: #FFFFFF !important;
+            font-weight: 500 !important;
         }
     </style>
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (High-Contrast Liquid Glass Luxury Architecture)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Audited High-Contrast Liquid Glass Architecture)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
