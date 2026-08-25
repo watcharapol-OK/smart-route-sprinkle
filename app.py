@@ -44,7 +44,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Flexible New Truck & Balanced Sliders Model)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Strict Target Matching & Compact Patch Model)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
@@ -143,8 +143,6 @@ if df is not None and not df.empty:
     base_truck_options = ["(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)"] + available_trucks
 
     base_truck = st.sidebar.selectbox("เลือกรถที่จะถูกยุบ/ดึงงานออก", options=base_truck_options, on_change=reset_results)
-    
-    # 📌 ปรับให้ผู้ใช้พิมพ์เองอิสระ ไม่มีค่าฮาร์ดโค้ดบังคับ
     new_truck_name = st.sidebar.text_input("ตั้งชื่อเบอร์รถคันใหม่", value="", placeholder="เช่น 15112", on_change=reset_results).strip()
 
     st.sidebar.markdown("---")
@@ -278,9 +276,9 @@ if df is not None and not df.empty:
         return daily_matrix
 
     # ---------------------------------------------------------
-    # สมองกลหลัก: Compact Patch Allocation
+    # สมองกลหลัก: Strict Target-Driven Compact Patch Allocation
     # ---------------------------------------------------------
-    def run_compact_patch_allocation(data, base_t, new_t, pct_dict, manual_locks):
+    def run_strict_target_allocation(data, base_t, new_t, pct_dict, manual_locks):
         opt_df = data.copy()
         opt_df['เบอร์รถใหม่'] = opt_df[truck_col].values
         opt_df['วันจัดส่ง(ใหม่)'] = opt_df[day_col].values
@@ -293,16 +291,19 @@ if df is not None and not df.empty:
         if new_t and new_t not in active_trucks: 
             active_trucks.append(new_t)
             
-        targets = {t: math.floor(4160 * (pct_dict.get(t, 100) / 100)) for t in active_trucks}
-        if has_base: targets[base_t] = 0
+        # 📌 เป้าหมายถังต่อเดือนที่คำนวณจากเปอร์เซ็นต์ของสไลเดอร์โดยตรง (100% = 4,160 ถัง)
+        targets = {t: 4160.0 * (pct_dict.get(t, 100.0) / 100.0) for t in active_trucks}
+        if has_base: targets[base_t] = 0.0
         
         vols = opt_df[vol_col].values
         coords = opt_df[[lat_col, lon_col]].values
         
+        # 1. จัดการยุบสายเดิม (ถ้ามี) ส่งเข้า Pool
         if has_base:
             base_mask = (opt_df[truck_col] == base_t) & (~opt_df['is_locked'])
             opt_df.loc[base_mask, 'เบอร์รถใหม่'] = 'POOL'
 
+        # 2. คำนวณจุดศูนย์กลางของแต่ละรถ (Truck Centers)
         centers = {}
         for t in available_trucks:
             if t == base_t: continue
@@ -313,36 +314,74 @@ if df is not None and not df.empty:
         branch_lon = np.mean(coords[:, 1])
         if new_t and new_t not in centers: 
             centers[new_t] = (branch_lat, branch_lon)
+        if has_base and base_t in centers and new_t in centers:
+            centers[new_t] = centers[base_t]
 
-        unlocked_indices = np.where(~opt_df['is_locked'].values)[0]
+        # 3. ล็อก Key Account / VIP ไว้กับรถเดิมทันที
+        current_loads = {t: 0.0 for t in active_trucks}
+        for idx in opt_df.index:
+            if opt_df.at[idx, 'is_locked']:
+                orig_t = str(opt_df.at[idx, truck_col])
+                assigned_t = orig_t if orig_t in active_trucks else active_trucks[0]
+                opt_df.at[idx, 'เบอร์รถใหม่'] = assigned_t
+                current_loads[assigned_t] += vols[idx]
+            elif has_base and opt_df.at[idx, truck_col] == base_t:
+                opt_df.at[idx, 'เบอร์รถใหม่'] = 'POOL'
+            else:
+                # รายการที่ไม่ถูกล็อก ให้ดึงมาอยู่ใน Pool เพื่อกระจายใหม่ตามเป้าหมายสไลเดอร์
+                opt_df.at[idx, 'เบอร์รถใหม่'] = 'POOL'
+
+        # รวบรวมรายการที่ต้องจัดสรร (Pool + Unlocked)
+        pool_indices = set(opt_df[opt_df['เบอร์รถใหม่'] == 'POOL'].index.tolist())
         
-        for iteration in range(2):
-            current_loads = {t: opt_df[opt_df['เบอร์รถใหม่'] == t][vol_col].sum() for t in active_trucks}
-            remaining_pts = [i for i in unlocked_indices if opt_df.at[i, 'เบอร์รถใหม่'] == 'POOL' or opt_df.at[i, 'เบอร์รถใหม่'] == str(base_t)]
-            
-            for t in active_trucks:
-                target_v = targets.get(t, 0)
-                curr_v = current_loads.get(t, 0)
-                if curr_v < target_v - 50:
-                    needed = target_v - curr_v
-                    candidates = [i for i in unlocked_indices if opt_df.at[i, 'เบอร์รถใหม่'] != t]
-                    if not candidates: continue
-                    c_lat, c_lon = centers.get(t, (branch_lat, branch_lon))
-                    cand_coords = coords[candidates]
-                    dists = (cand_coords[:, 0] - c_lat)**2 + (cand_coords[:, 1] - c_lon)**2
-                    sorted_cand = np.array(candidates)[np.argsort(dists)]
-                    
-                    taken = 0
-                    for idx in sorted_cand:
-                        if taken >= needed or current_loads[t] >= target_v: break
-                        opt_df.at[idx, 'เบอร์รถใหม่'] = t
-                        current_loads[t] += vols[idx]
-                        taken += vols[idx]
+        # 4. อัลกอริทึม Deficit-Driven Spatial Assignment (บังคับวิ่งชนเป้าหมายสไลเดอร์แบบเป๊ะๆ)
+        while pool_indices:
+            # ค้นหารถที่ยังขาดงานมากที่สุดเทียบกับเป้าหมายสไลเดอร์ (Deficit สูงสุด)
+            max_deficit = -float('inf')
+            starving_truck = None
 
-        unassigned = opt_df[opt_df['เบอร์รถใหม่'] == 'POOL'].index.tolist()
-        for idx in unassigned:
-            closest_t = min(active_trucks, key=lambda t: (centers[t][0] - opt_df.at[idx, lat_col])**2 + (centers[t][1] - opt_df.at[idx, lon_col])**2)
-            opt_df.at[idx, 'เบอร์รถใหม่'] = closest_t
+            for t in active_trucks:
+                if targets.get(t, 0.0) <= 0.0: continue
+                deficit = targets[t] - current_loads[t]
+                if deficit > max_deficit:
+                    max_deficit = deficit
+                    starving_truck = t
+
+            if starving_truck is None or max_deficit <= 0:
+                # ถ้าทุกคันเต็มเป้าแล้ว ให้เลือกคันที่สัดส่วนโหลดน้อยที่สุด
+                min_ratio = float('inf')
+                for t in active_trucks:
+                    if targets.get(t, 0.0) <= 0: continue
+                    ratio = current_loads[t] / targets[t]
+                    if ratio < min_ratio:
+                        min_ratio = ratio
+                        starving_truck = t
+                if starving_truck is None: starving_truck = active_trucks[0]
+
+            # ดึงพิกัดศูนย์กลางของรถคันที่กำลังขาดงาน
+            c_lat, c_lon = centers.get(starving_truck, (branch_lat, branch_lon))
+
+            # ค้นหาลูกค้าใน Pool ที่อยู่ "ใกล้ที่สุด" กับรถคันนี้ เพื่อสร้าง Compact Patch
+            best_idx = None
+            min_dist = float('inf')
+
+            for idx in pool_indices:
+                dist = (opt_df.at[idx, lat_col] - c_lat)**2 + (opt_df.at[idx, lon_col] - c_lon)**2
+                if dist < min_dist:
+                    min_dist = dist
+                    best_idx = idx
+
+            if best_idx is not None:
+                opt_df.at[best_idx, 'เบอร์รถใหม่'] = starving_truck
+                current_loads[starving_truck] += vols[best_idx]
+                pool_indices.remove(best_idx)
+
+                # อัปเดตศูนย์กลางของรถคันนั้นแบบไดนามิก
+                t_data = opt_df[opt_df['เบอร์รถใหม่'] == starving_truck]
+                if not t_data.empty:
+                    centers[starving_truck] = (np.average(t_data[lat_col]), np.average(t_data[lon_col]))
+            else:
+                break
 
         opt_df['สถานะ'] = np.where(opt_df[truck_col] == opt_df['เบอร์รถใหม่'], 'คงเดิม', 'ย้ายไปสาย ' + opt_df['เบอร์รถใหม่'])
         daily_matrix = get_daily_vols(opt_df)
@@ -388,7 +427,7 @@ if df is not None and not df.empty:
             
         calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
         
-        res_df, daily_matrix = run_compact_patch_allocation(df, base_truck, new_truck_name, target_pcts, manual_vips)
+        res_df, daily_matrix = run_strict_target_allocation(df, base_truck, new_truck_name, target_pcts, manual_vips)
         st.session_state['result_df'] = res_df
         st.session_state['daily_matrix'] = daily_matrix
         time.sleep(0.5) 
@@ -413,7 +452,7 @@ if df is not None and not df.empty:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
             st.dataframe(sum_before, use_container_width=True)
         with col2:
-            st.markdown("**หลังปรับโครงสร้าง (Compact Patch)**")
+            st.markdown("**หลังปรับโครงสร้าง (Strict Target Matching)**")
             st.dataframe(sum_after, use_container_width=True)
             
         st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)")
@@ -480,7 +519,7 @@ if df is not None and not df.empty:
             components.html(m1.get_root().render(), height=450)
 
         with map_col2:
-            st.markdown("<div style='text-align:center; color:#002D62; font-weight:bold;'>โซนการวิ่งสายใหม่ (Compact Patch Allocation)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#002D62; font-weight:bold;'>โซนการวิ่งสายใหม่ (Strict Target Matching)</div>", unsafe_allow_html=True)
             m2 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m2)
             for _, r in map_df_after.iterrows():
