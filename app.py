@@ -17,34 +17,140 @@ def reset_results():
         if k in st.session_state:
             del st.session_state[k]
 
+# -------------------------------------------------------------
+# 💎 PREMIUM LIQUID GLASS & DARK LUXURY DESIGN SYSTEM (CSS)
+# -------------------------------------------------------------
 st.markdown('''
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap');
-        html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
-        .stApp { background-color: #F8F9FA; }
-        h1, h2, h3 { color: #002D62 !important; font-weight: 600; text-shadow: 1px 1px 2px rgba(0,0,0,0.05); }
-        [data-testid="stSidebar"] { background-color: #001F3F !important; border-right: 2px solid #D4AF37; }
-        [data-testid="stSidebar"] * { color: #E8EEF2 !important; }
-        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: #D4AF37 !important; }
-        div[data-baseweb="select"] > div, input { background-color: #003366 !important; border: 1px solid #557A95 !important; color: white !important;}
-        .stButton>button { background-color: #D4AF37 !important; color: #001F3F !important; border: none !important; border-radius: 4px; font-weight: 600; padding: 0.5rem 2rem; width: 100%; transition: all 0.3s ease; }
-        .stButton>button:hover { background-color: #F3E5AB !important; box-shadow: 0 4px 8px rgba(212, 175, 55, 0.4); transform: translateY(-2px); }
-        div[data-testid="stVerticalBlock"] > div.element-container { background-color: transparent; }
-        .stDataFrame { background-color: white; padding: 1rem; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.08); border-top: 4px solid #002D62; }
-        #MainMenu {visibility: hidden;} footer {visibility: hidden;}
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
         
+        html, body, [class*="css"] { 
+            font-family: 'Sarabun', sans-serif; 
+            color: #E8EEF2;
+        }
+
+        /* App Background: Rich Midnight Gradient for Liquid Glass Effect */
+        .stApp { 
+            background: linear-gradient(135deg, #000B18 0%, #001F3F 50%, #002D62 100%) !important;
+            background-attachment: fixed;
+        }
+
+        /* Typography & Headings */
+        h1, h2, h3 { 
+            color: #F3E5AB !important; 
+            font-weight: 600; 
+            letter-spacing: 0.5px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        /* Sidebar: Frosted Liquid Glass */
+        [data-testid="stSidebar"] { 
+            background: rgba(0, 15, 31, 0.75) !important; 
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-right: 1px solid rgba(212, 175, 55, 0.25); 
+        }
+        [data-testid="stSidebar"] * { color: #E8EEF2 !important; }
+        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { 
+            color: #D4AF37 !important; 
+            border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+            padding-bottom: 8px;
+        }
+
+        /* Input Fields & Selectboxes (Liquid Glass Style) */
+        div[data-baseweb="select"] > div, input { 
+            background: rgba(0, 40, 80, 0.5) !important; 
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(212, 175, 55, 0.35) !important; 
+            color: #FFFFFF !important;
+            border-radius: 8px !important;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+        }
+        input:focus, div[data-baseweb="select"] > div:focus-within {
+            border-color: #D4AF37 !important;
+            box-shadow: 0 0 10px rgba(212, 175, 55, 0.3), inset 0 2px 4px rgba(0,0,0,0.2) !important;
+        }
+
+        /* Luxury Gold Gradient Buttons */
+        .stButton>button { 
+            background: linear-gradient(135deg, #D4AF37 0%, #AA8C2C 100%) !important; 
+            color: #001F3F !important; 
+            border: none !important; 
+            border-radius: 8px; 
+            font-weight: 700; 
+            padding: 0.6rem 2rem; 
+            width: 100%; 
+            letter-spacing: 0.5px;
+            box-shadow: 0 4px 15px rgba(212, 175, 55, 0.35);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+        }
+        .stButton>button:hover { 
+            background: linear-gradient(135deg, #F3E5AB 0%, #D4AF37 100%) !important; 
+            box-shadow: 0 6px 20px rgba(212, 175, 55, 0.5); 
+            transform: translateY(-2px); 
+        }
+
+        /* DataFrames: Glass Card Container */
+        .stDataFrame { 
+            background: rgba(0, 31, 63, 0.5) !important; 
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            padding: 1.2rem; 
+            border-radius: 14px; 
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); 
+            border: 1px solid rgba(212, 175, 55, 0.2); 
+            border-top: 3px solid #D4AF37;
+        }
+
+        /* Truck Loader Animation */
         .stSpinner > div > div { display: none !important; }
         @keyframes drive { 0% { transform: translateX(-100%); } 50% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
-        .custom-truck-loader { text-align: center; padding: 2rem; color: #002D62; font-weight: bold; font-size: 1.2rem; overflow: hidden; border-radius: 10px; background-color: #E8F4F8; border: 2px dashed #002D62; margin-bottom: 20px; }
-        .custom-truck-loader img { width: 150px; animation: drive 3s infinite ease-in-out; }
-        
-        [data-testid="stDownloadButton"] > button { background-color: #28A745 !important; color: white !important; border: none !important; padding: 0.8rem 2rem; font-size: 1.1rem; }
-        [data-testid="stDownloadButton"] > button:hover { background-color: #218838 !important; box-shadow: 0 4px 8px rgba(40, 167, 69, 0.4); }
+        .custom-truck-loader { 
+            text-align: center; 
+            padding: 2.5rem; 
+            color: #F3E5AB; 
+            font-weight: bold; 
+            font-size: 1.25rem; 
+            overflow: hidden; 
+            border-radius: 14px; 
+            background: rgba(0, 31, 63, 0.65); 
+            backdrop-filter: blur(16px);
+            border: 1px dashed rgba(212, 175, 55, 0.5); 
+            margin-bottom: 20px; 
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        }
+        .custom-truck-loader img { width: 160px; animation: drive 3s infinite ease-in-out; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3)); }
+
+        /* Download Button: Emerald Glass Style */
+        [data-testid="stDownloadButton"] > button { 
+            background: linear-gradient(135deg, #28A745 0%, #1E7E34 100%) !important; 
+            color: white !important; 
+            border: 1px solid rgba(40, 167, 69, 0.4) !important; 
+            border-radius: 8px !important;
+            padding: 0.8rem 2rem; 
+            font-size: 1.1rem; 
+            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+            transition: all 0.3s ease;
+        }
+        [data-testid="stDownloadButton"] > button:hover { 
+            background: linear-gradient(135deg, #218838 0%, #155724 100%) !important; 
+            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.5); 
+            transform: translateY(-2px);
+        }
+
+        /* Metric / Info Cards */
+        div.stAlert, div[data-testid="stInfo"], div[data-testid="stSuccess"] {
+            background: rgba(0, 33, 66, 0.6) !important;
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(212, 175, 55, 0.25) !important;
+            color: #E8EEF2 !important;
+            border-radius: 10px;
+        }
     </style>
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Strict Target Matching & Compact Patch Model)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Liquid Glass Luxury Architecture)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
@@ -78,7 +184,7 @@ if sheet_url:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังโหลดข้อมูลต้นฉบับ... 💦</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังเชื่อมต่อฐานข้อมูลระดับองค์กร... 💧</div>'''
         except FileNotFoundError:
             loader_html = '<div class="custom-truck-loader">กำลังโหลดข้อมูล...</div>'
             
@@ -291,19 +397,16 @@ if df is not None and not df.empty:
         if new_t and new_t not in active_trucks: 
             active_trucks.append(new_t)
             
-        # 📌 เป้าหมายถังต่อเดือนที่คำนวณจากเปอร์เซ็นต์ของสไลเดอร์โดยตรง (100% = 4,160 ถัง)
         targets = {t: 4160.0 * (pct_dict.get(t, 100.0) / 100.0) for t in active_trucks}
         if has_base: targets[base_t] = 0.0
         
         vols = opt_df[vol_col].values
         coords = opt_df[[lat_col, lon_col]].values
         
-        # 1. จัดการยุบสายเดิม (ถ้ามี) ส่งเข้า Pool
         if has_base:
             base_mask = (opt_df[truck_col] == base_t) & (~opt_df['is_locked'])
             opt_df.loc[base_mask, 'เบอร์รถใหม่'] = 'POOL'
 
-        # 2. คำนวณจุดศูนย์กลางของแต่ละรถ (Truck Centers)
         centers = {}
         for t in available_trucks:
             if t == base_t: continue
@@ -317,7 +420,6 @@ if df is not None and not df.empty:
         if has_base and base_t in centers and new_t in centers:
             centers[new_t] = centers[base_t]
 
-        # 3. ล็อก Key Account / VIP ไว้กับรถเดิมทันที
         current_loads = {t: 0.0 for t in active_trucks}
         for idx in opt_df.index:
             if opt_df.at[idx, 'is_locked']:
@@ -328,15 +430,11 @@ if df is not None and not df.empty:
             elif has_base and opt_df.at[idx, truck_col] == base_t:
                 opt_df.at[idx, 'เบอร์รถใหม่'] = 'POOL'
             else:
-                # รายการที่ไม่ถูกล็อก ให้ดึงมาอยู่ใน Pool เพื่อกระจายใหม่ตามเป้าหมายสไลเดอร์
                 opt_df.at[idx, 'เบอร์รถใหม่'] = 'POOL'
 
-        # รวบรวมรายการที่ต้องจัดสรร (Pool + Unlocked)
         pool_indices = set(opt_df[opt_df['เบอร์รถใหม่'] == 'POOL'].index.tolist())
         
-        # 4. อัลกอริทึม Deficit-Driven Spatial Assignment (บังคับวิ่งชนเป้าหมายสไลเดอร์แบบเป๊ะๆ)
         while pool_indices:
-            # ค้นหารถที่ยังขาดงานมากที่สุดเทียบกับเป้าหมายสไลเดอร์ (Deficit สูงสุด)
             max_deficit = -float('inf')
             starving_truck = None
 
@@ -348,7 +446,6 @@ if df is not None and not df.empty:
                     starving_truck = t
 
             if starving_truck is None or max_deficit <= 0:
-                # ถ้าทุกคันเต็มเป้าแล้ว ให้เลือกคันที่สัดส่วนโหลดน้อยที่สุด
                 min_ratio = float('inf')
                 for t in active_trucks:
                     if targets.get(t, 0.0) <= 0: continue
@@ -358,10 +455,8 @@ if df is not None and not df.empty:
                         starving_truck = t
                 if starving_truck is None: starving_truck = active_trucks[0]
 
-            # ดึงพิกัดศูนย์กลางของรถคันที่กำลังขาดงาน
             c_lat, c_lon = centers.get(starving_truck, (branch_lat, branch_lon))
 
-            # ค้นหาลูกค้าใน Pool ที่อยู่ "ใกล้ที่สุด" กับรถคันนี้ เพื่อสร้าง Compact Patch
             best_idx = None
             min_dist = float('inf')
 
@@ -376,7 +471,6 @@ if df is not None and not df.empty:
                 current_loads[starving_truck] += vols[best_idx]
                 pool_indices.remove(best_idx)
 
-                # อัปเดตศูนย์กลางของรถคันนั้นแบบไดนามิก
                 t_data = opt_df[opt_df['เบอร์รถใหม่'] == starving_truck]
                 if not t_data.empty:
                     centers[starving_truck] = (np.average(t_data[lat_col]), np.average(t_data[lon_col]))
@@ -421,7 +515,7 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทางตามเป้าหมาย... 🚚💨</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทางตามเป้าหมายระดับผู้บริหาร... 🚚💨</div>'''
         except FileNotFoundError:
             loader_html = '<div class="custom-truck-loader">กำลังประมวลผล...</div>'
             
@@ -507,7 +601,7 @@ if df is not None and not df.empty:
         def get_name(row): return str(row[name_col]) if name_col else "ไม่ระบุ"
 
         with map_col1:
-            st.markdown("<div style='text-align:center; color:#002D62; font-weight:bold;'>โซนการวิ่งรถเดิม (Before - ข้อมูลดิบต้นฉบับ)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#F3E5AB; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งรถเดิม (Before - ข้อมูลดิบต้นฉบับ 100%)</div>", unsafe_allow_html=True)
             m1 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m1)
             for _, r in map_df_before.iterrows():
@@ -515,11 +609,11 @@ if df is not None and not df.empty:
                 is_vip = str(r.get('VIP_Status', '')).upper() == 'VIP' or str(r[id_col]) in manual_vips
                 m_color = color_map.get(t_id, 'gray') if color_mode == 'truck' else next((c for d, c in day_color_map.items() if d in str(r.get(day_col, '')).strip()), 'gray')
                 popup_html = f"<b>รหัส:</b> {r[id_col]}<br><b>ชื่อ:</b> {get_name(r)}<br><b>ยอด:</b> {r[vol_col]} ถัง<br><b>รถ:</b> {t_id}"
-                folium.CircleMarker([r[lat_col], r[lon_col]], radius=8 if is_vip else 5, color='#002D62' if is_vip else m_color, weight=2 if is_vip else 1, fill=True, fillColor=m_color, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=300)).add_to(m1)
+                folium.CircleMarker([r[lat_col], r[lon_col]], radius=8 if is_vip else 5, color='#F3E5AB' if is_vip else m_color, weight=2 if is_vip else 1, fill=True, fillColor=m_color, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=300)).add_to(m1)
             components.html(m1.get_root().render(), height=450)
 
         with map_col2:
-            st.markdown("<div style='text-align:center; color:#002D62; font-weight:bold;'>โซนการวิ่งสายใหม่ (Strict Target Matching)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#F3E5AB; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Liquid Glass Architecture)</div>", unsafe_allow_html=True)
             m2 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m2)
             for _, r in map_df_after.iterrows():
@@ -530,7 +624,7 @@ if df is not None and not df.empty:
                 m_color = color_map.get(t_new, 'gray') if color_mode == 'truck' else next((c for d, c in day_color_map.items() if d in display_day.strip()), 'gray')
                 
                 popup_html = f"<b>รหัส:</b> {r[id_col]}<br><b>ชื่อ:</b> {get_name(r)}<br><b>ยอด:</b> {r[vol_col]} ถัง<br><b>รถล่าสุด:</b> {t_new}"
-                folium.CircleMarker([r[lat_col], r[lon_col]], radius=8 if is_vip else 5, color='#002D62' if is_vip else m_color, weight=2 if is_vip else 1, fill=True, fillColor=m_color, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=300)).add_to(m2)
+                folium.CircleMarker([r[lat_col], r[lon_col]], radius=8 if is_vip else 5, color='#F3E5AB' if is_vip else m_color, weight=2 if is_vip else 1, fill=True, fillColor=m_color, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=300)).add_to(m2)
             components.html(m2.get_root().render(), height=450)
 
         st.markdown("### 📋 รายละเอียดข้อมูลการโยกย้ายสมาชิก")
