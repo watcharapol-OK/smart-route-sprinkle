@@ -44,11 +44,18 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Strict Compact Patch & Baseline Model)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Balanced Sliders & Manual Trigger Model)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
-sheet_gid = st.sidebar.text_input("แท็บชีต (GID):", value="0", on_change=reset_results)
+raw_gid_input = st.sidebar.text_input("แท็บชีต (GID):", value="0", on_change=reset_results)
+
+gid_match = re.search(r'gid=([0-9]+)', raw_gid_input)
+if gid_match:
+    sheet_gid = gid_match.group(1)
+else:
+    digits_only = "".join(filter(str.isdigit, raw_gid_input))
+    sheet_gid = digits_only if digits_only else "0"
 
 @st.cache_data(ttl=300)
 def load_data_from_sheet(url, gid):
@@ -57,7 +64,7 @@ def load_data_from_sheet(url, gid):
         if not match: return None, "ลิงก์ Google Sheets ไม่ถูกต้อง"
         sheet_id = match.group(1)
         export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
-        df = pd.read_csv(export_url, dtype=str) # บังคับอ่านเป็น String ทั้งหมดเพื่อป้องกันเบอร์รถเพี้ยน
+        df = pd.read_csv(export_url, dtype=str)
         if df.empty: return None, "ไม่พบข้อมูลในแท็บนี้"
         return df, None
     except Exception as e:
@@ -116,7 +123,6 @@ if df is not None and not df.empty:
     name_col_sel = st.sidebar.selectbox("คอลัมน์ชื่อลูกค้า:", options=name_opt, index=(cols.index(name_guessed) + 1) if name_guessed else 0, on_change=reset_results)
     name_col = None if name_col_sel == "-- ไม่มี --" else name_col_sel
 
-    # แปลงชนิดข้อมูลให้ถูกต้อง
     df[lat_col] = pd.to_numeric(df[lat_col], errors='coerce')
     df[lon_col] = pd.to_numeric(df[lon_col], errors='coerce')
     df[vol_col] = pd.to_numeric(df[vol_col], errors='coerce').fillna(0.0)
@@ -140,13 +146,12 @@ if df is not None and not df.empty:
     new_truck_name = st.sidebar.text_input("ตั้งชื่อเบอร์รถคันใหม่", value="15112", on_change=reset_results)
 
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### 🎛️ 4. ปรับเป้าหมายรายวัน (%)")
-    st.sidebar.caption("100% = 4,160 ถัง/เดือน (คำนวณจากยอดจริงของแต่ละคันเทียบฐานมาตรฐาน)")
+    st.sidebar.markdown("### 🎛️ 4. ปรับเป้าหมายรายวัน (%) พร้อมปุ่มล็อก")
+    st.sidebar.caption("100% = 4,160 ถัง/เดือน (เลื่อนปรับ % และรถที่ไม่ได้ล็อกจะปรับแปรผันตามกันอัตโนมัติ)")
 
     active_trucks = [t for t in available_trucks if t != base_truck]
     if new_truck_name not in active_trucks: active_trucks.append(new_truck_name)
 
-    # 📌 เซ็ตค่าเริ่มต้นเปอร์เซ็นต์จากยอดจริงในชีต (ยอดจริง / 4160 * 100) อย่างแม่นยำ
     if 'slider_init' not in st.session_state or st.session_state.get('base_truck') != base_truck or st.session_state.get('new_truck') != new_truck_name:
         st.session_state.truck_pcts = {}
         for t in active_trucks:
@@ -163,6 +168,51 @@ if df is not None and not df.empty:
         st.session_state['base_truck'] = base_truck
         st.session_state['new_truck'] = new_truck_name
 
+    # 📌 ฟังก์ชันจัดการสไลเดอร์แปรผันตามกัน (Balanced Slider Redistribution) โดยไม่รันอัลกอริทึมหนัก
+    def on_slider_change(changed_truck):
+        new_val = st.session_state[f"slider_{changed_truck}"]
+        old_val = st.session_state.truck_pcts.get(changed_truck, new_val)
+        diff = new_val - old_val
+        
+        if abs(diff) < 0.01:
+            return
+
+        unlocked = [t for t in active_trucks if not st.session_state.get(f"lock_{t}", False) and t != changed_truck]
+        
+        if len(unlocked) > 0:
+            split_diff = diff / len(unlocked)
+            can_move = True
+            for t in unlocked:
+                if st.session_state.truck_pcts.get(t, 100.0) - split_diff < 0.0:
+                    can_move = False
+                    break
+            
+            if can_move:
+                for t in unlocked:
+                    new_t_val = round(st.session_state.truck_pcts[t] - split_diff, 1)
+                    st.session_state.truck_pcts[t] = new_t_val
+                    st.session_state[f"slider_{t}"] = new_t_val
+                st.session_state.truck_pcts[changed_truck] = round(new_val, 1)
+            else:
+                total_available_slack = sum(st.session_state.truck_pcts[t] for t in unlocked)
+                if diff > 0:
+                    capped_new_val = old_val + total_available_slack
+                    for t in unlocked:
+                        st.session_state.truck_pcts[t] = 0.0
+                        st.session_state[f"slider_{t}"] = 0.0
+                    st.session_state.truck_pcts[changed_truck] = round(capped_new_val, 1)
+                    st.session_state[f"slider_{changed_truck}"] = round(capped_new_val, 1)
+                else:
+                    for t in unlocked:
+                        new_t_val = round(st.session_state.truck_pcts[t] - split_diff, 1)
+                        st.session_state.truck_pcts[t] = new_t_val
+                        st.session_state[f"slider_{t}"] = new_t_val
+                    st.session_state.truck_pcts[changed_truck] = round(new_val, 1)
+        else:
+            st.session_state.truck_pcts[changed_truck] = round(new_val, 1)
+            
+        reset_results()
+
     target_pcts = {}
     for t in active_trucks:
         col_s1, col_s2 = st.sidebar.columns([3, 1.2])
@@ -177,7 +227,9 @@ if df is not None and not df.empty:
                 min_value=0.0, 
                 max_value=200.0, 
                 step=0.1, 
-                key=f"slider_{t}"
+                key=f"slider_{t}",
+                on_change=on_slider_change,
+                args=(t,)
             )
             target_pcts[t] = val
             st.session_state.truck_pcts[t] = val
@@ -255,7 +307,6 @@ if df is not None and not df.empty:
 
         unlocked_indices = np.where(~opt_df['is_locked'].values)[0]
         
-        # จัดสรรงานตามเป้าหมายสไลเดอร์
         for iteration in range(2):
             current_loads = {t: opt_df[opt_df['เบอร์รถใหม่'] == t][vol_col].sum() for t in active_trucks}
             remaining_pts = [i for i in unlocked_indices if opt_df.at[i, 'เบอร์รถใหม่'] == 'POOL' or opt_df.at[i, 'เบอร์รถใหม่'] == str(base_t)]
@@ -289,7 +340,6 @@ if df is not None and not df.empty:
         
         return opt_df, daily_matrix
 
-    # AI Cluster Day-Shift คำแนะนำตามหลักการโลจิสติกส์จริง
     def get_smart_cluster_day_shift_recommendations(data_df, daily_mat):
         recs = []
         days_str_map = {0: 'จันทร์', 1: 'อังคาร', 2: 'พุธ', 3: 'พฤหัสฯ', 4: 'ศุกร์', 5: 'เสาร์'}
