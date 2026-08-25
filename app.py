@@ -18,26 +18,23 @@ def reset_results():
             del st.session_state[k]
 
 # -------------------------------------------------------------
-# 💎 STOP-LEVEL LOGISTICS LIQUID GLASS SYSTEM (CLEAN ZONING)
+# 💎 HIGH-CONTRAST LIQUID GLASS SYSTEM (AUDITED ARCHITECTURE)
 # -------------------------------------------------------------
 st.markdown('''
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
         
-        /* 1. Global High-Contrast Text Reset */
         html, body, [class*="css"], p, span, label, div, small, li, a, h1, h2, h3, h4, h5, h6 { 
             font-family: 'Sarabun', sans-serif !important; 
             color: #FFFFFF !important;
             font-weight: 400;
         }
 
-        /* App Background: Rich Midnight Gradient for Liquid Glass Effect */
         .stApp { 
             background: linear-gradient(135deg, #000B18 0%, #001F3F 50%, #002D62 100%) !important;
             background-attachment: fixed;
         }
 
-        /* 2. Headings: Absolute Clarity with Gold Accent */
         h1, h2, h3, h4, h5, h6 { 
             color: #FFD700 !important; 
             font-weight: 700 !important; 
@@ -45,23 +42,19 @@ st.markdown('''
             text-shadow: 0 2px 4px rgba(0,0,0,0.6);
         }
         
-        /* Subheaders, Captions and Markdown descriptions */
         .stMarkdown p, span, div[data-testid="stMarkdownContainer"] p, [data-testid="stCaptionContainer"], .stCaption {
             color: #F1F5F9 !important;
             opacity: 1 !important;
             font-weight: 400 !important;
         }
 
-        /* 3. Sidebar: Frosted Liquid Glass with Crisp Bright Text */
         [data-testid="stSidebar"] { 
             background: rgba(0, 15, 31, 0.9) !important; 
             backdrop-filter: blur(25px);
             -webkit-backdrop-filter: blur(25px);
             border-right: 1px solid rgba(212, 175, 55, 0.35); 
         }
-        [data-testid="stSidebar"] * { 
-            color: #FFFFFF !important; 
-        }
+        [data-testid="stSidebar"] * { color: #FFFFFF !important; }
         [data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown p {
             color: #F3E5AB !important;
             font-weight: 600 !important;
@@ -72,7 +65,6 @@ st.markdown('''
             padding-bottom: 8px;
         }
 
-        /* 4. Input Fields & Selectboxes (High Contrast Glass) */
         div[data-baseweb="select"] > div, input { 
             background: rgba(0, 40, 80, 0.75) !important; 
             backdrop-filter: blur(12px);
@@ -81,57 +73,30 @@ st.markdown('''
             border-radius: 8px !important;
             font-weight: 500;
         }
-        input::placeholder {
-            color: #CBD5E1 !important;
-            opacity: 1 !important;
-        }
+        input::placeholder { color: #CBD5E1 !important; opacity: 1 !important; }
         input:focus, div[data-baseweb="select"] > div:focus-within {
             border-color: #FFD700 !important;
             box-shadow: 0 0 12px rgba(255, 215, 0, 0.4) !important;
         }
 
-        /* 🚨 Dropdown Options List Legibility 🚨 */
-        div[role="listbox"],
-        ul[role="listbox"],
-        div[data-baseweb="menu"],
-        [data-baseweb="select-dropdown"] {
+        div[role="listbox"], ul[role="listbox"], div[data-baseweb="menu"], [data-baseweb="select-dropdown"] {
             background: #F8FAFC !important;
             border: 1px solid #D4AF37 !important;
             border-radius: 8px !important;
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
         }
-        div[role="option"],
-        ul[role="listbox"] > li {
+        div[role="option"], ul[role="listbox"] > li {
             color: #0F172A !important;
             font-weight: 500 !important;
             padding: 10px 16px !important;
             border-bottom: 1px solid #E2E8F0 !important;
-            transition: all 0.2s ease;
         }
-        div[role="option"] > div,
-        div[role="option"] span {
-            color: #0F172A !important;
-            font-weight: 500 !important;
-        }
-        div[role="option"]:hover {
-            background-color: #FFF8E1 !important;
-            color: #000B18 !important;
-        }
-        div[role="option"]:hover div,
-        div[role="option"]:hover span {
-             color: #000B18 !important;
-        }
-        div[role="option"][aria-selected="true"] {
-            background-color: #FFD700 !important;
-            color: #000B18 !important;
-        }
-        div[role="option"][aria-selected="true"] div,
-        div[role="option"][aria-selected="true"] span {
-            color: #000B18 !important;
-            font-weight: 700 !important;
-        }
+        div[role="option"] > div, div[role="option"] span { color: #0F172A !important; font-weight: 500 !important; }
+        div[role="option"]:hover { background-color: #FFF8E1 !important; color: #000B18 !important; }
+        div[role="option"]:hover div, div[role="option"]:hover span { color: #000B18 !important; }
+        div[role="option"][aria-selected="true"] { background-color: #FFD700 !important; color: #000B18 !important; }
+        div[role="option"][aria-selected="true"] div, div[role="option"][aria-selected="true"] span { color: #000B18 !important; font-weight: 700 !important; }
 
-        /* 5. Luxury Gold Gradient Buttons */
         .stButton>button { 
             background: linear-gradient(135deg, #D4AF37 0%, #AA8C2C 100%) !important; 
             color: #000B18 !important; 
@@ -140,9 +105,8 @@ st.markdown('''
             font-weight: 700; 
             padding: 0.6rem 2rem; 
             width: 100%; 
-            letter-spacing: 0.5px;
             box-shadow: 0 4px 15px rgba(212, 175, 55, 0.4);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+            transition: all 0.3s ease; 
         }
         .stButton>button:hover { 
             background: linear-gradient(135deg, #F3E5AB 0%, #D4AF37 100%) !important; 
@@ -150,34 +114,20 @@ st.markdown('''
             transform: translateY(-2px); 
         }
 
-        /* 6. DataFrames: Glass Card Container with Legible Text */
         .stDataFrame { 
             background: rgba(0, 31, 63, 0.7) !important; 
             backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
             padding: 1.2rem; 
             border-radius: 14px; 
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45); 
             border: 1px solid rgba(212, 175, 55, 0.35); 
             border-top: 3px solid #D4AF37;
         }
-        .stDataFrame td, .stDataFrame th, .stDataFrame div {
-            color: #0F172A !important;
-            font-weight: 500 !important;
-        }
+        .stDataFrame td, .stDataFrame th, .stDataFrame div { color: #0F172A !important; font-weight: 500 !important; }
 
-        /* 7. Premium Smooth Highway Loader (Truck Steady, Road Moving) */
         .stSpinner > div > div { display: none !important; }
-        
-        @keyframes moveRoad {
-            0% { background-position: 0 0; }
-            100% { background-position: -120px 0; }
-        }
-        @keyframes truckVibration {
-            0% { transform: translateY(0px); }
-            50% { transform: translateY(-2px); }
-            100% { transform: translateY(0px); }
-        }
+        @keyframes moveRoad { 0% { background-position: 0 0; } 100% { background-position: -120px 0; } }
+        @keyframes truckVibration { 0% { transform: translateY(0px); } 50% { transform: translateY(-2px); } 100% { transform: translateY(0px); } }
 
         .custom-truck-loader { 
             text-align: center; 
@@ -190,82 +140,42 @@ st.markdown('''
             backdrop-filter: blur(16px);
             border: 1px solid rgba(212, 175, 55, 0.5); 
             margin-bottom: 20px; 
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
             position: relative;
             overflow: hidden;
         }
         .custom-truck-loader::after {
-            content: "";
-            position: absolute;
-            bottom: 10px;
-            left: 0;
-            width: 100%;
-            height: 4px;
+            content: ""; position: absolute; bottom: 10px; left: 0; width: 100%; height: 4px;
             background: repeating-linear-gradient(90deg, #D4AF37, #D4AF37 35px, transparent 35px, transparent 70px);
             animation: moveRoad 1s linear infinite;
         }
-        .custom-truck-loader img { 
-            width: 150px; 
-            animation: truckVibration 0.35s ease-in-out infinite; 
-            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6));
-            display: inline-block;
-            margin-bottom: 8px;
-        }
+        .custom-truck-loader img { width: 150px; animation: truckVibration 0.35s ease-in-out infinite; display: inline-block; margin-bottom: 8px; }
 
-        /* 8. Download Button: Emerald Glass Style */
         [data-testid="stDownloadButton"] > button { 
             background: linear-gradient(135deg, #28A745 0%, #1E7E34 100%) !important; 
             color: #FFFFFF !important; 
-            border: 1px solid rgba(40, 167, 69, 0.5) !important; 
             border-radius: 8px !important;
-            padding: 0.8rem 2rem; 
-            font-size: 1.1rem; 
-            font-weight: 700;
+            padding: 0.8rem 2rem; font-size: 1.1rem; font-weight: 700;
             box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
-            transition: all 0.3s ease;
-        }
-        [data-testid="stDownloadButton"] > button:hover { 
-            background: linear-gradient(135deg, #218838 0%, #155724 100%) !important; 
-            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.6); 
-            transform: translateY(-2px);
-        }
-
-        /* 9. Metric / Info / Alert Cards */
-        div.stAlert, div[data-testid="stInfo"], div[data-testid="stSuccess"], div[data-testid="stWarning"] {
-            background: rgba(0, 33, 66, 0.85) !important;
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(212, 175, 55, 0.45) !important;
-            color: #FFFFFF !important;
-            border-radius: 10px;
-        }
-        div.stAlert *, div[data-testid="stInfo"] *, div[data-testid="stSuccess"] *, div[data-testid="stWarning"] * {
-            color: #FFFFFF !important;
-            font-weight: 500 !important;
         }
     </style>
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Stop-Level Territory Zoning)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Core-Periphery Contiguous Zoning)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
 raw_gid_input = st.sidebar.text_input("แท็บชีต (GID):", value="0", on_change=reset_results)
 
 gid_match = re.search(r'gid=([0-9]+)', raw_gid_input)
-if gid_match:
-    sheet_gid = gid_match.group(1)
-else:
-    digits_only = "".join(filter(str.isdigit, raw_gid_input))
-    sheet_gid = digits_only if digits_only else "0"
+sheet_gid = gid_match.group(1) if gid_match else ("".join(filter(str.isdigit, raw_gid_input)) or "0")
 
 @st.cache_data(ttl=300)
 def load_data_from_sheet(url, gid):
     try:
         match = re.search(r'/d/([a-zA-Z0-9-_]+)', url)
         if not match: return None, "ลิงก์ Google Sheets ไม่ถูกต้อง"
-        sheet_id = match.group(1)
-        export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+        export_url = f"https://docs.google.com/spreadsheets/d/{match.group(1)}/export?format=csv&gid={gid}"
         df = pd.read_csv(export_url, dtype=str)
         if df.empty: return None, "ไม่พบข้อมูลในแท็บนี้"
         return df, None
@@ -376,20 +286,12 @@ if df is not None and not df.empty:
         new_val = max(0.0, min(200.0, raw_new_val))
         old_val = st.session_state.truck_pcts.get(changed_truck, new_val)
         diff = new_val - old_val
-        
-        if abs(diff) < 0.01:
-            return
+        if abs(diff) < 0.01: return
 
         unlocked = [t for t in active_trucks if not st.session_state.get(f"lock_{t}", False) and t != changed_truck]
-        
         if len(unlocked) > 0:
             split_diff = diff / len(unlocked)
-            can_move = True
-            for t in unlocked:
-                if st.session_state.truck_pcts.get(t, 100.0) - split_diff < 0.0 or st.session_state.truck_pcts.get(t, 100.0) - split_diff > 200.0:
-                    can_move = False
-                    break
-            
+            can_move = all(0.0 <= st.session_state.truck_pcts.get(t, 100.0) - split_diff <= 200.0 for t in unlocked)
             if can_move:
                 for t in unlocked:
                     new_t_val = round(max(0.0, min(200.0, st.session_state.truck_pcts[t] - split_diff)), 1)
@@ -397,26 +299,9 @@ if df is not None and not df.empty:
                     st.session_state[f"slider_{t}"] = new_t_val
                 st.session_state.truck_pcts[changed_truck] = round(new_val, 1)
                 st.session_state[f"slider_{changed_truck}"] = round(new_val, 1)
-            else:
-                total_available_slack = sum(st.session_state.truck_pcts[t] for t in unlocked)
-                if diff > 0:
-                    capped_new_val = max(0.0, min(200.0, old_val + total_available_slack))
-                    for t in unlocked:
-                        st.session_state.truck_pcts[t] = 0.0
-                        st.session_state[f"slider_{t}"] = 0.0
-                    st.session_state.truck_pcts[changed_truck] = round(capped_new_val, 1)
-                    st.session_state[f"slider_{changed_truck}"] = round(capped_new_val, 1)
-                else:
-                    for t in unlocked:
-                        new_t_val = round(max(0.0, min(200.0, st.session_state.truck_pcts[t] - split_diff)), 1)
-                        st.session_state.truck_pcts[t] = new_t_val
-                        st.session_state[f"slider_{t}"] = new_t_val
-                    st.session_state.truck_pcts[changed_truck] = round(new_val, 1)
-                    st.session_state[f"slider_{changed_truck}"] = round(new_val, 1)
         else:
             st.session_state.truck_pcts[changed_truck] = round(new_val, 1)
             st.session_state[f"slider_{changed_truck}"] = round(new_val, 1)
-            
         reset_results()
 
     target_pcts = {}
@@ -428,20 +313,10 @@ if df is not None and not df.empty:
         with col_s1:
             if f"slider_{t}" not in st.session_state:
                 st.session_state[f"slider_{t}"] = float(round(max(0.0, min(200.0, st.session_state.truck_pcts.get(t, 100.0))), 1))
-            val = st.slider(
-                f"รถ {t} (%)", 
-                min_value=0.0, 
-                max_value=200.0, 
-                step=0.1, 
-                key=f"slider_{t}",
-                on_change=on_slider_change,
-                args=(t,)
-            )
+            val = st.slider(f"รถ {t} (%)", min_value=0.0, max_value=200.0, step=0.1, key=f"slider_{t}", on_change=on_slider_change, args=(t,))
             clamped_val = max(0.0, min(200.0, val))
             target_pcts[t] = clamped_val
             st.session_state.truck_pcts[t] = clamped_val
-
-    locked_ui_trucks = [t for t in active_trucks if st.session_state.get(f"lock_{t}", False)]
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🔒 5. ล็อก Key Account")
@@ -453,19 +328,12 @@ if df is not None and not df.empty:
         if 'ทุกวัน' in val or 'จ-ส' in val or 'จันทร์-เสาร์' in val: return [0, 1, 2, 3, 4, 5]
         if re.search(r'(จันทร์|จ\.|^จ$|^จ,|,จ,|,จ$|1)', val): days.add(0)
         if re.search(r'(อังคาร|อ\.|^อ$|^อ,|,อ,|,อ$|2)', val): days.add(1)
-        val_no_thu = val.replace('พฤ', '')
-        if re.search(r'(พุธ|พ\.|^พ$|^พ,|,พ,|,พ$|3)', val_no_thu): days.add(2)
+        if re.search(r'(พุธ|พ\.|^พ$|^พ,|,พ,|,พ$|3)', val.replace('พฤ', '')): days.add(2)
         if re.search(r'(พฤหัส|พฤ|4)', val): days.add(3)
         if re.search(r'(ศุกร์|ศ\.|^ศ$|^ศ,|,ศ,|,ศ$|5)', val): days.add(4)
         if re.search(r'(เสาร์|ส\.|^ส$|^ส,|,ส,|,ศ$|6)', val): days.add(5)
         d_list = list(days)
         return d_list if d_list else [0, 1, 2, 3, 4, 5]
-
-    def format_days_to_string(days_list):
-        if not days_list: return "ไม่ระบุ"
-        day_names = {0:'จันทร์', 1:'อังคาร', 2:'พุธ', 3:'พฤหัสฯ', 4:'ศุกร์', 5:'เสาร์'}
-        if len(days_list) == 6: return 'จ-ส'
-        return ', '.join([day_names[d] for d in sorted(days_list)])
 
     def get_daily_vols(data_df):
         daily_matrix = np.zeros((len(data_df), 6)) 
@@ -478,12 +346,12 @@ if df is not None and not df.empty:
         return daily_matrix
 
     # ---------------------------------------------------------
-    # สมองกลหลัก: Stop-Level Territory Zoning (Clean & Un-confetti)
+    # 🧠 สมองกลหลัก: Core-Periphery Contiguous Zoning (Stop-Level)
     # ---------------------------------------------------------
-    def run_stop_level_territory_zoning(data, base_t, new_t, pct_dict, manual_locks):
+    def run_core_periphery_zoning(data, base_t, new_t, pct_dict, manual_locks):
         opt_df = data.copy()
         
-        # 1. จัดกลุ่มลูกค้ารายย่อยที่อยู่พิกัดเดียวกัน (Stop / Building Aggregation) ให้เป็นจุดจอดเดียว
+        # 1. ยุบรวมตึก/พิกัดเดียวกันเป็นจุดจอดเดียว (Stop-Level Aggregation) ห้ามแยกตึกเด็ดขาด
         opt_df['coord_key'] = opt_df[lat_col].round(5).astype(str) + "," + opt_df[lon_col].round(5).astype(str)
         
         locked_manual = [str(x).strip() for x in manual_locks]
@@ -497,7 +365,7 @@ if df is not None and not df.empty:
         targets = {t: 4160.0 * (pct_dict.get(t, 100.0) / 100.0) for t in active_trucks}
         if has_base: targets[base_t] = 0.0
 
-        # สร้างตารางระดับจุดจอด (Stop-Level Summary) เพื่อป้องกันการแยกตึกเดียวกันไปคนละคัน
+        # รวมข้อมูลระดับจุดจอด (Stops)
         stops = opt_df.groupby('coord_key').agg(
             lat=(lat_col, 'first'),
             lon=(lon_col, 'first'),
@@ -506,27 +374,24 @@ if df is not None and not df.empty:
             has_lock=('is_locked', 'any')
         ).reset_index()
 
-        # คำนวณ Seed / Centroid ของรถเดิมแต่ละคัน
-        truck_seeds = {}
+        # 2. คำนวณศูนย์กลางแกนกลาง (Core Centroid) ของรถเดิมแต่ละคัน
+        truck_cores = {}
         for t in available_trucks:
             if t == base_t: continue
             t_stops = stops[stops['orig_truck'] == t]
             if not t_stops.empty:
-                truck_seeds[t] = (t_stops['lat'].mean(), t_stops['lon'].mean())
-                
-        branch_lat = stops['lat'].mean()
-        branch_lon = stops['lon'].mean()
-        
-        # วางตำแหน่งรถใหม่ไว้ที่จุดกึ่งกลางรอยต่อ (Boundary Centroid)
-        if new_t:
-            if truck_seeds:
-                mean_lat = np.mean([s[0] for s in truck_seeds.values()])
-                mean_lon = np.mean([s[1] for s in truck_seeds.values()])
-                truck_seeds[new_t] = (mean_lat, mean_lon)
-            else:
-                truck_seeds[new_t] = (branch_lat, branch_lon)
+                truck_cores[t] = (t_stops['lat'].mean(), t_stops['lon'].mean())
 
-        # กำหนดเบอร์รถเริ่มต้นให้แต่ละจุดจอด (Stop Assignment)
+        # 3. กำหนดจุดตั้งต้นรถใหม่ (New Truck Seed) ไว้ที่กึ่งกลางรอยต่อระหว่างรถเดิม
+        if new_t:
+            if truck_cores:
+                mean_lat = np.mean([c[0] for c in truck_cores.values()])
+                mean_lon = np.mean([c[1] for c in truck_cores.values()])
+                truck_cores[new_t] = (mean_lat, mean_lon)
+            else:
+                truck_cores[new_t] = (stops['lat'].mean(), stops['lon'].mean())
+
+        # 4. เริ่มต้นกระจายจุดจอด: ล็อก Core เดิมไว้ และยุบฐานที่ต้องยุบเข้า POOL
         stops['assigned_truck'] = stops['orig_truck']
         if has_base:
             stops.loc[stops['orig_truck'] == base_t, 'assigned_truck'] = 'POOL'
@@ -537,21 +402,21 @@ if df is not None and not df.empty:
             if t in active_trucks:
                 current_loads[t] += s['total_vol']
 
-        # TRIM PHASE: ตัดจุดจอดชายขอบที่เกินเพดานสไลเดอร์ออกเข้า POOL
+        # 5. TRIM PHASE (เฉพาะขอบนอก Periphery): หากรถคันใดยอดเกินเพดานสไลเดอร์ ให้ตัดจุดจอดที่อยู่ "ไกลแกนกลางที่สุด" ออกเข้า POOL ก่อน ห้ามแตะ Core
         for t in active_trucks:
             if targets.get(t, 0.0) <= 0.0: continue
             while current_loads[t] > targets[t] + 10.0:
                 t_stops = stops[(stops['assigned_truck'] == t) & (~stops['has_lock'])]
                 if t_stops.empty: break
-                s_lat, s_lon = truck_seeds.get(t, (branch_lat, branch_lon))
+                c_lat, c_lon = truck_cores.get(t, (stops['lat'].mean(), stops['lon'].mean()))
                 t_stops = t_stops.copy()
-                t_stops['dist'] = (t_stops['lat'] - s_lat)**2 + (t_stops['lon'] - s_lon)**2
-                fringe_row = t_stops.sort_values('dist', ascending=False).iloc[0]
+                t_stops['dist_from_core'] = (t_stops['lat'] - c_lat)**2 + (t_stops['lon'] - c_lon)**2
+                fringe_row = t_stops.sort_values('dist_from_core', ascending=False).iloc[0]
                 
                 stops.loc[stops['coord_key'] == fringe_row['coord_key'], 'assigned_truck'] = 'POOL'
                 current_loads[t] -= fringe_row['total_vol']
 
-        # GROW PHASE: เติมจุดจอดจาก POOL ให้รถที่ยังไม่เต็มเป้าสไลเดอร์ โดยยึดความใกล้ (Contiguous Growth)
+        # 6. GROW PHASE (แบบ Contiguous Adjacency): เติมจุดจอดจาก POOL โดยคัดเลือกเฉพาะจุดที่ "อยู่ใกล้ที่สุดกับกลุ่มก้อนปัจจุบันของรถคันนั้น" ห้ามกระโดดข้ามเขต
         pool_stops = stops[stops['assigned_truck'] == 'POOL']
         
         while not pool_stops.empty:
@@ -568,14 +433,20 @@ if df is not None and not df.empty:
             if starving_truck is None or max_deficit <= 10.0:
                 break
 
-            s_lat, s_lon = truck_seeds.get(starving_truck, (branch_lat, branch_lon))
+            # หาระยะเทียบกับขอบนอกปัจจุบันของรถคันนั้น (Dynamic Growth Boundary)
+            t_stops = stops[stops['assigned_truck'] == starving_truck]
+            if t_stops.empty:
+                ref_lat, ref_lon = truck_cores.get(starving_truck, (stops['lat'].mean(), stops['lon'].mean()))
+            else:
+                ref_lat, ref_lon = t_stops['lat'].mean(), t_stops['lon'].mean()
+
             best_key = None
             min_dist = float('inf')
 
             for _, ps in pool_stops.iterrows():
                 if current_loads[starving_truck] + ps['total_vol'] > targets[starving_truck] + 10.0:
                     continue
-                dist = (ps['lat'] - s_lat)**2 + (ps['lon'] - s_lon)**2
+                dist = (ps['lat'] - ref_lat)**2 + (ps['lon'] - ref_lon)**2
                 if dist < min_dist:
                     min_dist = dist
                     best_key = ps['coord_key']
@@ -585,17 +456,13 @@ if df is not None and not df.empty:
                 stops.loc[stops['coord_key'] == best_key, 'assigned_truck'] = starving_truck
                 current_loads[starving_truck] += ps_row['total_vol']
                 pool_stops = pool_stops[pool_stops['coord_key'] != best_key]
-
-                t_stops = stops[stops['assigned_truck'] == starving_truck]
-                if not t_stops.empty:
-                    truck_seeds[starving_truck] = (t_stops['lat'].mean(), t_stops['lon'].mean())
             else:
                 break
 
-        # จุดจอดที่เหลือใน POOL ที่เกินเพดาน ถูกบันทึกเป็น 'ส่วนเกิน (Overflow)'
+        # ส่วนที่เหลือใน POOL บันทึกเป็นส่วนเกิน (Overflow)
         stops.loc[stops['assigned_truck'] == 'POOL', 'assigned_truck'] = 'ส่วนเกิน (Overflow)'
 
-        # Map ผลลัพธ์ระดับ Stop กลับมาที่ตารางลูกค้าจริง (ทุกรายในตึกเดียวกันได้เบอร์รถเดียวกัน 100%)
+        # 7. Map กลับสู่ลูกค้ารายย่อยทั้งหมด (ทุกรายในตึกเดียวกันได้เบอร์รถเดียวกัน 100%)
         truck_mapping = dict(zip(stops['coord_key'], stops['assigned_truck']))
         opt_df['เบอร์รถใหม่'] = opt_df['coord_key'].map(truck_mapping)
         opt_df['วันจัดส่ง(ใหม่)'] = opt_df[day_col].values
@@ -617,15 +484,9 @@ if df is not None and not df.empty:
             for d in range(6):
                 load = sim_truck_daily[t][d]
                 if 121 <= load <= 139:
-                    recs.append({
-                        'เบอร์รถ': t, 'วัน': days_str_map[d], 'โหลดปัจจุบัน': round(load, 1),
-                        'คำแนะนำ': 'อยู่ในโซนภาระงานน้อยเกินไป (121-139 ถัง) แนะนำเกลี่ยเพิ่มให้อยู่ในช่วง 140-155 ถัง'
-                    })
+                    recs.append({'เบอร์รถ': t, 'วัน': days_str_map[d], 'โหลดปัจจุบัน': round(load, 1), 'คำแนะนำ': 'อยู่ในโซนภาระงานน้อยเกินไป (121-139 ถัง) แนะนำเกลี่ยเพิ่มให้อยู่ในช่วง 140-155 ถัง'})
                 elif 160 < load < 180:
-                    recs.append({
-                        'เบอร์รถ': t, 'วัน': days_str_map[d], 'โหลดปัจจุบัน': round(load, 1),
-                        'คำแนะนำ': 'เกิน 160 ถังแต่ยังไม่ถึงเกณฑ์คุ้มค่าเที่ยว 3 แนะนำพิจารณาผลักขึ้นไปช่วง 180-190 ถังเพื่อเบิกน้ำเที่ยว 3 (+40 ถัง) หรืออนุโลมตามพื้นที่ซอยเดียวกัน'
-                    })
+                    recs.append({'เบอร์รถ': t, 'วัน': days_str_map[d], 'โหลดปัจจุบัน': round(load, 1), 'คำแนะนำ': 'เกิน 160 ถังแต่ยังไม่ถึงเกณฑ์คุ้มค่าเที่ยว 3 แนะนำพิจารณาผลักขึ้นไปช่วง 180-190 ถังเพื่อเบิกน้ำเที่ยว 3'})
         return pd.DataFrame(recs)
 
     st.sidebar.markdown("---")
@@ -638,13 +499,13 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทางระดับจุดจอด (Stop-Level)... 💧</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทางระดับ Core-Periphery... 💧</div>'''
         except FileNotFoundError:
-            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทางระดับจุดจอด (Stop-Level)... 💧</div>'
+            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทางระดับ Core-Periphery... 💧</div>'
             
         calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
         
-        res_df, daily_matrix = run_stop_level_territory_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips)
+        res_df, daily_matrix = run_core_periphery_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips)
         st.session_state['result_df'] = res_df
         st.session_state['daily_matrix'] = daily_matrix
         time.sleep(0.5) 
@@ -654,53 +515,34 @@ if df is not None and not df.empty:
         res_df = st.session_state['result_df']
         daily_matrix = st.session_state['daily_matrix']
         all_trucks_after = sorted(res_df['เบอร์รถใหม่'].dropna().unique().tolist())
-        
-        if new_truck_name and new_truck_name not in all_trucks_after:
-            all_trucks_after.append(new_truck_name)
+        if new_truck_name and new_truck_name not in all_trucks_after: all_trucks_after.append(new_truck_name)
         
         st.markdown("### 📊 สรุปภาพรวมยอดการจัดส่ง")
-            
         col1, col2 = st.columns(2)
         sum_before = df.groupby(truck_col).agg(จำนวนสมาชิก=pd.NamedAgg(column=truck_col, aggfunc='count'), **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}).reset_index()
         sum_after = res_df.groupby('เบอร์รถใหม่').agg(จำนวนสมาชิก=pd.NamedAgg(column='เบอร์รถใหม่', aggfunc='count'), **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}).reset_index()
-        sum_after['ปริมาณงาน(%)'] = np.where(
-            sum_after['เบอร์รถใหม่'] == 'ส่วนเกิน (Overflow)',
-            '-',
-            (sum_after['ยอดรับน้ำ(ถัง/เดือน)'] / 4160 * 100).round(1).astype(str) + '%'
-        )
+        sum_after['ปริมาณงาน(%)'] = np.where(sum_after['เบอร์รถใหม่'] == 'ส่วนเกิน (Overflow)', '-', (sum_after['ยอดรับน้ำ(ถัง/เดือน)'] / 4160 * 100).round(1).astype(str) + '%')
 
         with col1:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
             st.dataframe(sum_before, use_container_width=True)
         with col2:
-            st.markdown("**หลังปรับโครงสร้าง (Stop-Level Zoning)**")
+            st.markdown("**หลังปรับโครงสร้าง (Core-Periphery Zoning)**")
             st.dataframe(sum_after, use_container_width=True)
             
         st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)")
-            
         daily_summary = []
         for t in all_trucks_after:
             if t == 'ส่วนเกิน (Overflow)': continue
             t_mask = res_df['เบอร์รถใหม่'] == t
             t_daily = daily_matrix[t_mask].sum(axis=0) if t_mask.any() else np.zeros(6)
-            daily_summary.append({
-                'เบอร์รถ': t,
-                'จันทร์': round(t_daily[0]),
-                'อังคาร': round(t_daily[1]),
-                'พุธ': round(t_daily[2]),
-                'พฤหัสฯ': round(t_daily[3]),
-                'ศุกร์': round(t_daily[4]),
-                'เสาร์': round(t_daily[5]),
-                'โหลดสูงสุด (ถัง/วัน)': round(max(t_daily))
-            })
+            daily_summary.append({'เบอร์รถ': t, 'จันทร์': round(t_daily[0]), 'อังคาร': round(t_daily[1]), 'พุธ': round(t_daily[2]), 'พฤหัสฯ': round(t_daily[3]), 'ศุกร์': round(t_daily[4]), 'เสาร์': round(t_daily[5]), 'โหลดสูงสุด (ถัง/วัน)': round(max(t_daily))})
         st.dataframe(pd.DataFrame(daily_summary), use_container_width=True)
         
         st.markdown("#### 💡 คำแนะนำการบริหารโหลดรายวันตามเกณฑ์โลจิสติกส์จริง")
         recs_df = get_smart_cluster_day_shift_recommendations(res_df, daily_matrix)
-        if not recs_df.empty:
-            st.dataframe(recs_df, use_container_width=True)
-        else:
-            st.success("✅ โหลดรายวันทุกวันอยู่ในเกณฑ์เหมาะสมตามมาตรฐาน")
+        if not recs_df.empty: st.dataframe(recs_df, use_container_width=True)
+        else: st.success("✅ โหลดรายวันทุกวันอยู่ในเกณฑ์เหมาะสมตามมาตรฐาน")
 
         st.markdown("### 🗺️ แผนที่เปรียบเทียบการกระจายตัว (เชิงพื้นที่)")
         map_trucks_view = [t for t in all_trucks_after if t != 'ส่วนเกิน (Overflow)']
@@ -742,22 +584,19 @@ if df is not None and not df.empty:
             components.html(m1.get_root().render(), height=450)
 
         with map_col2:
-            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Stop-Level Zoning)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Core-Periphery Zoning)</div>", unsafe_allow_html=True)
             m2 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m2)
             for _, r in map_df_after.iterrows():
                 t_new = str(r['เบอร์รถใหม่'])
                 is_vip = str(r.get('VIP_Status', '')).upper() == 'VIP' or str(r[id_col]) in manual_vips
-                
                 display_day = str(r.get(day_col, ''))
                 m_color = color_map.get(t_new, 'gray') if color_mode == 'truck' else next((c for d, c in day_color_map.items() if d in display_day.strip()), 'gray')
-                
                 popup_html = f"<b>รหัส:</b> {r[id_col]}<br><b>ชื่อ:</b> {get_name(r)}<br><b>ยอด:</b> {r[vol_col]} ถัง<br><b>รถล่าสุด:</b> {t_new}"
                 folium.CircleMarker([r[lat_col], r[lon_col]], radius=8 if is_vip else 5, color='#FFD700' if is_vip else m_color, weight=2 if is_vip else 1, fill=True, fillColor=m_color, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=300)).add_to(m2)
             components.html(m2.get_root().render(), height=450)
 
         st.markdown("### 📋 รายละเอียดข้อมูลการโยกย้ายสมาชิก")
-        
         final_cols = [id_col]
         if name_col and name_col in res_df.columns: final_cols.append(name_col)
         final_cols.extend([day_col, vol_col, truck_col, 'เบอร์รถใหม่', 'สถานะ'])
@@ -771,11 +610,9 @@ if df is not None and not df.empty:
         st.markdown("<div style='text-align:center; margin-bottom: 10px;'><b>📌 เมื่อผลลัพธ์สมบูรณ์แบบแล้ว สามารถดาวน์โหลดข้อมูลไปใช้งานได้ทันที</b></div>", unsafe_allow_html=True)
         
         @st.cache_data
-        def convert_df_to_bytes(df):
-            return df.to_csv(index=False).encode('utf-8-sig')
+        def convert_df_to_bytes(df): return df.to_csv(index=False).encode('utf-8-sig')
 
         csv_bytes = convert_df_to_bytes(detail_df)
-        
         col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
         with col_btn2:
             st.download_button(
@@ -785,9 +622,7 @@ if df is not None and not df.empty:
                 mime='text/csv',
                 use_container_width=True
             )
-            
     else:
         st.info("👈 ปรับตั้งค่าเปอร์เซ็นต์และล็อกรถให้เรียบร้อย จากนั้นกดปุ่ม 'ประมวลผลตัดสายส่ง' ที่แถบเมนูด้านซ้าย เพื่อดูผลลัพธ์")
 else:
     st.info("👈 กรุณาวางลิงก์ Google Sheets ที่แถบเมนูด้านซ้าย เพื่อเริ่มต้นใช้งาน Dashboard")
-    
