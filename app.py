@@ -18,15 +18,16 @@ def reset_results():
             del st.session_state[k]
 
 # -------------------------------------------------------------
-# 💎 PREMIUM LIQUID GLASS & DARK LUXURY DESIGN SYSTEM (CSS)
+# 💎 HIGH-CONTRAST LIQUID GLASS & DARK LUXURY DESIGN SYSTEM (CSS)
 # -------------------------------------------------------------
 st.markdown('''
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
         
+        /* Global High-Contrast Text */
         html, body, [class*="css"] { 
             font-family: 'Sarabun', sans-serif; 
-            color: #E8EEF2;
+            color: #FFFFFF !important;
         }
 
         /* App Background: Rich Midnight Gradient for Liquid Glass Effect */
@@ -35,71 +36,84 @@ st.markdown('''
             background-attachment: fixed;
         }
 
-        /* Typography & Headings */
-        h1, h2, h3 { 
-            color: #F3E5AB !important; 
-            font-weight: 600; 
+        /* Headings: Absolute Clarity with Gold/Cream Accent */
+        h1, h2, h3, h4, h5, h6 { 
+            color: #FFD700 !important; 
+            font-weight: 700 !important; 
             letter-spacing: 0.5px;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
 
-        /* Sidebar: Frosted Liquid Glass */
+        /* Sidebar: Frosted Liquid Glass with Crisp Text */
         [data-testid="stSidebar"] { 
-            background: rgba(0, 15, 31, 0.75) !important; 
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border-right: 1px solid rgba(212, 175, 55, 0.25); 
+            background: rgba(0, 15, 31, 0.85) !important; 
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            border-right: 1px solid rgba(212, 175, 55, 0.3); 
         }
-        [data-testid="stSidebar"] * { color: #E8EEF2 !important; }
+        [data-testid="stSidebar"] * { 
+            color: #FFFFFF !important; 
+        }
+        [data-testid="stSidebar"] label {
+            color: #F3E5AB !important;
+            font-weight: 600 !important;
+        }
         [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { 
-            color: #D4AF37 !important; 
-            border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+            color: #FFD700 !important; 
+            border-bottom: 1px solid rgba(212, 175, 55, 0.3);
             padding-bottom: 8px;
         }
 
-        /* Input Fields & Selectboxes (Liquid Glass Style) */
+        /* Input Fields & Selectboxes (High Contrast Glass) */
         div[data-baseweb="select"] > div, input { 
-            background: rgba(0, 40, 80, 0.5) !important; 
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(212, 175, 55, 0.35) !important; 
+            background: rgba(0, 40, 80, 0.7) !important; 
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(212, 175, 55, 0.5) !important; 
             color: #FFFFFF !important;
             border-radius: 8px !important;
-            box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+            font-weight: 500;
+        }
+        input::placeholder {
+            color: #A0AEC0 !important;
         }
         input:focus, div[data-baseweb="select"] > div:focus-within {
-            border-color: #D4AF37 !important;
-            box-shadow: 0 0 10px rgba(212, 175, 55, 0.3), inset 0 2px 4px rgba(0,0,0,0.2) !important;
+            border-color: #FFD700 !important;
+            box-shadow: 0 0 12px rgba(255, 215, 0, 0.4) !important;
         }
 
         /* Luxury Gold Gradient Buttons */
         .stButton>button { 
             background: linear-gradient(135deg, #D4AF37 0%, #AA8C2C 100%) !important; 
-            color: #001F3F !important; 
+            color: #000B18 !important; 
             border: none !important; 
             border-radius: 8px; 
             font-weight: 700; 
             padding: 0.6rem 2rem; 
             width: 100%; 
             letter-spacing: 0.5px;
-            box-shadow: 0 4px 15px rgba(212, 175, 55, 0.35);
+            box-shadow: 0 4px 15px rgba(212, 175, 55, 0.4);
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
         }
         .stButton>button:hover { 
             background: linear-gradient(135deg, #F3E5AB 0%, #D4AF37 100%) !important; 
-            box-shadow: 0 6px 20px rgba(212, 175, 55, 0.5); 
+            box-shadow: 0 6px 20px rgba(255, 215, 0, 0.6); 
             transform: translateY(-2px); 
         }
 
-        /* DataFrames: Glass Card Container */
+        /* DataFrames: Glass Card Container with Legible Text */
         .stDataFrame { 
-            background: rgba(0, 31, 63, 0.5) !important; 
+            background: rgba(0, 31, 63, 0.65) !important; 
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
             padding: 1.2rem; 
             border-radius: 14px; 
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); 
-            border: 1px solid rgba(212, 175, 55, 0.2); 
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4); 
+            border: 1px solid rgba(212, 175, 55, 0.3); 
             border-top: 3px solid #D4AF37;
+        }
+        /* Force DataFrame inner text contrast */
+        .stDataFrame td, .stDataFrame th {
+            color: #FFFFFF !important;
         }
 
         /* Truck Loader Animation */
@@ -108,49 +122,53 @@ st.markdown('''
         .custom-truck-loader { 
             text-align: center; 
             padding: 2.5rem; 
-            color: #F3E5AB; 
+            color: #FFD700; 
             font-weight: bold; 
             font-size: 1.25rem; 
             overflow: hidden; 
             border-radius: 14px; 
-            background: rgba(0, 31, 63, 0.65); 
+            background: rgba(0, 31, 63, 0.8); 
             backdrop-filter: blur(16px);
-            border: 1px dashed rgba(212, 175, 55, 0.5); 
+            border: 1px dashed rgba(212, 175, 55, 0.6); 
             margin-bottom: 20px; 
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
         }
-        .custom-truck-loader img { width: 160px; animation: drive 3s infinite ease-in-out; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3)); }
+        .custom-truck-loader img { width: 160px; animation: drive 3s infinite ease-in-out; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4)); }
 
         /* Download Button: Emerald Glass Style */
         [data-testid="stDownloadButton"] > button { 
             background: linear-gradient(135deg, #28A745 0%, #1E7E34 100%) !important; 
-            color: white !important; 
-            border: 1px solid rgba(40, 167, 69, 0.4) !important; 
+            color: #FFFFFF !important; 
+            border: 1px solid rgba(40, 167, 69, 0.5) !important; 
             border-radius: 8px !important;
             padding: 0.8rem 2rem; 
             font-size: 1.1rem; 
-            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+            font-weight: 700;
+            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
             transition: all 0.3s ease;
         }
         [data-testid="stDownloadButton"] > button:hover { 
             background: linear-gradient(135deg, #218838 0%, #155724 100%) !important; 
-            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.5); 
+            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.6); 
             transform: translateY(-2px);
         }
 
         /* Metric / Info Cards */
         div.stAlert, div[data-testid="stInfo"], div[data-testid="stSuccess"] {
-            background: rgba(0, 33, 66, 0.6) !important;
+            background: rgba(0, 33, 66, 0.75) !important;
             backdrop-filter: blur(12px);
-            border: 1px solid rgba(212, 175, 55, 0.25) !important;
-            color: #E8EEF2 !important;
+            border: 1px solid rgba(212, 175, 55, 0.4) !important;
+            color: #FFFFFF !important;
             border-radius: 10px;
+        }
+        div.stAlert *, div[data-testid="stInfo"] *, div[data-testid="stSuccess"] * {
+            color: #FFFFFF !important;
         }
     </style>
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Liquid Glass Luxury Architecture)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (High-Contrast Liquid Glass Luxury Architecture)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
@@ -601,7 +619,7 @@ if df is not None and not df.empty:
         def get_name(row): return str(row[name_col]) if name_col else "ไม่ระบุ"
 
         with map_col1:
-            st.markdown("<div style='text-align:center; color:#F3E5AB; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งรถเดิม (Before - ข้อมูลดิบต้นฉบับ 100%)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งรถเดิม (Before - ข้อมูลดิบต้นฉบับ 100%)</div>", unsafe_allow_html=True)
             m1 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m1)
             for _, r in map_df_before.iterrows():
@@ -609,11 +627,11 @@ if df is not None and not df.empty:
                 is_vip = str(r.get('VIP_Status', '')).upper() == 'VIP' or str(r[id_col]) in manual_vips
                 m_color = color_map.get(t_id, 'gray') if color_mode == 'truck' else next((c for d, c in day_color_map.items() if d in str(r.get(day_col, '')).strip()), 'gray')
                 popup_html = f"<b>รหัส:</b> {r[id_col]}<br><b>ชื่อ:</b> {get_name(r)}<br><b>ยอด:</b> {r[vol_col]} ถัง<br><b>รถ:</b> {t_id}"
-                folium.CircleMarker([r[lat_col], r[lon_col]], radius=8 if is_vip else 5, color='#F3E5AB' if is_vip else m_color, weight=2 if is_vip else 1, fill=True, fillColor=m_color, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=300)).add_to(m1)
+                folium.CircleMarker([r[lat_col], r[lon_col]], radius=8 if is_vip else 5, color='#FFD700' if is_vip else m_color, weight=2 if is_vip else 1, fill=True, fillColor=m_color, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=300)).add_to(m1)
             components.html(m1.get_root().render(), height=450)
 
         with map_col2:
-            st.markdown("<div style='text-align:center; color:#F3E5AB; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Liquid Glass Architecture)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (High-Contrast Liquid Glass)</div>", unsafe_allow_html=True)
             m2 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m2)
             for _, r in map_df_after.iterrows():
@@ -624,7 +642,7 @@ if df is not None and not df.empty:
                 m_color = color_map.get(t_new, 'gray') if color_mode == 'truck' else next((c for d, c in day_color_map.items() if d in display_day.strip()), 'gray')
                 
                 popup_html = f"<b>รหัส:</b> {r[id_col]}<br><b>ชื่อ:</b> {get_name(r)}<br><b>ยอด:</b> {r[vol_col]} ถัง<br><b>รถล่าสุด:</b> {t_new}"
-                folium.CircleMarker([r[lat_col], r[lon_col]], radius=8 if is_vip else 5, color='#F3E5AB' if is_vip else m_color, weight=2 if is_vip else 1, fill=True, fillColor=m_color, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=300)).add_to(m2)
+                folium.CircleMarker([r[lat_col], r[lon_col]], radius=8 if is_vip else 5, color='#FFD700' if is_vip else m_color, weight=2 if is_vip else 1, fill=True, fillColor=m_color, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=300)).add_to(m2)
             components.html(m2.get_root().render(), height=450)
 
         st.markdown("### 📋 รายละเอียดข้อมูลการโยกย้ายสมาชิก")
