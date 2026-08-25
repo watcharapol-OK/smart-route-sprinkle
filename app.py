@@ -18,7 +18,7 @@ def reset_results():
             del st.session_state[k]
 
 # -------------------------------------------------------------
-# 💎 ABSOLUTE HIGH-CONTRAST LIQUID GLASS SYSTEM (AUDITED & COMPLETED)
+# 💎 STRICT HARD-CAP LIQUID GLASS SYSTEM (AUDITED ARCHITECTURE)
 # -------------------------------------------------------------
 st.markdown('''
     <style>
@@ -246,7 +246,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Audited Dropdown Legibility Architecture)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Strict Hard-Cap & Overflow Management)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
@@ -478,7 +478,7 @@ if df is not None and not df.empty:
         return daily_matrix
 
     # ---------------------------------------------------------
-    # สมองกลหลัก: Strict Target-Driven Compact Patch Allocation
+    # สมองกลหลัก: Strict Hard-Cap Target Allocation & Overflow
     # ---------------------------------------------------------
     def run_strict_target_allocation(data, base_t, new_t, pct_dict, manual_locks):
         opt_df = data.copy()
@@ -493,6 +493,7 @@ if df is not None and not df.empty:
         if new_t and new_t not in active_trucks: 
             active_trucks.append(new_t)
             
+        # 📌 Strict Hard-Cap Targets (คำนวณจากเปอร์เซ็นต์สไลเดอร์ ห้ามเกินเด็ดขาด)
         targets = {t: 4160.0 * (pct_dict.get(t, 100.0) / 100.0) for t in active_trucks}
         if has_base: targets[base_t] = 0.0
         
@@ -517,6 +518,8 @@ if df is not None and not df.empty:
             centers[new_t] = centers[base_t]
 
         current_loads = {t: 0.0 for t in active_trucks}
+        
+        # Step 1: ล็อก VIP / Key Account ให้อยู่กับรถเดิม
         for idx in opt_df.index:
             if opt_df.at[idx, 'is_locked']:
                 orig_t = str(opt_df.at[idx, truck_col])
@@ -530,6 +533,7 @@ if df is not None and not df.empty:
 
         pool_indices = set(opt_df[opt_df['เบอร์รถใหม่'] == 'POOL'].index.tolist())
         
+        # Step 2: จัดสรรงานเข้า active_trucks แบบเคารพ Hard-Cap Ceiling 100%
         while pool_indices:
             max_deficit = -float('inf')
             starving_truck = None
@@ -537,19 +541,14 @@ if df is not None and not df.empty:
             for t in active_trucks:
                 if targets.get(t, 0.0) <= 0.0: continue
                 deficit = targets[t] - current_loads[t]
-                if deficit > max_deficit:
+                # ค้นหารถที่ยังไม่เต็มเป้าสไลเดอร์ และมีช่องว่างให้เติม
+                if deficit > 0 and deficit > max_deficit:
                     max_deficit = deficit
                     starving_truck = t
 
+            # ถ้าทุกคันเต็มเป้าสไลเดอร์แล้ว (หรือไม่มีคันไหนขาดอีก) ให้หยุดทันที
             if starving_truck is None or max_deficit <= 0:
-                min_ratio = float('inf')
-                for t in active_trucks:
-                    if targets.get(t, 0.0) <= 0: continue
-                    ratio = current_loads[t] / targets[t]
-                    if ratio < min_ratio:
-                        min_ratio = ratio
-                        starving_truck = t
-                if starving_truck is None: starving_truck = active_trucks[0]
+                break
 
             c_lat, c_lon = centers.get(starving_truck, (branch_lat, branch_lon))
 
@@ -557,6 +556,10 @@ if df is not None and not df.empty:
             min_dist = float('inf')
 
             for idx in pool_indices:
+                # ตรวจสอบว่าถ้านำลูกค้ารายนี้เข้ามา จะทำให้เกินเป้าสไลเดอร์หรือไม่ (Hard-Cap Enforcement)
+                if current_loads[starving_truck] + vols[idx] > targets[starving_truck] + 5.0: # ให้ tolerance เล็กน้อยกันปัดเศษ
+                    continue
+                
                 dist = (opt_df.at[idx, lat_col] - c_lat)**2 + (opt_df.at[idx, lon_col] - c_lon)**2
                 if dist < min_dist:
                     min_dist = dist
@@ -571,9 +574,17 @@ if df is not None and not df.empty:
                 if not t_data.empty:
                     centers[starving_truck] = (np.average(t_data[lat_col]), np.average(t_data[lon_col]))
             else:
+                # ถ้ารถคันนี้หาลูกค้าที่ขนาดพอดีไม่ได้แล้ว ให้ข้ามไปรอบถัดไป
                 break
 
+        # Step 3: ลูกค้าที่เหลือใน pool_indices ที่เกินเพดานสไลเดอร์ จะถูกแยกไปเป็น 'ส่วนเกิน (Overflow)'
+        for idx in pool_indices:
+            opt_df.at[idx, 'เบอร์รถใหม่'] = 'ส่วนเกิน (Overflow)'
+
         opt_df['สถานะ'] = np.where(opt_df[truck_col] == opt_df['เบอร์รถใหม่'], 'คงเดิม', 'ย้ายไปสาย ' + opt_df['เบอร์รถใหม่'])
+        
+        # กรองเฉพาะแถวที่ไม่ได้เป็น Overflow มาคำนวณ matrix รายวัน
+        valid_df_for_daily = opt_df[opt_df['เบอร์รถใหม่'] != 'ส่วนเกิน (Overflow)']
         daily_matrix = get_daily_vols(opt_df)
         
         return opt_df, daily_matrix
@@ -581,7 +592,7 @@ if df is not None and not df.empty:
     def get_smart_cluster_day_shift_recommendations(data_df, daily_mat):
         recs = []
         days_str_map = {0: 'จันทร์', 1: 'อังคาร', 2: 'พุธ', 3: 'พฤหัสฯ', 4: 'ศุกร์', 5: 'เสาร์'}
-        trucks = data_df['เบอร์รถใหม่'].dropna().unique()
+        trucks = [t for t in data_df['เบอร์รถใหม่'].dropna().unique() if t != 'ส่วนเกิน (Overflow)']
         sim_truck_daily = {t: daily_mat[data_df['เบอร์รถใหม่'] == t].sum(axis=0).copy() for t in trucks}
         
         for t in trucks:
@@ -611,9 +622,9 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทางตามเป้าหมายระดับผู้บริหาร... 💧</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทางตามเพดาน Hard-Cap... 💧</div>'''
         except FileNotFoundError:
-            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทางตามเป้าหมายระดับผู้บริหาร... 💧</div>'
+            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทางตามเพดาน Hard-Cap... 💧</div>'
             
         calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
         
@@ -636,19 +647,24 @@ if df is not None and not df.empty:
         col1, col2 = st.columns(2)
         sum_before = df.groupby(truck_col).agg(จำนวนสมาชิก=pd.NamedAgg(column=truck_col, aggfunc='count'), **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}).reset_index()
         sum_after = res_df.groupby('เบอร์รถใหม่').agg(จำนวนสมาชิก=pd.NamedAgg(column='เบอร์รถใหม่', aggfunc='count'), **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}).reset_index()
-        sum_after['ปริมาณงาน(%)'] = (sum_after['ยอดรับน้ำ(ถัง/เดือน)'] / 4160 * 100).round(1).astype(str) + '%'
+        sum_after['ปริมาณงาน(%)'] = np.where(
+            sum_after['เบอร์รถใหม่'] == 'ส่วนเกิน (Overflow)',
+            '-',
+            (sum_after['ยอดรับน้ำ(ถัง/เดือน)'] / 4160 * 100).round(1).astype(str) + '%'
+        )
 
         with col1:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
             st.dataframe(sum_before, use_container_width=True)
         with col2:
-            st.markdown("**หลังปรับโครงสร้าง (Strict Target Matching)**")
+            st.markdown("**หลังปรับโครงสร้าง (Strict Hard-Cap Ceiling)**")
             st.dataframe(sum_after, use_container_width=True)
             
         st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)")
             
         daily_summary = []
         for t in all_trucks_after:
+            if t == 'ส่วนเกิน (Overflow)': continue
             t_mask = res_df['เบอร์รถใหม่'] == t
             t_daily = daily_matrix[t_mask].sum(axis=0) if t_mask.any() else np.zeros(6)
             daily_summary.append({
@@ -671,18 +687,19 @@ if df is not None and not df.empty:
             st.success("✅ โหลดรายวันทุกวันอยู่ในเกณฑ์เหมาะสมตามมาตรฐาน")
 
         st.markdown("### 🗺️ แผนที่เปรียบเทียบการกระจายตัว (เชิงพื้นที่)")
-        view_options = ["แสดงทั้งหมด (แยกสีตามเบอร์รถ)"] + all_trucks_after
+        map_trucks_view = [t for t in all_trucks_after if t != 'ส่วนเกิน (Overflow)']
+        view_options = ["แสดงทั้งหมด (แยกสีตามเบอร์รถ)"] + map_trucks_view
         
         col_filter, _ = st.columns([1, 1])
         with col_filter: selected_view = st.selectbox("🔍 เลือกรูปแบบการแสดงผลบนแผนที่:", options=view_options)
 
         day_color_map = {'จันทร์': '#FFD700', 'อังคาร': '#FF69B4', 'พุธ': '#28A745', 'พฤหัสบดี': '#FD7E14', 'ศุกร์': '#00BFFF', 'เสาร์': '#6F42C1', 'อาทิตย์': '#DC3545'}
         standard_palette = ['blue', 'green', 'orange', 'purple', 'darkblue', 'cadetblue', 'pink']
-        color_map = {str(t): standard_palette[i % len(standard_palette)] for i, t in enumerate(all_trucks_after) if str(t) != new_truck_name}
+        color_map = {str(t): standard_palette[i % len(standard_palette)] for i, t in enumerate(map_trucks_view) if str(t) != new_truck_name}
         color_map[new_truck_name] = 'red' 
 
         if selected_view == "แสดงทั้งหมด (แยกสีตามเบอร์รถ)":
-            map_df_before, map_df_after = df, res_df
+            map_df_before, map_df_after = df, res_df[res_df['เบอร์รถใหม่'] != 'ส่วนเกิน (Overflow)']
             color_mode = 'truck'
         else:
             if selected_view == new_truck_name and base_truck == "(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)": map_df_before = pd.DataFrame(columns=df.columns) 
@@ -709,7 +726,7 @@ if df is not None and not df.empty:
             components.html(m1.get_root().render(), height=450)
 
         with map_col2:
-            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (High-Contrast Liquid Glass)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Strict Hard-Cap Ceiling)</div>", unsafe_allow_html=True)
             m2 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m2)
             for _, r in map_df_after.iterrows():
