@@ -18,7 +18,7 @@ def reset_results():
             del st.session_state[k]
 
 # -------------------------------------------------------------
-# 💎 HIGH-CONTRAST LIQUID GLASS & DARK LUXURY DESIGN SYSTEM (CSS)
+# 💎 HIGH-CONTRAST LIQUID GLASS & SMOOTH HIGHWAY LOADER DESIGN (CSS)
 # -------------------------------------------------------------
 st.markdown('''
     <style>
@@ -111,29 +111,56 @@ st.markdown('''
             border: 1px solid rgba(212, 175, 55, 0.3); 
             border-top: 3px solid #D4AF37;
         }
-        /* Force DataFrame inner text contrast */
         .stDataFrame td, .stDataFrame th {
             color: #FFFFFF !important;
         }
 
-        /* Truck Loader Animation */
+        /* 🚛 Premium Smooth Highway Loader (Scenery Moving, Truck Steady) */
         .stSpinner > div > div { display: none !important; }
-        @keyframes drive { 0% { transform: translateX(-100%); } 50% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
+        
+        @keyframes moveRoad {
+            0% { background-position: 0 0; }
+            100% { background-position: -100px 0; }
+        }
+        @keyframes truckVibration {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-1.5px); }
+            100% { transform: translateY(0px); }
+        }
+
         .custom-truck-loader { 
             text-align: center; 
-            padding: 2.5rem; 
+            padding: 2.2rem; 
             color: #FFD700; 
             font-weight: bold; 
-            font-size: 1.25rem; 
-            overflow: hidden; 
+            font-size: 1.2rem; 
             border-radius: 14px; 
-            background: rgba(0, 31, 63, 0.8); 
+            background: rgba(0, 31, 63, 0.85); 
             backdrop-filter: blur(16px);
-            border: 1px dashed rgba(212, 175, 55, 0.6); 
+            border: 1px solid rgba(212, 175, 55, 0.4); 
             margin-bottom: 20px; 
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+            position: relative;
+            overflow: hidden;
         }
-        .custom-truck-loader img { width: 160px; animation: drive 3s infinite ease-in-out; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4)); }
+        /* Animated Highway Road Line at the bottom of loader */
+        .custom-truck-loader::after {
+            content: "";
+            position: absolute;
+            bottom: 12px;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: repeating-linear-gradient(90deg, #D4AF37, #D4AF37 30px, transparent 30px, transparent 60px);
+            animation: moveRoad 1.2s linear infinite;
+        }
+        .custom-truck-loader img { 
+            width: 150px; 
+            animation: truckVibration 0.4s ease-in-out infinite; 
+            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5));
+            display: inline-block;
+            margin-bottom: 8px;
+        }
 
         /* Download Button: Emerald Glass Style */
         [data-testid="stDownloadButton"] > button { 
@@ -204,7 +231,7 @@ if sheet_url:
                 encoded_string = base64.b64encode(image_file.read()).decode()
             loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังเชื่อมต่อฐานข้อมูลระดับองค์กร... 💧</div>'''
         except FileNotFoundError:
-            loader_html = '<div class="custom-truck-loader">กำลังโหลดข้อมูล...</div>'
+            loader_html = '<div class="custom-truck-loader">กำลังเชื่อมต่อฐานข้อมูลระดับองค์กร... 💧</div>'
             
         loading_placeholder.markdown(loader_html, unsafe_allow_html=True)
         raw_df, err = load_data_from_sheet(sheet_url, sheet_gid)
@@ -379,7 +406,7 @@ if df is not None and not df.empty:
         if re.search(r'(พุธ|พ\.|^พ$|^พ,|,พ,|,พ$|3)', val_no_thu): days.add(2)
         if re.search(r'(พฤหัส|พฤ|4)', val): days.add(3)
         if re.search(r'(ศุกร์|ศ\.|^ศ$|^ศ,|,ศ,|,ศ$|5)', val): days.add(4)
-        if re.search(r'(เสาร์|ส\.|^ส$|^ส,|,ส,|,ส$|6)', val): days.add(5)
+        if re.search(r'(เสาร์|ส\.|^ส$|^ส,|,ส,|,ศ$|6)', val): days.add(5)
         d_list = list(days)
         return d_list if d_list else [0, 1, 2, 3, 4, 5]
 
@@ -535,7 +562,7 @@ if df is not None and not df.empty:
                 encoded_string = base64.b64encode(image_file.read()).decode()
             loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทางตามเป้าหมายระดับผู้บริหาร... 🚚💨</div>'''
         except FileNotFoundError:
-            loader_html = '<div class="custom-truck-loader">กำลังประมวลผล...</div>'
+            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทางตามเป้าหมายระดับผู้บริหาร... 🚚💨</div>'
             
         calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
         
