@@ -18,7 +18,7 @@ def reset_results():
             del st.session_state[k]
 
 # -------------------------------------------------------------
-# 💎 TERRITORY TRIM & GROW LIQUID GLASS SYSTEM (MASTER LOGISTICS ARCHITECTURE)
+# 💎 STOP-LEVEL LOGISTICS LIQUID GLASS SYSTEM (CLEAN ZONING)
 # -------------------------------------------------------------
 st.markdown('''
     <style>
@@ -246,7 +246,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Territory Trim & Grow Architecture)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Stop-Level Territory Zoning)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
@@ -478,12 +478,13 @@ if df is not None and not df.empty:
         return daily_matrix
 
     # ---------------------------------------------------------
-    # สมองกลหลัก: Territory Trim & Grow (Contiguous Core-Boundary Seeding)
+    # สมองกลหลัก: Stop-Level Territory Zoning (Clean & Un-confetti)
     # ---------------------------------------------------------
-    def run_territory_trim_and_grow(data, base_t, new_t, pct_dict, manual_locks):
+    def run_stop_level_territory_zoning(data, base_t, new_t, pct_dict, manual_locks):
         opt_df = data.copy()
-        opt_df['เบอร์รถใหม่'] = opt_df[truck_col].values
-        opt_df['วันจัดส่ง(ใหม่)'] = opt_df[day_col].values
+        
+        # 1. จัดกลุ่มลูกค้ารายย่อยที่อยู่พิกัดเดียวกัน (Stop / Building Aggregation) ให้เป็นจุดจอดเดียว
+        opt_df['coord_key'] = opt_df[lat_col].round(5).astype(str) + "," + opt_df[lon_col].round(5).astype(str)
         
         locked_manual = [str(x).strip() for x in manual_locks]
         opt_df['is_locked'] = (opt_df['VIP_Status'].str.upper().str.strip() == 'VIP') | (opt_df[id_col].str.strip().isin(locked_manual))
@@ -495,22 +496,28 @@ if df is not None and not df.empty:
             
         targets = {t: 4160.0 * (pct_dict.get(t, 100.0) / 100.0) for t in active_trucks}
         if has_base: targets[base_t] = 0.0
-        
-        vols = opt_df[vol_col].values
-        coords = opt_df[[lat_col, lon_col]].values
-        
-        # 1. คำนวณ Seed / Centroid ของรถเดิมแต่ละคัน (เพื่อรักษาแกนกลางเดิม)
+
+        # สร้างตารางระดับจุดจอด (Stop-Level Summary) เพื่อป้องกันการแยกตึกเดียวกันไปคนละคัน
+        stops = opt_df.groupby('coord_key').agg(
+            lat=(lat_col, 'first'),
+            lon=(lon_col, 'first'),
+            total_vol=(vol_col, 'sum'),
+            orig_truck=(truck_col, 'first'),
+            has_lock=('is_locked', 'any')
+        ).reset_index()
+
+        # คำนวณ Seed / Centroid ของรถเดิมแต่ละคัน
         truck_seeds = {}
         for t in available_trucks:
             if t == base_t: continue
-            t_data = opt_df[opt_df[truck_col] == t]
-            if not t_data.empty:
-                truck_seeds[t] = (np.mean(t_data[lat_col]), np.mean(t_data[lon_col]))
+            t_stops = stops[stops['orig_truck'] == t]
+            if not t_stops.empty:
+                truck_seeds[t] = (t_stops['lat'].mean(), t_stops['lon'].mean())
                 
-        branch_lat = np.mean(coords[:, 0])
-        branch_lon = np.mean(coords[:, 1])
+        branch_lat = stops['lat'].mean()
+        branch_lon = stops['lon'].mean()
         
-        # 2. วางตำแหน่งรถใหม่ (New Truck Seed) ไว้ที่ "จุดกึ่งกลางรอยต่อ (Boundary Centroid)" ของรถเดิมทั้งหมด
+        # วางตำแหน่งรถใหม่ไว้ที่จุดกึ่งกลางรอยต่อ (Boundary Centroid)
         if new_t:
             if truck_seeds:
                 mean_lat = np.mean([s[0] for s in truck_seeds.values()])
@@ -519,85 +526,79 @@ if df is not None and not df.empty:
             else:
                 truck_seeds[new_t] = (branch_lat, branch_lon)
 
-        # 3. เริ่มต้นกำหนดสายส่งเดิมให้ลูกค้า (Preserve Original Assignment)
-        current_loads = {t: 0.0 for t in active_trucks}
-        for idx in opt_df.index:
-            orig_t = str(opt_df.at[idx, truck_col])
-            if opt_df.at[idx, 'is_locked']:
-                assigned_t = orig_t if orig_t in active_trucks else active_trucks[0]
-                opt_df.at[idx, 'เบอร์รถใหม่'] = assigned_t
-                current_loads[assigned_t] += vols[idx]
-            elif has_base and orig_t == base_t:
-                opt_df.at[idx, 'เบอร์รถใหม่'] = 'POOL'
-            else:
-                if orig_t in active_trucks:
-                    opt_df.at[idx, 'เบอร์รถใหม่'] = orig_t
-                    current_loads[orig_t] += vols[idx]
-                else:
-                    opt_df.at[idx, 'เบอร์รถใหม่'] = 'POOL'
+        # กำหนดเบอร์รถเริ่มต้นให้แต่ละจุดจอด (Stop Assignment)
+        stops['assigned_truck'] = stops['orig_truck']
+        if has_base:
+            stops.loc[stops['orig_truck'] == base_t, 'assigned_truck'] = 'POOL'
 
-        # 4. TRIM PHASE: หากรถคันใดยอดเกินเพดานสไลเดอร์ (Hard-Cap) ให้ตัดลูกค้าชายขอบ (Fringe) ที่อยู่ไกลจาก Seed ออกเข้า POOL ก่อน
+        current_loads = {t: 0.0 for t in active_trucks}
+        for _, s in stops.iterrows():
+            t = s['assigned_truck']
+            if t in active_trucks:
+                current_loads[t] += s['total_vol']
+
+        # TRIM PHASE: ตัดจุดจอดชายขอบที่เกินเพดานสไลเดอร์ออกเข้า POOL
         for t in active_trucks:
             if targets.get(t, 0.0) <= 0.0: continue
-            while current_loads[t] > targets[t] + 5.0:
-                t_indices = opt_df[(opt_df['เบอร์รถใหม่'] == t) & (~opt_df['is_locked'])].index.tolist()
-                if not t_indices: break
-                # คำนวณระยะห่างจาก Seed ของรถคันนี้ เพื่อเลือกตัดจุดที่อยู่ไกลที่สุด (Fringe)
+            while current_loads[t] > targets[t] + 10.0:
+                t_stops = stops[(stops['assigned_truck'] == t) & (~stops['has_lock'])]
+                if t_stops.empty: break
                 s_lat, s_lon = truck_seeds.get(t, (branch_lat, branch_lon))
-                dists = [(idx, (opt_df.at[idx, lat_col] - s_lat)**2 + (opt_df.at[idx, lon_col] - s_lon)**2) for idx in t_indices]
-                dists.sort(key=lambda x: x[1], reverse=True) # เอาไกลสุดขึ้นก่อน
+                t_stops = t_stops.copy()
+                t_stops['dist'] = (t_stops['lat'] - s_lat)**2 + (t_stops['lon'] - s_lon)**2
+                fringe_row = t_stops.sort_values('dist', ascending=False).iloc[0]
                 
-                fringe_idx = dists[0][0]
-                opt_df.at[fringe_idx, 'เบอร์รถใหม่'] = 'POOL'
-                current_loads[t] -= vols[fringe_idx]
+                stops.loc[stops['coord_key'] == fringe_row['coord_key'], 'assigned_truck'] = 'POOL'
+                current_loads[t] -= fringe_row['total_vol']
 
-        # 5. GROW PHASE: หากรถคันใดยอดต่ำกว่าเป้าสไลเดอร์ ให้ดึงลูกค้าจาก POOL ที่ "อยู่ใกล้ที่สุดกับกลุ่มก้อนเดิมของรถคันนั้น (Contiguous Growth)" เข้ามาเติม
-        pool_indices = set(opt_df[opt_df['เบอร์รถใหม่'] == 'POOL'].index.tolist())
+        # GROW PHASE: เติมจุดจอดจาก POOL ให้รถที่ยังไม่เต็มเป้าสไลเดอร์ โดยยึดความใกล้ (Contiguous Growth)
+        pool_stops = stops[stops['assigned_truck'] == 'POOL']
         
-        while pool_indices:
-            # ค้นหารถที่ยังต้องการงาน (Deficit สูงสุด)
+        while not pool_stops.empty:
             max_deficit = -float('inf')
             starving_truck = None
 
             for t in active_trucks:
                 if targets.get(t, 0.0) <= 0.0: continue
                 deficit = targets[t] - current_loads[t]
-                if deficit > 5.0 and deficit > max_deficit:
+                if deficit > 10.0 and deficit > max_deficit:
                     max_deficit = deficit
                     starving_truck = t
 
-            if starving_truck is None or max_deficit <= 5.0:
+            if starving_truck is None or max_deficit <= 10.0:
                 break
 
-            # ค้นหาลูกค้าใน POOL ที่อยู่ "ใกล้ที่สุดกับจุดศูนย์กลาง/กลุ่มก้อนเดิมของรถคันนี้"
             s_lat, s_lon = truck_seeds.get(starving_truck, (branch_lat, branch_lon))
-            best_idx = None
+            best_key = None
             min_dist = float('inf')
 
-            for idx in pool_indices:
-                if current_loads[starving_truck] + vols[idx] > targets[starving_truck] + 5.0:
+            for _, ps in pool_stops.iterrows():
+                if current_loads[starving_truck] + ps['total_vol'] > targets[starving_truck] + 10.0:
                     continue
-                
-                dist = (opt_df.at[idx, lat_col] - s_lat)**2 + (opt_df.at[idx, lon_col] - s_lon)**2
+                dist = (ps['lat'] - s_lat)**2 + (ps['lon'] - s_lon)**2
                 if dist < min_dist:
                     min_dist = dist
-                    best_idx = idx
+                    best_key = ps['coord_key']
 
-            if best_idx is not None:
-                opt_df.at[best_idx, 'เบอร์รถใหม่'] = starving_truck
-                current_loads[starving_truck] += vols[best_idx]
-                pool_indices.remove(best_idx)
+            if best_key is not None:
+                ps_row = pool_stops[pool_stops['coord_key'] == best_key].iloc[0]
+                stops.loc[stops['coord_key'] == best_key, 'assigned_truck'] = starving_truck
+                current_loads[starving_truck] += ps_row['total_vol']
+                pool_stops = pool_stops[pool_stops['coord_key'] != best_key]
 
-                # อัปเดต Seed ของรถคันนั้นแบบไดนามิกเพื่อให้โตออกด้านนอกอย่างต่อเนื่อง
-                t_data = opt_df[opt_df['เบอร์รถใหม่'] == starving_truck]
-                if not t_data.empty:
-                    truck_seeds[starving_truck] = (np.mean(t_data[lat_col]), np.mean(t_data[lon_col]))
+                t_stops = stops[stops['assigned_truck'] == starving_truck]
+                if not t_stops.empty:
+                    truck_seeds[starving_truck] = (t_stops['lat'].mean(), t_stops['lon'].mean())
             else:
                 break
 
-        # 6. ลูกค้าที่เหลือใน POOL ที่เกินเพดานสไลเดอร์ทุกคัน จะถูกบันทึกเป็น 'ส่วนเกิน (Overflow)'
-        for idx in pool_indices:
-            opt_df.at[idx, 'เบอร์รถใหม่'] = 'ส่วนเกิน (Overflow)'
+        # จุดจอดที่เหลือใน POOL ที่เกินเพดาน ถูกบันทึกเป็น 'ส่วนเกิน (Overflow)'
+        stops.loc[stops['assigned_truck'] == 'POOL', 'assigned_truck'] = 'ส่วนเกิน (Overflow)'
+
+        # Map ผลลัพธ์ระดับ Stop กลับมาที่ตารางลูกค้าจริง (ทุกรายในตึกเดียวกันได้เบอร์รถเดียวกัน 100%)
+        truck_mapping = dict(zip(stops['coord_key'], stops['assigned_truck']))
+        opt_df['เบอร์รถใหม่'] = opt_df['coord_key'].map(truck_mapping)
+        opt_df['วันจัดส่ง(ใหม่)'] = opt_df[day_col].values
 
         opt_df['สถานะ'] = np.where(opt_df[truck_col] == opt_df['เบอร์รถใหม่'], 'คงเดิม', 'ย้ายไปสาย ' + opt_df['เบอร์รถใหม่'])
         daily_matrix = get_daily_vols(opt_df)
@@ -637,13 +638,13 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทางตามหลัก Territory Trim & Grow... 💧</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทางระดับจุดจอด (Stop-Level)... 💧</div>'''
         except FileNotFoundError:
-            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทางตามหลัก Territory Trim & Grow... 💧</div>'
+            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทางระดับจุดจอด (Stop-Level)... 💧</div>'
             
         calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
         
-        res_df, daily_matrix = run_territory_trim_and_grow(df, base_truck, new_truck_name, target_pcts, manual_vips)
+        res_df, daily_matrix = run_stop_level_territory_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips)
         st.session_state['result_df'] = res_df
         st.session_state['daily_matrix'] = daily_matrix
         time.sleep(0.5) 
@@ -672,7 +673,7 @@ if df is not None and not df.empty:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
             st.dataframe(sum_before, use_container_width=True)
         with col2:
-            st.markdown("**หลังปรับโครงสร้าง (Territory Trim & Grow)**")
+            st.markdown("**หลังปรับโครงสร้าง (Stop-Level Zoning)**")
             st.dataframe(sum_after, use_container_width=True)
             
         st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)")
@@ -741,7 +742,7 @@ if df is not None and not df.empty:
             components.html(m1.get_root().render(), height=450)
 
         with map_col2:
-            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Territory Trim & Grow)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Stop-Level Zoning)</div>", unsafe_allow_html=True)
             m2 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m2)
             for _, r in map_df_after.iterrows():
@@ -789,3 +790,4 @@ if df is not None and not df.empty:
         st.info("👈 ปรับตั้งค่าเปอร์เซ็นต์และล็อกรถให้เรียบร้อย จากนั้นกดปุ่ม 'ประมวลผลตัดสายส่ง' ที่แถบเมนูด้านซ้าย เพื่อดูผลลัพธ์")
 else:
     st.info("👈 กรุณาวางลิงก์ Google Sheets ที่แถบเมนูด้านซ้าย เพื่อเริ่มต้นใช้งาน Dashboard")
+    
