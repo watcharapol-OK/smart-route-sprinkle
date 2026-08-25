@@ -44,7 +44,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Anchor-Truck & Balanced Slider Model)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Guaranteed New Truck Allocation Model)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
@@ -55,14 +55,10 @@ def load_data_from_sheet(url):
         match = re.search(r'/d/([a-zA-Z0-9-_]+)', url)
         if match:
             sheet_id = match.group(1)
-            # รองรับทั้งแบบระบุ gid และดึงค่าเริ่มต้น
-            export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
-            df_temp = pd.read_csv(export_url)
-            return df_temp
+            export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid=0"
+            return pd.read_csv(export_url)
         return None
-    except Exception as e:
-        st.error(f"❌ ไม่สามารถโหลดข้อมูลจากลิงก์ได้ กรุณาตรวจสอบสิทธิ์การแชร์ (ต้องเป็น 'ทุกคนที่มีลิงก์เป็นผู้มีสิทธิ์อ่าน'): {e}")
-        return None
+    except Exception: return None
 
 df = None
 if sheet_url:
@@ -70,9 +66,9 @@ if sheet_url:
     try:
         with open("truck.jpg", "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode()
-        loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังโหลดข้อมูล... 💦</div>'''
+        loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทางและรถใหม่... 💦</div>'''
     except FileNotFoundError:
-        loader_html = '<div class="custom-truck-loader">กำลังโหลดข้อมูล...</div>'
+        loader_html = '<div class="custom-truck-loader">กำลังประมวลผล...</div>'
         
     loading_placeholder.markdown(loader_html, unsafe_allow_html=True)
     df = load_data_from_sheet(sheet_url)
@@ -80,7 +76,6 @@ if sheet_url:
     loading_placeholder.empty() 
 
 if df is not None and not df.empty:
-    # ค้นหาคอลัมน์สำคัญแบบยืดหยุ่น ป้องกันชื่อคอลัมน์คลาดเคลื่อน
     vol_col = next((c for c in df.columns if 'ยอด' in str(c) or 'เดือน' in str(c)), df.columns[-1])
     lat_col = next((c for c in df.columns if 'ละติจูด' in str(c) or 'lat' in str(c).lower()), None)
     lon_col = next((c for c in df.columns if 'ลอง' in str(c) or 'lon' in str(c).lower()), None)
@@ -89,9 +84,6 @@ if df is not None and not df.empty:
     id_col = next((c for c in df.columns if 'รหัส' in str(c) or 'ID' in str(c).upper()), df.columns[0])
     name_col = next((c for c in df.columns if 'ชื่อ' in str(c) or 'name' in str(c).lower()), None)
     
-    guessed_day = next((c for c in df.columns if 'สัปดาห์' in str(c) or 'วัน' in str(c) or 'รอบ' in str(c) or 'day' in str(c).lower()), df.columns[0])
-    day_col = st.sidebar.selectbox("📅 เลือกคอลัมน์ 'วันจัดส่ง':", options=df.columns, index=df.columns.tolist().index(guessed_day) if guessed_day in df.columns else 0, on_change=reset_results)
-
     if not lat_col or not lon_col: st.error("❌ ขาดคอลัมน์ พิกัด (ละติจูด/ลองติจูด)"); st.stop()
 
     df[lat_col] = pd.to_numeric(df[lat_col], errors='coerce')
@@ -104,6 +96,9 @@ if df is not None and not df.empty:
     
     st.sidebar.markdown("---")
     st.sidebar.markdown("### ⚙️ 2. ตั้งค่าคอลัมน์และสายใหม่")
+    
+    guessed_day = next((c for c in df.columns if 'สัปดาห์' in str(c) or 'วัน' in str(c) or 'รอบ' in str(c) or 'day' in str(c).lower()), df.columns[0])
+    day_col = st.sidebar.selectbox("📅 เลือกคอลัมน์ 'วันจัดส่ง':", options=df.columns, index=df.columns.tolist().index(guessed_day) if guessed_day in df.columns else 0, on_change=reset_results)
     
     available_trucks = [str(x) for x in df[truck_col].unique() if str(x) != 'nan']
     base_truck_options = ["(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)"] + available_trucks
@@ -123,7 +118,7 @@ if df is not None and not df.empty:
         st.session_state.truck_pcts = {}
         for t in active_trucks:
             if t == new_truck_name and t not in df[truck_col].astype(str).unique():
-                st.session_state.truck_pcts[t] = 95.0
+                st.session_state.truck_pcts[t] = 95.0 # กำหนดค่าตั้งต้นให้รถใหม่มีเป้าหมายชัดเจน
             else:
                 vol = df[df[truck_col].astype(str) == t][vol_col].sum()
                 st.session_state.truck_pcts[t] = float(round((vol / 4160) * 100, 1))
@@ -231,7 +226,7 @@ if df is not None and not df.empty:
         return daily_matrix
 
     # ---------------------------------------------------------
-    # สมองกลหลัก: Guaranteed Allocation
+    # สมองกลหลัก: Guaranteed New Truck Allocation (บังคับดึงงานให้รถใหม่เสมอ)
     # ---------------------------------------------------------
     def run_guaranteed_new_truck_allocation(data, base_t, new_t, pct_dict, manual_locks, locked_ui_list):
         opt_df = data.copy()
@@ -265,6 +260,7 @@ if df is not None and not df.empty:
 
         unlocked_indices = np.where(~opt_df['is_locked'].values)[0]
         
+        # บังคับดึงงานให้รถใหม่ (new_t) ตามเป้าหมายที่ตั้งไว้ โดยดึงจากขอบรอยต่อของรถอื่น ๆ
         new_truck_target = monthly_targets.get(new_t, 0)
         if new_truck_target > 0:
             candidates = [i for i in unlocked_indices if opt_df.at[i, 'เบอร์รถใหม่'] != new_t]
@@ -280,6 +276,7 @@ if df is not None and not df.empty:
                     opt_df.at[idx, 'เบอร์รถใหม่'] = new_t
                     taken += vols[idx]
 
+        # ปรับสมดุลโควตาระหว่างรถที่เหลือ
         for iteration in range(25):
             current_loads = {t: opt_df[opt_df['เบอร์รถใหม่'] == t][vol_col].sum() for t in active_trucks}
             over_trucks = [t for t in active_trucks if current_loads[t] > monthly_targets.get(t, 0) + 15 and t != new_t and t not in locked_ui_list]
@@ -300,7 +297,7 @@ if df is not None and not df.empty:
             
             opt_df.at[sorted_border[0], 'เบอร์รถใหม่'] = t_under
 
-        # Hard-Cap Daily Balancer
+        # 4. 🔴 HARD-CAP DAILY BALANCER: ควบคุมเพดานรายวันไม่ให้เกิน 190 ถังเด็ดขาด
         MAX_HARD_CAP = 190
         OPTIMAL_CAP = 156
         assigned_days_dict = {idx: parse_days_from_string(opt_df.at[idx, day_col]) for idx in opt_df.index}
@@ -366,7 +363,7 @@ if df is not None and not df.empty:
             
         return opt_df, daily_matrix, centers
 
-    # AI Cluster Day-Shift
+    # 📌 ระบบผู้ช่วยอัจฉริยะ (AI Cluster Day-Shift) ควบคุม Hard Cap ไม่เกิน 190 ถังเด็ดขาด
     def get_smart_cluster_day_shift_recommendations(data_df, daily_mat, centers):
         recs = []
         days_str_map = {0: 'จันทร์', 1: 'อังคาร', 2: 'พุธ', 3: 'พฤหัสฯ', 4: 'ศุกร์', 5: 'เสาร์'}
@@ -466,6 +463,7 @@ if df is not None and not df.empty:
         route_centers = st.session_state.get('route_centers', {})
         all_trucks_after = sorted(res_df['เบอร์รถใหม่'].dropna().unique().tolist())
         
+        # บังคับเพิ่มชื่อรถใหม่ลงไปในลิสต์แสดงผลเสมอแม้ว่าตอนแรกจะยังไม่ได้รันข้อมูลเต็มที่
         if new_truck_name and new_truck_name not in all_trucks_after:
             all_trucks_after.append(new_truck_name)
         
@@ -486,7 +484,7 @@ if df is not None and not df.empty:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
             st.dataframe(sum_before, use_container_width=True)
         with col2:
-            st.markdown("**หลังปรับโครงสร้าง (Guaranteed Allocation)**")
+            st.markdown("**หลังปรับโครงสร้าง (Guaranteed New Truck Allocation)**")
             st.dataframe(sum_after, use_container_width=True)
             
         st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)")
