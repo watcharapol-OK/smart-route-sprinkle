@@ -18,7 +18,7 @@ def reset_results():
             del st.session_state[k]
 
 # -------------------------------------------------------------
-# 💎 COMPREHENSIVE LOGISTICS AUDIT & LIQUID GLASS SYSTEM
+# 💎 INTERACTIVE FUNCTIONAL LOGISTICS LIQUID GLASS SYSTEM
 # -------------------------------------------------------------
 st.markdown('''
     <style>
@@ -161,7 +161,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Comprehensive Logistics Audit Architecture)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Interactive Action-Linked Architecture)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
@@ -346,12 +346,22 @@ if df is not None and not df.empty:
         return daily_matrix
 
     # ---------------------------------------------------------
-    # 🧠 สมองกลหลัก: Seed-Centric Region-Growing Zoning
+    # 🧠 สมองกลหลัก: Seed-Centric Zoning with Dynamic Action Adjustments
     # ---------------------------------------------------------
     def run_seed_centric_zoning(data, base_t, new_t, pct_dict, manual_locks, applied_adjustments=None):
         opt_df = data.copy()
         if applied_adjustments is None: applied_adjustments = {}
         
+        # ปรับลดเป้าหมายเปอร์เซ็นต์ของรถคันที่มีการกดจัดการลดภาระงานวิกฤต
+        adjusted_pcts = pct_dict.copy()
+        for rec_id, is_active in applied_adjustments.items():
+            if is_active:
+                parts = rec_id.split('_')
+                t_target = parts[0]
+                if t_target in adjusted_pcts:
+                    # ลดเป้าลง 15% ทันทีเพื่อบีบให้ระบบตัดแบ่งงานส่วนเกินออก
+                    adjusted_pcts[t_target] = max(10.0, adjusted_pcts[t_target] - 15.0)
+
         opt_df['coord_key'] = opt_df[lat_col].round(5).astype(str) + "," + opt_df[lon_col].round(5).astype(str)
         locked_manual = [str(x).strip() for x in manual_locks]
         opt_df['is_locked'] = (opt_df['VIP_Status'].str.upper().str.strip() == 'VIP') | (opt_df[id_col].str.strip().isin(locked_manual))
@@ -361,7 +371,7 @@ if df is not None and not df.empty:
         if new_t and new_t not in active_trucks: 
             active_trucks.append(new_t)
             
-        targets = {t: 4160.0 * (pct_dict.get(t, 100.0) / 100.0) for t in active_trucks}
+        targets = {t: 4160.0 * (adjusted_pcts.get(t, 100.0) / 100.0) for t in active_trucks}
         if has_base: targets[base_t] = 0.0
 
         stops = opt_df.groupby('coord_key').agg(
@@ -477,7 +487,6 @@ if df is not None and not df.empty:
                         'id': f"{t}_{d}_crit_low", 'เบอร์รถ': t, 'วัน': days_str_map[d], 'โหลดปัจจุบัน': round(load, 1),
                         'ประเภท': 'critical_low', 'คำแนะนำ': '⚠️ โหลดต่ำกว่าเกณฑ์มาตรฐานวิกฤต (< 121 ถัง) น้อยเกินไปไม่คุ้มค่ารถวิ่ง แนะนำพิจารณายบรวมหรือเกลี่ยงาน'
                     })
-        # จัดเรียงลำดับความสำคัญ (Priority 1 โหลดวิกฤต > 200 ขึ้นก่อนเสมอ)
         recs.sort(key=lambda x: x['priority'])
         return pd.DataFrame(recs)
 
@@ -491,9 +500,9 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทางแบบ Seed-Centric Zoning... 💧</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทางตามเงื่อนไขโลจิสติกส์... 💧</div>'''
         except FileNotFoundError:
-            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทางแบบ Seed-Centric Zoning... 💧</div>'
+            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทางตามเงื่อนไขโลจิสติกส์... 💧</div>'
             
         calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
         
@@ -532,7 +541,7 @@ if df is not None and not df.empty:
         st.dataframe(pd.DataFrame(daily_summary), use_container_width=True)
         
         # ---------------------------------------------------------
-        # 💡 INTERACTIVE SMART RECOMMENDATIONS & ACTION SYSTEM (AUDITED)
+        # 💡 INTERACTIVE SMART RECOMMENDATIONS & ACTION LINKED SYSTEM
         # ---------------------------------------------------------
         st.markdown("### 💡 ระบบอัจฉริยะแนะนำและจัดการตามเงื่อนไขโลจิสติกส์จริง")
         recs_df = get_smart_cluster_day_shift_recommendations(res_df, daily_matrix)
@@ -546,7 +555,6 @@ if df is not None and not df.empty:
             for idx, r in recs_df.iterrows():
                 col_r1, col_r2, col_r3 = st.columns([3, 1.5, 1])
                 with col_r1:
-                    # เน้นข้อความเตือนพิเศษสำหรับเคสวิกฤต
                     if r['ประเภท'] == 'critical_high':
                         st.markdown(f"🚨 **[วิกฤต] รถ {r['เบอร์รถ']} วัน{r['วัน']}** (โหลด: **{r['โหลดปัจจุบัน']} ถัง**): {r['คำแนะนำ']}")
                     else:
@@ -554,15 +562,22 @@ if df is not None and not df.empty:
                 with col_r2:
                     is_applied = st.session_state['applied_recs'].get(r['id'], False)
                     if is_applied:
-                        st.success("✅ จัดการแล้ว")
+                        st.success("✅ จัดการปรับลดโหลดแล้ว")
                     else:
                         if st.button(f"✨ กดจัดการรถ {r['เบอร์รถ']} ({r['วัน']})", key=f"btn_rec_{r['id']}"):
                             st.session_state['applied_recs'][r['id']] = True
+                            # ทำการคำนวณและอัปเดตผลลัพธ์ใหม่ทันทีโดยสั่งรันฟังก์ชันจัดสรรใหม่
+                            res_df_new, daily_matrix_new = run_seed_centric_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state['applied_recs'])
+                            st.session_state['result_df'] = res_df_new
+                            st.session_state['daily_matrix'] = daily_matrix_new
                             st.rerun()
                 with col_r3:
                     if st.session_state['applied_recs'].get(r['id'], False):
                         if st.button("🔄 ยกเลิก", key=f"reset_rec_{r['id']}"):
                             st.session_state['applied_recs'][r['id']] = False
+                            res_df_new, daily_matrix_new = run_seed_centric_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state['applied_recs'])
+                            st.session_state['result_df'] = res_df_new
+                            st.session_state['daily_matrix'] = daily_matrix_new
                             st.rerun()
         else:
             st.success("✅ โหลดรายวันทุกวันอยู่ในเกณฑ์เหมาะสมตามมาตรฐานโลจิสติกส์")
