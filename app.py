@@ -18,7 +18,7 @@ def reset_results():
             del st.session_state[k]
 
 # -------------------------------------------------------------
-# 💎 TRUCK-LEVEL HOLISTIC BALANCING LIQUID GLASS SYSTEM
+# 💎 TRIP-EFFICIENT INTEGER LOGISTICS LIQUID GLASS SYSTEM
 # -------------------------------------------------------------
 st.markdown('''
     <style>
@@ -161,7 +161,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Truck-Level Holistic Balancing Architecture)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Trip-Efficient Integer Logistics Architecture)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
@@ -237,7 +237,8 @@ if df is not None and not df.empty:
 
     df[lat_col] = pd.to_numeric(df[lat_col], errors='coerce')
     df[lon_col] = pd.to_numeric(df[lon_col], errors='coerce')
-    df[vol_col] = pd.to_numeric(df[vol_col], errors='coerce').fillna(0.0)
+    # 📌 บังคับยอดน้ำเป็นจำนวนเต็ม (Integer Only) 100% ไม่มีเศษทศนิยม
+    df[vol_col] = pd.to_numeric(df[vol_col], errors='coerce').fillna(0).round().astype(int)
     df[truck_col] = df[truck_col].astype(str).str.strip()
     df[id_col] = df[id_col].astype(str).str.strip()
     df['VIP_Status'] = df[vip_col].astype(str).str.strip() if vip_col else 'ปกติ'
@@ -338,17 +339,18 @@ if df is not None and not df.empty:
     def get_daily_vols(data_df):
         daily_matrix = np.zeros((len(data_df), 6)) 
         for i, row in data_df.iterrows():
-            vol = row[vol_col]
+            vol = int(row[vol_col])
             val = str(row.get(day_col, ''))
             days = parse_days_from_string(val)
             vol_per_day = vol / (len(days) * 4.333) 
             for d in days: daily_matrix[i, d] = vol_per_day
-        return daily_matrix
+        # ปัดเศษรายวันเป็นจำนวนเต็ม (Integer) ทุกช่อง
+        return np.round(daily_matrix).astype(int)
 
     # ---------------------------------------------------------
-    # 🧠 สมองกลหลัก: Truck-Level Holistic Balancing Engine
+    # 🧠 สมองกลหลัก: Trip-Efficient Integer Zoning Engine
     # ---------------------------------------------------------
-    def run_truck_level_zoning(data, base_t, new_t, pct_dict, manual_locks, applied_truck_adjustments=None):
+    def run_trip_efficient_zoning(data, base_t, new_t, pct_dict, manual_locks, applied_truck_adjustments=None):
         opt_df = data.copy()
         if applied_truck_adjustments is None: applied_truck_adjustments = {}
         
@@ -432,17 +434,15 @@ if df is not None and not df.empty:
 
         stops.loc[stops['assigned_truck'].isna(), 'assigned_truck'] = 'ส่วนเกิน (Overflow)'
 
-        # 🚛 TRUCK-LEVEL HOLISTIC BALANCING: หากผู้บริหารกดปุ่มจัดการเบอร์รถใด ให้ทำการเกลี่ยและย้ายจุดจอดส่วนเกินของรถคันนั้นออกไปยัง Overflow ทันทีแบบเบ็ดเสร็จทั้งสาย
+        # 🚛 TRIP-EFFICIENT HOLISTIC BALANCING: เมื่อกดจัดการเบอร์รถใด ระบบจะทำการเกลี่ยและตัดแบ่งจุดจอดชายขอบออกสู่ Overflow เพื่อแก้ปัญหาโหลดเกินพิกัดและหลีกเลี่ยง Dead Zone
         for truck_id, is_active in applied_truck_adjustments.items():
             if is_active:
-                # ค้นหาจุดจอดทั้งหมดของรถคันนี้ แล้วย้ายจุดชายขอบออกสู่ Overflow เพื่อดึงโหลดรวมลงสู่วิสัยที่เหมาะสม
                 truck_stops_df = stops[stops['assigned_truck'] == truck_id].copy()
                 if not truck_stops_df.empty and not truck_stops_df['has_lock'].all():
                     c_lat, c_lon = seeds.get(truck_id, (stops['lat'].mean(), stops['lon'].mean()))
                     truck_stops_df['dist'] = (truck_stops_df['lat'] - c_lat)**2 + (truck_stops_df['lon'] - c_lon)**2
-                    # ตัดจุดชายขอบออกทีละจุดจนกว่าโหลดจะลดลงต่ำกว่า 200 ทุกวัน หรือตัดออกครึ่งหนึ่งของพื้นที่ชายขอบ
                     fringe_stops = truck_stops_df[~truck_stops_df['has_lock']].sort_values('dist', ascending=False)
-                    cutoff_count = max(1, int(len(fringe_stops) * 0.3)) # ตัด 30% ของจุดชายขอบ
+                    cutoff_count = max(1, int(len(fringe_stops) * 0.35)) # ตัด 35% ของจุดชายขอบออกไปเกลี่ย
                     for _, f_row in fringe_stops.head(cutoff_count).iterrows():
                         stops.loc[stops['coord_key'] == f_row['coord_key'], 'assigned_truck'] = 'ส่วนเกิน (Overflow)'
 
@@ -465,13 +465,13 @@ if df is not None and not df.empty:
             if not t_mask.any(): continue
             max_load = daily_mat[t_mask].sum(axis=0).max()
             
-            # หากรถคันใดมีวันใดวันหนึ่งโหลดเกิน 200 ถัง ถือว่าต้องทำ Holistic Balancing
+            # ตรวจจับโหลดที่เกินพิกัดวิกฤต (> 200 ถัง) หรือเข้าสู่ Dead Zone ที่ไม่คุ้มค่าเที่ยววิ่ง
             if max_load > 200:
                 recs.append({
                     'id': f"truck_{t}",
                     'เบอร์รถ': t,
-                    'โหลดสูงสุด': round(max_load, 1),
-                    'คำแนะนำ': f"🚨 รถเบอร์ {t} มีโหลดวิกฤตพุ่งสูงสุดถึง {round(max_load, 1)} ถัง (เกินพิกัด 200 ถัง) แนะนำกดปุ่มจัดการเพื่อเกลี่ยและปรับสมดุลสายรถคันนี้ทันที"
+                    'โหลดสูงสุด': int(max_load),
+                    'คำแนะนำ': f"🚨 รถเบอร์ {t} มีโหลดวิกฤตพุ่งสูงสุดถึง {int(max_load)} ถัง (เกินพิกัด 200 ถัง) แนะนำกดปุ่มจัดการเพื่อเกลี่ยและปรับสมดุลสายรถคันนี้ทันที"
                 })
         return recs
 
@@ -485,13 +485,13 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทาง Truck-Level Holistic... 💧</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทาง Trip-Efficient Architecture... 💧</div>'''
         except FileNotFoundError:
-            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทาง Truck-Level Holistic... 💧</div>'
+            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทาง Trip-Efficient Architecture... 💧</div>'
             
         calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
         
-        res_df, daily_matrix = run_truck_level_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state.get('applied_truck_recs', {}))
+        res_df, daily_matrix = run_trip_efficient_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state.get('applied_truck_recs', {}))
         st.session_state['result_df'] = res_df
         st.session_state['daily_matrix'] = daily_matrix
         time.sleep(0.5) 
@@ -513,7 +513,7 @@ if df is not None and not df.empty:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
             st.dataframe(sum_before, use_container_width=True)
         with col2:
-            st.markdown("**หลังปรับโครงสร้าง (Holistic Zoning)**")
+            st.markdown("**หลังปรับโครงสร้าง (Trip-Efficient Zoning)**")
             st.dataframe(sum_after, use_container_width=True)
             
         # 🗺️ 1. แผนที่เชิงพื้นที่ (แสดงก่อนตารางวิเคราะห์โหลดรายวันตามที่ต้องการ)
@@ -552,12 +552,12 @@ if df is not None and not df.empty:
                 t_id = str(r[truck_col])
                 is_vip = str(r.get('VIP_Status', '')).upper() == 'VIP' or str(r[id_col]) in manual_vips
                 m_color = color_map.get(t_id, 'gray') if color_mode == 'truck' else next((c for d, c in day_color_map.items() if d in str(r.get(day_col, '')).strip()), 'gray')
-                popup_html = f"<b>รหัส:</b> {r[id_col]}<br><b>ชื่อ:</b> {get_name(r)}<br><b>ยอด:</b> {r[vol_col]} ถัง<br><b>รถ:</b> {t_id}"
+                popup_html = f"<b>รหัส:</b> {r[id_col]}<br><b>ชื่อ:</b> {get_name(r)}<br><b>ยอด:</b> {int(r[vol_col])} ถัง<br><b>รถ:</b> {t_id}"
                 folium.CircleMarker([r[lat_col], r[lon_col]], radius=8 if is_vip else 5, color='#FFD700' if is_vip else m_color, weight=2 if is_vip else 1, fill=True, fillColor=m_color, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=300)).add_to(m1)
             components.html(m1.get_root().render(), height=450)
 
         with map_col2:
-            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Holistic Zoning)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Trip-Efficient Zoning)</div>", unsafe_allow_html=True)
             m2 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m2)
             for _, r in map_df_after.iterrows():
@@ -565,11 +565,11 @@ if df is not None and not df.empty:
                 is_vip = str(r.get('VIP_Status', '')).upper() == 'VIP' or str(r[id_col]) in manual_vips
                 display_day = str(r.get(day_col, ''))
                 m_color = color_map.get(t_new, 'gray') if color_mode == 'truck' else next((c for d, c in day_color_map.items() if d in display_day.strip()), 'gray')
-                popup_html = f"<b>รหัส:</b> {r[id_col]}<br><b>ชื่อ:</b> {get_name(r)}<br><b>ยอด:</b> {r[vol_col]} ถัง<br><b>รถล่าสุด:</b> {t_new}"
+                popup_html = f"<b>รหัส:</b> {r[id_col]}<br><b>ชื่อ:</b> {get_name(r)}<br><b>ยอด:</b> {int(r[vol_col])} ถัง<br><b>รถล่าสุด:</b> {t_new}"
                 folium.CircleMarker([r[lat_col], r[lon_col]], radius=8 if is_vip else 5, color='#FFD700' if is_vip else m_color, weight=2 if is_vip else 1, fill=True, fillColor=m_color, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=300)).add_to(m2)
             components.html(m2.get_root().render(), height=450)
 
-        # 📅 2. ตารางวิเคราะห์โหลดรายวัน
+        # 📅 2. ตารางวิเคราะห์โหลดรายวัน (แสดงผลเป็นจำนวนเต็ม 100% ไม่มีทศนิยม)
         st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)")
         daily_summary = []
         for t in all_trucks_after:
@@ -578,20 +578,20 @@ if df is not None and not df.empty:
             t_daily = daily_matrix[t_mask].sum(axis=0) if t_mask.any() else np.zeros(6)
             daily_summary.append({
                 'เบอร์รถ': t,
-                'จันทร์': round(t_daily[0], 1),
-                'อังคาร': round(t_daily[1], 1),
-                'พุธ': round(t_daily[2], 1),
-                'พฤหัสฯ': round(t_daily[3], 1),
-                'ศุกร์': round(t_daily[4], 1),
-                'เสาร์': round(t_daily[5], 1),
-                'โหลดสูงสุด (ถัง/วัน)': round(max(t_daily), 1)
+                'จันทร์': int(round(t_daily[0])),
+                'อังคาร': int(round(t_daily[1])),
+                'พุธ': int(round(t_daily[2])),
+                'พฤหัสฯ': int(round(t_daily[3])),
+                'ศุกร์': int(round(t_daily[4])),
+                'เสาร์': int(round(t_daily[5])),
+                'โหลดสูงสุด (ถัง/วัน)': int(round(max(t_daily)))
             })
         st.dataframe(pd.DataFrame(daily_summary), use_container_width=True)
         
         # ---------------------------------------------------------
-        # 💡 TRUCK-LEVEL HOLISTIC RECOMMENDATIONS & ACTION SYSTEM
+        # 💡 TRIP-EFFICIENT RECOMMENDATIONS & ACTION SYSTEM
         # ---------------------------------------------------------
-        st.markdown("### 💡 ระบบอัจฉริยะแนะนำและจัดการระดับเบอร์รถ (Holistic Balancing)")
+        st.markdown("### 💡 ระบบอัจฉริยะแนะนำและจัดการระดับเบอร์รถ (Trip-Efficient Balancing)")
         truck_recs = get_truck_level_recommendations(res_df, daily_matrix)
         
         if truck_recs:
@@ -611,7 +611,7 @@ if df is not None and not df.empty:
                     else:
                         if st.button(f"✨ กดจัดการรถ {r['เบอร์รถ']}", key=f"btn_truck_{r['id']}"):
                             st.session_state['applied_truck_recs'][r['id']] = True
-                            res_df_new, daily_matrix_new = run_truck_level_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state['applied_truck_recs'])
+                            res_df_new, daily_matrix_new = run_trip_efficient_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state['applied_truck_recs'])
                             st.session_state['result_df'] = res_df_new
                             st.session_state['daily_matrix'] = daily_matrix_new
                             st.rerun()
@@ -619,7 +619,7 @@ if df is not None and not df.empty:
                     if st.session_state['applied_truck_recs'].get(r['id'], False):
                         if st.button("🔄 ยกเลิก", key=f"reset_truck_{r['id']}"):
                             st.session_state['applied_truck_recs'][r['id']] = False
-                            res_df_new, daily_matrix_new = run_truck_level_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state['applied_truck_recs'])
+                            res_df_new, daily_matrix_new = run_trip_efficient_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state['applied_truck_recs'])
                             st.session_state['result_df'] = res_df_new
                             st.session_state['daily_matrix'] = daily_matrix_new
                             st.rerun()
