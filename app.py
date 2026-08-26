@@ -18,7 +18,7 @@ def reset_results():
             del st.session_state[k]
 
 # -------------------------------------------------------------
-# 💎 FULLY SYNCHRONIZED LOGISTICS LIQUID GLASS ARCHITECTURE
+# 💎 SMART WORKLOAD TRANSFER & SYNCHRONIZED ARCHITECTURE
 # -------------------------------------------------------------
 st.markdown('''
     <style>
@@ -161,7 +161,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Fully Synchronized Pipeline)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Smart Workload Transfer Architecture)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
@@ -346,9 +346,9 @@ if df is not None and not df.empty:
         return daily_matrix
 
     # ---------------------------------------------------------
-    # 🧠 สมองกลหลัก: Fully Synchronized Active Mitigation Engine
+    # 🧠 สมองกลหลัก: Smart Workload Transfer Engine
     # ---------------------------------------------------------
-    def run_synchronized_zoning(data, base_t, new_t, pct_dict, manual_locks, applied_adjustments=None):
+    def run_smart_transfer_zoning(data, base_t, new_t, pct_dict, manual_locks, applied_adjustments=None):
         opt_df = data.copy()
         if applied_adjustments is None: applied_adjustments = {}
         
@@ -432,7 +432,7 @@ if df is not None and not df.empty:
 
         stops.loc[stops['assigned_truck'].isna(), 'assigned_truck'] = 'ส่วนเกิน (Overflow)'
 
-        # 🛑 FULLY SYNCHRONIZED ACTIVE MITIGATION: Offload stops with delivery on the problematic day to Overflow
+        # 🧠 SMART WORKLOAD TRANSFER: เมื่อคลิกจัดการ ให้ทำการ "โอนย้ายจุดจอด (Transfer)" จากรถที่โหลดล้น ไปให้รถคันอื่นที่มีความจุว่างในวันเดียวกันจริง
         day_name_to_idx = {'จันทร์': 0, 'อังคาร': 1, 'พุธ': 2, 'พฤหัสฯ': 3, 'ศุกร์': 4, 'เสาร์': 5}
         for rec_id, is_active in applied_adjustments.items():
             if is_active:
@@ -442,17 +442,31 @@ if df is not None and not df.empty:
                     target_day_str = parts[1]
                     d_idx = day_name_to_idx.get(target_day_str, None)
                     if d_idx is not None:
-                        truck_stops = stops[stops['assigned_truck'] == target_truck].copy()
-                        c_lat, c_lon = seeds.get(target_truck, (stops['lat'].mean(), stops['lon'].mean()))
-                        truck_stops['dist'] = (truck_stops['lat'] - c_lat)**2 + (truck_stops['lon'] - c_lon)**2
-                        truck_stops = truck_stops.sort_values('dist', ascending=False) # Farthest first
+                        # ค้นหาจุดจอดที่ assigned อยู่กับ target_truck และมีรอบส่งในวัน d_idx
+                        truck_stops_idx = []
+                        for idx, s in stops[stops['assigned_truck'] == target_truck].iterrows():
+                            sub_df = opt_df[opt_df['coord_key'] == s['coord_key']]
+                            has_day = any(d_idx in parse_days_from_string(str(sub_row.get(day_col, ''))) for _, sub_row in sub_df.iterrows())
+                            if has_day and not s['has_lock']:
+                                truck_stops_idx.append(idx)
                         
-                        for _, row in truck_stops.iterrows():
-                            sub_df = opt_df[opt_df['coord_key'] == row['coord_key']]
-                            has_target_day = any(d_idx in parse_days_from_string(str(sub_row.get(day_col, ''))) for _, sub_row in sub_df.iterrows())
-                            if has_target_day and not row['has_lock']:
-                                stops.loc[stops['coord_key'] == row['coord_key'], 'assigned_truck'] = 'ส่วนเกิน (Overflow)'
-                                break # Offload one major peripheral stop per click to reduce peak load
+                        if truck_stops_idx:
+                            other_trucks = [t for t in active_trucks if t != target_truck]
+                            if other_trucks:
+                                # คำนวณ matrix โหลดรายวันชั่วคราวเพื่อหาว่ารถคันไหนในวัน d_idx มีโหลดน้อยที่สุดที่จะรับโอน
+                                stop_to_truck_temp = dict(zip(stops['coord_key'], stops['assigned_truck']))
+                                opt_df['temp_truck'] = opt_df['coord_key'].map(stop_to_truck_temp)
+                                temp_mat = get_daily_vols(opt_df)
+                                
+                                best_other = min(other_trucks, key=lambda ot: temp_mat[opt_df['temp_truck'] == ot, d_idx].sum() if (opt_df['temp_truck'] == ot).any() else 0)
+                                
+                                # เลือกจุดจอดที่อยู่ชายขอบที่สุด (ไกล Seed ของ target_truck ที่สุด) ไปโอนให้ best_other
+                                t_stops_df = stops.loc[truck_stops_idx].copy()
+                                c_lat, c_lon = seeds.get(target_truck, (stops['lat'].mean(), stops['lon'].mean()))
+                                t_stops_df['dist'] = (t_stops_df['lat'] - c_lat)**2 + (t_stops_df['lon'] - c_lon)**2
+                                transfer_row = t_stops_df.sort_values('dist', ascending=False).iloc[0]
+                                
+                                stops.loc[stops['coord_key'] == transfer_row['coord_key'], 'assigned_truck'] = best_other
 
         stop_to_truck = dict(zip(stops['coord_key'], stops['assigned_truck']))
         opt_df['เบอร์รถใหม่'] = opt_df['coord_key'].map(stop_to_truck)
@@ -511,13 +525,13 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทาง Synchronized Architecture... 💧</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทาง Smart Transfer... 💧</div>'''
         except FileNotFoundError:
-            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทาง Synchronized Architecture... 💧</div>'
+            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทาง Smart Transfer... 💧</div>'
             
         calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
         
-        res_df, daily_matrix = run_synchronized_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state.get('applied_recs', {}))
+        res_df, daily_matrix = run_smart_transfer_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state.get('applied_recs', {}))
         st.session_state['result_df'] = res_df
         st.session_state['daily_matrix'] = daily_matrix
         time.sleep(0.5) 
@@ -539,7 +553,7 @@ if df is not None and not df.empty:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
             st.dataframe(sum_before, use_container_width=True)
         with col2:
-            st.markdown("**หลังปรับโครงสร้าง (Synchronized Zoning)**")
+            st.markdown("**หลังปรับโครงสร้าง (Smart Transfer Zoning)**")
             st.dataframe(sum_after, use_container_width=True)
             
         # 🗺️ 1. แผนที่เชิงพื้นที่ (แสดงก่อนตารางวิเคราะห์โหลดรายวันตามที่ต้องการ)
@@ -583,7 +597,7 @@ if df is not None and not df.empty:
             components.html(m1.get_root().render(), height=450)
 
         with map_col2:
-            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Synchronized Zoning)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Smart Transfer Zoning)</div>", unsafe_allow_html=True)
             m2 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m2)
             for _, r in map_df_after.iterrows():
@@ -595,18 +609,27 @@ if df is not None and not df.empty:
                 folium.CircleMarker([r[lat_col], r[lon_col]], radius=8 if is_vip else 5, color='#FFD700' if is_vip else m_color, weight=2 if is_vip else 1, fill=True, fillColor=m_color, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=300)).add_to(m2)
             components.html(m2.get_root().render(), height=450)
 
-        # 📅 2. ตารางวิเคราะห์โหลดรายวัน
+        # 📅 2. ตารางวิเคราะห์โหลดรายวัน (แสดงผลละเอียดทศนิยม 1 ตำแหน่ง เพื่อให้เห็นการเปลี่ยนแปลงจริง)
         st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)")
         daily_summary = []
         for t in all_trucks_after:
             if t == 'ส่วนเกิน (Overflow)': continue
             t_mask = res_df['เบอร์รถใหม่'] == t
             t_daily = daily_matrix[t_mask].sum(axis=0) if t_mask.any() else np.zeros(6)
-            daily_summary.append({'เบอร์รถ': t, 'จันทร์': round(t_daily[0]), 'อังคาร': round(t_daily[1]), 'พุธ': round(t_daily[2]), 'พฤหัสฯ': round(t_daily[3]), 'ศุกร์': round(t_daily[4]), 'เสาร์': round(t_daily[5]), 'โหลดสูงสุด (ถัง/วัน)': round(max(t_daily))})
+            daily_summary.append({
+                'เบอร์รถ': t,
+                'จันทร์': round(t_daily[0], 1),
+                'อังคาร': round(t_daily[1], 1),
+                'พุธ': round(t_daily[2], 1),
+                'พฤหัสฯ': round(t_daily[3], 1),
+                'ศุกร์': round(t_daily[4], 1),
+                'เสาร์': round(t_daily[5], 1),
+                'โหลดสูงสุด (ถัง/วัน)': round(max(t_daily), 1)
+            })
         st.dataframe(pd.DataFrame(daily_summary), use_container_width=True)
         
         # ---------------------------------------------------------
-        # 💡 FULLY SYNCHRONIZED RECOMMENDATIONS & ACTION SYSTEM
+        # 💡 SMART RECOMMENDATIONS & ACTION LINKED SYSTEM
         # ---------------------------------------------------------
         st.markdown("### 💡 ระบบอัจฉริยะแนะนำและจัดการตามเงื่อนไขโลจิสติกส์จริง")
         recs_df = get_smart_cluster_day_shift_recommendations(res_df, daily_matrix)
@@ -627,11 +650,11 @@ if df is not None and not df.empty:
                 with col_r2:
                     is_applied = st.session_state['applied_recs'].get(r['id'], False)
                     if is_applied:
-                        st.success("✅ จัดการปรับลดโหลดแล้ว")
+                        st.success("✅ โอนย้ายงานเรียบร้อยแล้ว")
                     else:
                         if st.button(f"✨ กดจัดการรถ {r['เบอร์รถ']} ({r['วัน']})", key=f"btn_rec_{r['id']}"):
                             st.session_state['applied_recs'][r['id']] = True
-                            res_df_new, daily_matrix_new = run_synchronized_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state['applied_recs'])
+                            res_df_new, daily_matrix_new = run_smart_transfer_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state['applied_recs'])
                             st.session_state['result_df'] = res_df_new
                             st.session_state['daily_matrix'] = daily_matrix_new
                             st.rerun()
@@ -639,14 +662,14 @@ if df is not None and not df.empty:
                     if st.session_state['applied_recs'].get(r['id'], False):
                         if st.button("🔄 ยกเลิก", key=f"reset_rec_{r['id']}"):
                             st.session_state['applied_recs'][r['id']] = False
-                            res_df_new, daily_matrix_new = run_synchronized_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state['applied_recs'])
+                            res_df_new, daily_matrix_new = run_smart_transfer_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state['applied_recs'])
                             st.session_state['result_df'] = res_df_new
                             st.session_state['daily_matrix'] = daily_matrix_new
                             st.rerun()
         else:
             st.success("✅ โหลดรายวันทุกวันอยู่ในเกณฑ์เหมาะสมตามมาตรฐานโลจิสติกส์")
 
-        # 📋 3. ตารางรายละเอียดข้อมูลการโยกย้ายสมาชิก (ซิงค์ตรงกับข้อมูลที่กดจัดการ 100%)
+        # 📋 3. ตารางรายละเอียดข้อมูลการโยกย้ายสมาชิก (ซิงค์ตรงกับการโอนย้ายงาน 100%)
         st.markdown("### 📋 รายละเอียดข้อมูลการโยกย้ายสมาชิก")
         final_cols = [id_col]
         if name_col and name_col in res_df.columns: final_cols.append(name_col)
