@@ -17,6 +17,9 @@ def reset_results():
         if k in st.session_state:
             del st.session_state[k]
 
+MONTHLY_CAPACITY_PER_TRUCK = 4160.0  # แก้ไข: รวมเป็นค่าคงที่เดียว (เดิมพิมพ์ 4160 ซ้ำหลายจุดในโค้ด)
+OVERFLOW_LABEL = 'ส่วนเกิน (Overflow)'
+
 # -------------------------------------------------------------
 # 💎 UNIFIED POOL & SEED-CENTRIC GLASSMORPHISM ARCHITECTURE
 # -------------------------------------------------------------
@@ -245,7 +248,10 @@ if df is not None and not df.empty:
     df[id_col] = df[id_col].astype(str).str.strip()
     df['VIP_Status'] = df[vip_col].astype(str).str.strip() if vip_col else 'ปกติ'
 
+    n_before = len(df)
     df = df.dropna(subset=[lat_col, lon_col]).reset_index(drop=True)
+    if n_before - len(df) > 0:
+        st.sidebar.warning(f"⚠️ ตัดทิ้ง {n_before - len(df)} รายการที่พิกัดไม่ถูกต้อง/ว่าง")
 
     st.sidebar.success(f"✅ โหลดข้อมูลสำเร็จ: {len(df)} รายการ")
     st.sidebar.markdown("---")
@@ -262,7 +268,7 @@ if df is not None and not df.empty:
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🎛️ 4. ปรับเป้าหมายรายวัน (%) พร้อมปุ่มล็อก")
-    st.sidebar.caption("100% = 4,160 ถัง/เดือน (เลื่อนปรับ % และรถที่ไม่ได้ล็อกจะปรับแปรผันตามกันอัตโนมัติ)")
+    st.sidebar.caption(f"100% = {MONTHLY_CAPACITY_PER_TRUCK:,.0f} ถัง/เดือน (เลื่อนปรับ % และรถที่ไม่ได้ล็อกจะปรับแปรผันตามกันอัตโนมัติ)")
 
     active_trucks = [t for t in available_trucks if t != base_truck]
     if new_truck_name and new_truck_name not in active_trucks: 
@@ -276,8 +282,19 @@ if df is not None and not df.empty:
                 st.session_state.truck_pcts[t] = 0.0
             else:
                 actual_vol = df[df[truck_col] == t][vol_col].sum()
-                st.session_state.truck_pcts[t] = float(round(max(0.0, min(200.0, (actual_vol / 4160.0) * 100)), 1))
-                    
+                st.session_state.truck_pcts[t] = float(round(max(0.0, min(200.0, (actual_vol / MONTHLY_CAPACITY_PER_TRUCK) * 100)), 1))
+
+        # แก้ไข: บั๊กหลักที่ทำให้ "กระจายงานผิดพลาด" — เดิมเมื่อยุบรถคันหนึ่ง (base_truck) ยอด/% ของ
+        # รถคันนั้นจะหายไปเฉยๆ ไม่ถูกแจกจ่ายให้รถที่เหลือ/รถใหม่เลย ทำให้ผลรวมเป้าหมายทุกคันหลังยุบ
+        # ต่ำกว่ายอดที่ต้องจัดสรรจริงมาก ลูกค้าจำนวนมากเลยตกไป Overflow ทั้งที่ความจุรวมพอ
+        # ตอนนี้เอา % ของรถที่ถูกยุบมาหารเฉลี่ยแจกคืนให้ทุกคันที่เหลือ (ผู้ใช้ยังปรับ slider เองทีหลังได้)
+        if base_truck != "(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)" and active_trucks:
+            base_vol = df[df[truck_col] == base_truck][vol_col].sum()
+            base_pct = float(round((base_vol / MONTHLY_CAPACITY_PER_TRUCK) * 100, 1))
+            split = base_pct / len(active_trucks)
+            for t in active_trucks:
+                st.session_state.truck_pcts[t] = round(st.session_state.truck_pcts[t] + split, 1)
+
         for t in active_trucks:
             st.session_state[f"slider_{t}"] = float(round(st.session_state.truck_pcts[t], 1))
             
@@ -303,6 +320,15 @@ if df is not None and not df.empty:
                     st.session_state[f"slider_{t}"] = new_t_val
                 st.session_state.truck_pcts[changed_truck] = round(new_val, 1)
                 st.session_state[f"slider_{changed_truck}"] = round(new_val, 1)
+            # แก้ไข: เดิมถ้า can_move=False ค่าจะไม่ถูกอัปเดตเลย (เงียบๆ ค้างที่ค่าเก่า) ทำให้ผู้ใช้งง
+            # ว่าทำไมลากแล้วไม่ขยับ ตอนนี้ดันสมาชิกที่เหลือให้ไปแตะขอบเขต (0 หรือ 200) แทน
+            else:
+                for t in unlocked:
+                    capped = 0.0 if split_diff > 0 else 200.0
+                    st.session_state.truck_pcts[t] = capped
+                    st.session_state[f"slider_{t}"] = capped
+                st.session_state.truck_pcts[changed_truck] = round(new_val, 1)
+                st.session_state[f"slider_{changed_truck}"] = round(new_val, 1)
         else:
             st.session_state.truck_pcts[changed_truck] = round(new_val, 1)
             st.session_state[f"slider_{changed_truck}"] = round(new_val, 1)
@@ -321,6 +347,15 @@ if df is not None and not df.empty:
             clamped_val = max(0.0, min(200.0, val))
             target_pcts[t] = clamped_val
             st.session_state.truck_pcts[t] = clamped_val
+
+    # แก้ไข: เพิ่มการเตือน feasibility ที่หายไปในเวอร์ชันนี้ — ถ้าผลรวม % เป้าหมายทุกคัน
+    # ต่างจากยอดที่ต้องจัดสรรจริงเกิน 5% แจ้งเตือนก่อนกดประมวลผล จะได้ไม่ต้องมาเจอ Overflow แบบงงๆ ทีหลัง
+    total_vol_available = df[vol_col].sum()
+    sys_pct = (total_vol_available / MONTHLY_CAPACITY_PER_TRUCK) * 100
+    total_target_pct = sum(target_pcts.values())
+    st.sidebar.info(f"💧 ยอดรวมที่ต้องจัดสรรจริง ≈ {sys_pct:,.1f}% | ผลรวม % เป้าหมายตอนนี้ = {total_target_pct:,.1f}%")
+    if total_target_pct > 0 and sys_pct > 0 and abs(total_target_pct - sys_pct) / sys_pct > 0.05:
+        st.sidebar.warning(f"⚠️ ผลรวม % เป้าหมาย ({total_target_pct:,.1f}%) ต่างจากยอดที่ต้องจัดสรรจริง ({sys_pct:,.1f}%) เกิน 5% — มีความเสี่ยงที่ลูกค้าบางส่วนจะตกไปที่ '{OVERFLOW_LABEL}'")
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🔒 5. ล็อก Key Account")
@@ -364,7 +399,7 @@ if df is not None and not df.empty:
         if new_t and new_t not in active_trucks: 
             active_trucks.append(new_t)
             
-        targets = {t: 4160.0 * (pct_dict.get(t, 100.0) / 100.0) for t in active_trucks}
+        targets = {t: MONTHLY_CAPACITY_PER_TRUCK * (pct_dict.get(t, 100.0) / 100.0) for t in active_trucks}
         if has_base: targets[base_t] = 0.0
 
         stops = opt_df.groupby('coord_key').agg(
@@ -374,6 +409,14 @@ if df is not None and not df.empty:
             orig_truck=(truck_col, 'first'),
             has_lock=('is_locked', 'any')
         ).reset_index()
+
+        # แก้ไข: เตือนถ้ามี "จุดจอด" (พิกัดเดียวกัน) ที่ยอดรวมใหญ่กว่าความจุของทุกคันรวมกัน —
+        # กรณีนี้จุดนั้นจะตกไป Overflow เสมอไม่ว่าจะตั้งค่ายังไง เพราะเป็นก้อนที่แบ่งแยกไม่ได้
+        if not stops.empty:
+            max_stop_vol = stops['total_vol'].max()
+            max_single_target = max(targets.values()) if targets else 0
+            if max_stop_vol > max_single_target and max_single_target > 0:
+                st.warning(f"⚠️ พบจุดพิกัดที่มียอดรวม {max_stop_vol:,.0f} ถัง/เดือน (ลูกค้าหลายรายพิกัดชนกัน) ซึ่งมากกว่าความจุสูงสุดต่อคันที่ตั้งไว้ ({max_single_target:,.0f}) จุดนี้จะตกไป '{OVERFLOW_LABEL}' เสมอ — ควรตรวจสอบพิกัด GPS ของลูกค้ากลุ่มนี้")
 
         seeds = {}
         for t in available_trucks:
@@ -394,11 +437,22 @@ if df is not None and not df.empty:
         # เริ่มต้นให้ทุกจุดเป็น None (Unassigned Pool) ยกเว้นจุดที่ล็อกไว้
         stops['assigned_truck'] = None
         
-        # 1. จัดสรรจุดที่ล็อก (VIP / Manual Locks) ให้อยู่กับรถเดิมหรือรถที่เหมาะสม
+        # 1. จัดสรรจุดที่ล็อก (VIP / Manual Locks)
+        # แก้ไข: เดิมถ้ารถต้นทางของลูกค้าที่ล็อกถูกยุบไป จะส่งไป active_trucks[0] แบบสุ่ม/ไม่สนใจภูมิศาสตร์
+        # ตอนนี้ถ้ารถต้นทางไม่มีแล้ว จะหารถที่ "ใกล้ที่สุด" จาก seed แทน (ให้ความสำคัญกับรถใหม่ก่อนถ้ามี seed ใกล้)
         for idx, s in stops.iterrows():
             if s['has_lock']:
                 orig = s['orig_truck']
-                assigned = orig if orig in active_trucks and orig != base_t else active_trucks[0]
+                if orig in active_trucks and orig != base_t:
+                    assigned = orig
+                else:
+                    best_t, best_d = None, float('inf')
+                    for t in active_trucks:
+                        ref_lat, ref_lon = seeds.get(t, (branch_lat, branch_lon))
+                        d = (s['lat'] - ref_lat) ** 2 + (s['lon'] - ref_lon) ** 2
+                        if d < best_d:
+                            best_d, best_t = d, t
+                    assigned = best_t if best_t else (active_trucks[0] if active_trucks else None)
                 stops.at[idx, 'assigned_truck'] = assigned
 
         current_loads = {t: 0.0 for t in active_trucks}
@@ -406,12 +460,12 @@ if df is not None and not df.empty:
             t = s['assigned_truck']
             if t in active_trucks: current_loads[t] += s['total_vol']
 
-        # 2. ให้รถแต่ละคัน (รวมถึงรถใหม่ถ้า slider > 0) ดึงจุดจอดที่ใกล้ Seed ของตัวเองที่สุดเข้าสังกัดจนกว่าจะชน Hard-Cap Target
+        # 2. ให้รถแต่ละคันดึงจุดจอดที่ใกล้ Seed/centroid ของตัวเองที่สุดเข้าสังกัดจนกว่าจะชน Hard-Cap Target
         while True:
             assigned_any = False
             for t in active_trucks:
                 target_v = targets.get(t, 0.0)
-                if target_v <= 0.0: continue # ถ้ายอดเป้าหมายเป็น 0 (เช่น รถใหม่ที่ยังไม่เลื่อนสไลเดอร์) จะไม่ดึงงานมาใส่เลย
+                if target_v <= 0.0: continue
                 if current_loads[t] >= target_v: continue
 
                 t_assigned = stops[stops['assigned_truck'] == t]
@@ -441,8 +495,25 @@ if df is not None and not df.empty:
 
             if not assigned_any: break
 
-        # จุดที่ยังเหลือแต่ทุกคันเต็มเพดานสไลเดอร์แล้ว ให้ปัดไป Overflow
-        stops.loc[stops['assigned_truck'].isna(), 'assigned_truck'] = 'ส่วนเกิน (Overflow)'
+        # แก้ไข: เดิมจุดที่เหลือ (assign แบบพอดีเป๊ะไม่ได้เพราะเกิน target+10 ทุกคัน) จะถูกโยนเข้า
+        # Overflow ทันทีโดยไม่ลองทางเลือกอื่น ทั้งที่รถบางคันอาจมีที่ว่างเหลือพอสมควร (แค่ไม่ถึงขนาดพอดี)
+        # ตอนนี้เพิ่ม fallback pass: ลองใส่จุดที่เหลือให้รถที่มี "ที่ว่างเหลือมากที่สุด" (best-fit แบบผ่อนปรน)
+        # ก่อนจะยอมให้ตกเป็น Overflow จริงๆ
+        remaining = stops[stops['assigned_truck'].isna()].index.tolist()
+        for idx in remaining:
+            s_row = stops.loc[idx]
+            eligible = [t for t in active_trucks if targets.get(t, 0.0) > 0.0]
+            if not eligible:
+                continue
+            best_t = max(eligible, key=lambda t: targets[t] - current_loads[t])
+            headroom = targets[best_t] - current_loads[best_t]
+            # ยอมให้เกิน target ได้ไม่เกิน 20% ของความจุมาตรฐาน เพื่อไม่ทิ้งลูกค้าไปกองไว้เฉยๆ ถ้าพอมีที่ว่างเหลือบ้าง
+            if headroom > -0.2 * MONTHLY_CAPACITY_PER_TRUCK:
+                stops.loc[idx, 'assigned_truck'] = best_t
+                current_loads[best_t] += s_row['total_vol']
+
+        # จุดที่ยังเหลือแม้ fallback แล้วก็ยังไม่มีที่ไปจริงๆ ให้ปัดไป Overflow
+        stops.loc[stops['assigned_truck'].isna(), 'assigned_truck'] = OVERFLOW_LABEL
 
         stop_to_truck = dict(zip(stops['coord_key'], stops['assigned_truck']))
         opt_df['เบอร์รถใหม่'] = opt_df['coord_key'].map(stop_to_truck)
@@ -480,15 +551,20 @@ if df is not None and not df.empty:
         daily_matrix = st.session_state['daily_matrix']
         all_trucks_after = sorted(res_df['เบอร์รถใหม่'].dropna().unique().tolist())
         if new_truck_name and new_truck_name not in all_trucks_after: all_trucks_after.append(new_truck_name)
-        
+
+        # แก้ไข: เพิ่มสรุปสั้นๆ ว่ามีลูกค้าตกไป Overflow กี่รายและกี่ถัง จะได้เห็นชัดเจนทันทีว่ามีปัญหาไหม
+        overflow_df = res_df[res_df['เบอร์รถใหม่'] == OVERFLOW_LABEL]
+        if not overflow_df.empty:
+            st.error(f"🚨 มีลูกค้า {len(overflow_df)} ราย ({overflow_df[vol_col].sum():,.0f} ถัง/เดือน) จัดสรรเข้ารถคันใดไม่ได้เลย ('{OVERFLOW_LABEL}') — ลองเพิ่ม % เป้าหมายของรถบางคัน หรือเพิ่มรถ")
+
         st.markdown("### 📊 สรุปภาพรวมยอดการจัดส่ง")
         col1, col2 = st.columns(2)
         sum_before = df.groupby(truck_col).agg(จำนวนสมาชิก=pd.NamedAgg(column=truck_col, aggfunc='count'), **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}).reset_index()
         sum_after = res_df.groupby('เบอร์รถใหม่').agg(จำนวนสมาชิก=pd.NamedAgg(column='เบอร์รถใหม่', aggfunc='count'), **{'ยอดรับน้ำ(ถัง/เดือน)': pd.NamedAgg(column=vol_col, aggfunc='sum')}).reset_index()
         sum_after['ปริมาณงาน(%)'] = np.where(
-            sum_after['เบอร์รถใหม่'] == 'ส่วนเกิน (Overflow)', 
+            sum_after['เบอร์รถใหม่'] == OVERFLOW_LABEL,
             '-', 
-            (sum_after['ยอดรับน้ำ(ถัง/เดือน)'] / 4160 * 100).round(1).astype(str) + '%'
+            (sum_after['ยอดรับน้ำ(ถัง/เดือน)'] / MONTHLY_CAPACITY_PER_TRUCK * 100).round(1).astype(str) + '%'
         )
 
         with col1:
@@ -498,9 +574,8 @@ if df is not None and not df.empty:
             st.markdown("**หลังปรับโครงสร้าง (Unified Pool Zoning)**")
             st.dataframe(sum_after, use_container_width=True)
             
-        # 🗺️ 1. แผนที่เชิงพื้นที่ (แสดงก่อนตารางวิเคราะห์โหลดรายวันตามที่ต้องการ)
         st.markdown("### 🗺️ แผนที่เปรียบเทียบการกระจายตัว (เชิงพื้นที่)")
-        map_trucks_view = [t for t in all_trucks_after if t != 'ส่วนเกิน (Overflow)']
+        map_trucks_view = [t for t in all_trucks_after if t != OVERFLOW_LABEL]
         view_options = ["แสดงทั้งหมด (แยกสีตามเบอร์รถ)"] + map_trucks_view
         
         col_filter, _ = st.columns([1, 1])
@@ -512,7 +587,7 @@ if df is not None and not df.empty:
         color_map[new_truck_name] = 'red' 
 
         if selected_view == "แสดงทั้งหมด (แยกสีตามเบอร์รถ)":
-            map_df_before, map_df_after = df, res_df[res_df['เบอร์รถใหม่'] != 'ส่วนเกิน (Overflow)']
+            map_df_before, map_df_after = df, res_df[res_df['เบอร์รถใหม่'] != OVERFLOW_LABEL]
             color_mode = 'truck'
         else:
             if selected_view == new_truck_name and base_truck == "(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)": map_df_before = pd.DataFrame(columns=df.columns) 
@@ -551,11 +626,10 @@ if df is not None and not df.empty:
                 folium.CircleMarker([r[lat_col], r[lon_col]], radius=8 if is_vip else 5, color='#FFD700' if is_vip else m_color, weight=2 if is_vip else 1, fill=True, fillColor=m_color, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=300)).add_to(m2)
             components.html(m2.get_root().render(), height=450)
 
-        # 📅 2. ตารางวิเคราะห์โหลดรายวัน (แสดงผลเป็นจำนวนเต็ม 100% ไม่มีทศนิยม)
         st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)")
         daily_summary = []
         for t in all_trucks_after:
-            if t == 'ส่วนเกิน (Overflow)': continue
+            if t == OVERFLOW_LABEL: continue
             t_mask = res_df['เบอร์รถใหม่'] == t
             t_daily = daily_matrix[t_mask].sum(axis=0) if t_mask.any() else np.zeros(6)
             daily_summary.append({
@@ -570,7 +644,6 @@ if df is not None and not df.empty:
             })
         st.dataframe(pd.DataFrame(daily_summary), use_container_width=True)
 
-        # 📋 3. ตารางรายละเอียดข้อมูลการโยกย้ายสมาชิก
         st.markdown("### 📋 รายละเอียดข้อมูลการโยกย้ายสมาชิก")
         final_cols = [id_col]
         if name_col and name_col in res_df.columns: final_cols.append(name_col)
@@ -585,7 +658,7 @@ if df is not None and not df.empty:
         st.markdown("<div style='text-align:center; margin-bottom: 10px;'><b>📌 เมื่อผลลัพธ์สมบูรณ์แบบแล้ว สามารถดาวน์โหลดข้อมูลไปใช้งานได้ทันที</b></div>", unsafe_allow_html=True)
         
         @st.cache_data
-        def convert_df_to_bytes(df): return df.to_csv(index=False).encode('utf-8-sig')
+        def convert_df_to_bytes(input_df): return input_df.to_csv(index=False).encode('utf-8-sig')
 
         csv_bytes = convert_df_to_bytes(detail_df)
         col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
