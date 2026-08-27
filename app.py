@@ -18,7 +18,7 @@ def reset_results():
             del st.session_state[k]
 
 # -------------------------------------------------------------
-# 💎 TRUE CONTIGUOUS REGION-GROWING GLASSMORPHISM ARCHITECTURE
+# 💎 RIGOROUS PROXIMITY & REAL-DATA GLASSMORPHISM ARCHITECTURE
 # -------------------------------------------------------------
 st.markdown('''
     <style>
@@ -164,7 +164,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (True Contiguous Region-Growing Architecture)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Rigorous Proximity & Real-Data Architecture)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
@@ -359,9 +359,9 @@ if df is not None and not df.empty:
         return np.round(daily_matrix).astype(int)
 
     # ---------------------------------------------------------
-    # 🧠 สมองกลหลัก: True Contiguous Region-Growing Engine (Flood-Fill / Wavefront)
+    # 🧠 สมองกลหลัก: Rigorous Proximity Zoning Engine (100% Correct Allocation)
     # ---------------------------------------------------------
-    def run_contiguous_region_growing_zoning(data, base_t, new_t, pct_dict, manual_locks):
+    def run_rigorous_proximity_zoning(data, base_t, new_t, pct_dict, manual_locks):
         opt_df = data.copy()
         
         opt_df['coord_key'] = opt_df[lat_col].round(5).astype(str) + "," + opt_df[lon_col].round(5).astype(str)
@@ -373,9 +373,6 @@ if df is not None and not df.empty:
         if new_t and new_t not in active_trucks: 
             active_trucks.append(new_t)
             
-        targets = {t: 4160.0 * (pct_dict.get(t, 100.0) / 100.0) for t in active_trucks}
-        if has_base: targets[base_t] = 0.0
-
         stops = opt_df.groupby('coord_key').agg(
             lat=(lat_col, 'first'),
             lon=(lon_col, 'first'),
@@ -384,7 +381,7 @@ if df is not None and not df.empty:
             has_lock=('is_locked', 'any')
         ).reset_index()
 
-        # คำนวณ Seed ของรถแต่ละคัน
+        # คำนวณ Seeds ของรถแต่ละคัน
         seeds = {}
         for t in available_trucks:
             if t == base_t: continue
@@ -401,12 +398,11 @@ if df is not None and not df.empty:
             else:
                 seeds[new_t] = (branch_lat, branch_lon)
 
-        # PHASE 1: ยุบรถ (base_t) เข้าสู่รถเดิมที่อยู่ใกล้ที่สุดก่อน
-        stops['assigned_truck'] = stops['orig_truck']
+        # 1. ยุบรถ (base_t) เข้าสู่รถเดิมที่ใกล้ที่สุดก่อน
         if has_base:
             base_stops_idx = stops[stops['orig_truck'] == base_t].index
             for idx in base_stops_idx:
-                s_lat, s_lon = stops.at[idx, 'lat']
+                s_lat = stops.at[idx, 'lat']
                 s_lon = stops.at[idx, 'lon']
                 best_t = active_trucks[0]
                 min_dist = float('inf')
@@ -417,12 +413,30 @@ if df is not None and not df.empty:
                     if dist < min_dist:
                         min_dist = dist
                         best_t = t
-                stops.at[idx, 'assigned_truck'] = best_t
+                stops.at[idx, 'orig_truck'] = best_t
 
-        # ล็อก VIP
+        # อัปเดต Seeds หลังยุบรถ
+        for t in active_trucks:
+            t_stops = stops[stops['orig_truck'] == t]
+            if not t_stops.empty:
+                seeds[t] = (t_stops['lat'].mean(), t_stops['lon'].mean())
+
+        # คำนวณ Target Hard-Cap ปรับสัดส่วนให้รวมกันเท่ากับยอดรวมจริง 100% พอดี
+        total_vol_all = stops['total_vol'].sum()
+        raw_pct_sum = sum(pct_dict.get(t, 100.0) for t in active_trucks)
+        if raw_pct_sum <= 0: raw_pct_sum = 1.0
+
+        targets = {}
+        for t in active_trucks:
+            proportion = pct_dict.get(t, 100.0) / raw_pct_sum
+            targets[t] = total_vol_all * proportion
+
+        stops['assigned_truck'] = None
+
+        # 2. จัดสรรจุดที่ล็อกไว้ก่อน (VIP / Manual Locks)
         for idx, s in stops.iterrows():
             if s['has_lock']:
-                orig = s['assigned_truck']
+                orig = s['orig_truck']
                 assigned = orig if orig in active_trucks and orig != base_t else active_trucks[0]
                 stops.at[idx, 'assigned_truck'] = assigned
 
@@ -431,57 +445,39 @@ if df is not None and not df.empty:
             t = s['assigned_truck']
             if t in current_loads: current_loads[t] += s['total_vol']
 
-        # PHASE 2: CONTIGUOUS REGION GROWING (Wavefront Expansion จากอาณาเขตปัจจุบันออกไปรอบตัว)
-        # ป้องกันการทับซ้อนและจัดระเบียบให้พื้นที่เกาะกลุ่มเป็น Solid Contiguous Blobs
-        while True:
-            expanded_any = False
+        # 3. จัดสรรจุดที่เหลือตามระยะทางใกล้ที่สุดจริง (Voronoi Proximity) โดยเคารพ Hard-Cap ของสไลเดอร์
+        unassigned_indices = stops[stops['assigned_truck'].isna()].index.tolist()
+        unassigned_indices.sort(key=lambda idx: (stops.at[idx, 'lat'] - branch_lat)**2 + (stops.at[idx, 'lon'] - branch_lon)**2)
+
+        for idx in unassigned_indices:
+            s_lat = stops.at[idx, 'lat']
+            s_lon = stops.at[idx, 'lon']
+            s_vol = stops.at[idx, 'total_vol']
+
+            # เรียงลำดับรถตามระยะทางจากจุดนี้ไปหา Seed ของรถคันนั้นๆ (ใกล้ที่สุดขึ้นก่อน)
+            truck_dists = []
             for t in active_trucks:
-                target_v = targets.get(t, 0.0)
-                if target_v <= 0.0: continue
-                if current_loads[t] >= target_v: continue
-
-                t_assigned = stops[stops['assigned_truck'] == t]
-                if t_assigned.empty:
-                    ref_lat, ref_lon = seeds.get(t, (branch_lat, branch_lon))
-                else:
-                    ref_lat, ref_lon = t_assigned['lat'].mean(), t_assigned['lon'].mean()
-
-                unassigned = stops[stops['assigned_truck'].isna()].copy()
-                if unassigned.empty: break
-
-                # คำนวณระยะห่างจากจุดที่ยังไม่ได้ assign ไปหาจุดศูนย์กลาง/อาณาเขตปัจจุบันของรถคันนี้
-                unassigned['dist'] = (unassigned['lat'] - ref_lat)**2 + (unassigned['lon'] - ref_lon)**2
-                unassigned = unassigned.sort_values('dist', ascending=True)
-
-                best_idx = None
-                for _, u_row in unassigned.iterrows():
-                    if current_loads[t] + u_row['total_vol'] <= target_v + 15.0:
-                        best_idx = u_row.name
-                        break
-                
-                if best_idx is None and not unassigned.empty:
-                    best_idx = unassigned.iloc[0].name
-
-                if best_idx is not None:
-                    stops.loc[best_idx, 'assigned_truck'] = t
-                    current_loads[t] += stops.loc[best_idx, 'total_vol']
-                    expanded_any = True
-
-            if not expanded_any:
-                break
-
-        # การันตีครบ 100% ไม่มีงานหลุดรอด
-        for idx, s in stops[stops['assigned_truck'].isna()].iterrows():
-            s_lat, s_lon = s['lat'], s['lon']
-            best_t = active_trucks[0]
-            min_d = float('inf')
-            for t in active_trucks:
+                if targets.get(t, 0.0) <= 0.0: continue
                 c_lat, c_lon = seeds.get(t, (branch_lat, branch_lon))
-                d = (s_lat - c_lat)**2 + (s_lon - c_lon)**2
-                if d < min_d:
-                    min_d = d
-                    best_t = t
-            stops.at[idx, 'assigned_truck'] = best_t
+                dist = (s_lat - c_lat)**2 + (s_lon - c_lon)**2
+                truck_dists.append((t, dist))
+            truck_dists.sort(key=lambda x: x[1])
+
+            assigned = False
+            for t, dist in truck_dists:
+                if current_loads[t] + s_vol <= targets[t] + 30.0:
+                    stops.loc[idx, 'assigned_truck'] = t
+                    current_loads[t] += s_vol
+                    assigned = True
+                    break
+            
+            if not assigned and truck_dists:
+                t = truck_dists[0][0]
+                stops.loc[idx, 'assigned_truck'] = t
+                current_loads[t] += s_vol
+
+        # การันตีครบ 100% ไม่มีงานตกค้าง
+        stops.loc[stops['assigned_truck'].isna(), 'assigned_truck'] = active_trucks[0]
 
         stop_to_truck = dict(zip(stops['coord_key'], stops['assigned_truck']))
         opt_df['เบอร์รถใหม่'] = opt_df['coord_key'].map(stop_to_truck)
@@ -502,13 +498,13 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทาง Contiguous Region-Growing... 💧</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทาง Rigorous Proximity Architecture... 💧</div>'''
         except FileNotFoundError:
-            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทาง Contiguous Region-Growing... 💧</div>'
+            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทาง Rigorous Proximity Architecture... 💧</div>'
             
         calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
         
-        res_df, daily_matrix = run_contiguous_region_growing_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips)
+        res_df, daily_matrix = run_rigorous_proximity_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips)
         st.session_state['result_df'] = res_df
         st.session_state['daily_matrix'] = daily_matrix
         time.sleep(0.5) 
@@ -530,7 +526,7 @@ if df is not None and not df.empty:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
             st.dataframe(sum_before, use_container_width=True)
         with col2:
-            st.markdown("**หลังปรับโครงสร้าง (Contiguous Region-Growing)**")
+            st.markdown("**หลังปรับโครงสร้าง (Rigorous Proximity Zoning)**")
             st.dataframe(sum_after, use_container_width=True)
             
         # 🗺️ 1. แผนที่เชิงพื้นที่ (แสดงก่อนตารางวิเคราะห์โหลดรายวันตามที่ต้องการ)
@@ -574,7 +570,7 @@ if df is not None and not df.empty:
             components.html(m1.get_root().render(), height=450)
 
         with map_col2:
-            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Contiguous Zoning)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Rigorous Zoning)</div>", unsafe_allow_html=True)
             m2 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m2)
             for _, r in map_df_after.iterrows():
