@@ -18,7 +18,7 @@ def reset_results():
             del st.session_state[k]
 
 # -------------------------------------------------------------
-# 💎 VORONOI PROXIMITY & REAL-DATA GLASSMORPHISM ARCHITECTURE
+# 💎 TRUE CONTIGUOUS REGION-GROWING GLASSMORPHISM ARCHITECTURE
 # -------------------------------------------------------------
 st.markdown('''
     <style>
@@ -164,7 +164,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Voronoi Proximity & Real-Data Architecture)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (True Contiguous Region-Growing Architecture)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
@@ -264,22 +264,17 @@ if df is not None and not df.empty:
     st.sidebar.markdown("### 🎛️ 4. ปรับเป้าหมายรายวัน (%) พร้อมปุ่มล็อก")
     st.sidebar.caption("100% = 4,160 ถัง/เดือน (เปอร์เซ็นต์ตั้งต้นคำนวณจากข้อมูลจริงตามหลักเกณฑ์)")
 
-    # คำนวณปริมาณงานจริงและดูดซับรถที่ถูกยุบเพื่อหาเปอร์เซ็นต์เริ่มต้นที่ถูกต้องตรงตามจริง
     active_trucks = [t for t in available_trucks if t != base_truck]
     if new_truck_name and new_truck_name not in active_trucks: 
         active_trucks.append(new_truck_name)
 
     if 'slider_init' not in st.session_state or st.session_state.get('base_truck') != base_truck or st.session_state.get('new_truck') != new_truck_name:
         st.session_state.truck_pcts = {}
-        
-        # คำนวณปริมาณงานจริงต่อคันจากฐานข้อมูล
         raw_vols = {t: df[df[truck_col] == t][vol_col].sum() for t in available_trucks}
         
-        # ถ่ายโอนงานรถที่ถูกยุบให้รถเดิมที่อยู่ใกล้ที่สุดตั้งแต่เริ่มต้น เพื่อให้ % สะท้อนความจริง
         if base_truck != "(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)" and base_truck in raw_vols:
             base_vol = raw_vols.pop(base_truck)
             orig_active = [t for t in available_trucks if t != base_truck]
-            # แบ่งงานตามสัดส่วนเดิมหรือให้คันแรก
             if orig_active:
                 share = base_vol / len(orig_active)
                 for t in orig_active:
@@ -287,7 +282,7 @@ if df is not None and not df.empty:
 
         for t in active_trucks:
             if t == new_truck_name and t not in available_trucks:
-                st.session_state.truck_pcts[t] = 0.0 # รถใหม่เริ่มต้นที่ 0% เสมอตามที่คุณโอต้องการ
+                st.session_state.truck_pcts[t] = 0.0
             else:
                 vol = raw_vols.get(t, df[df[truck_col] == t][vol_col].sum())
                 st.session_state.truck_pcts[t] = float(round(max(0.0, min(200.0, (vol / 4160.0) * 100)), 1))
@@ -364,9 +359,9 @@ if df is not None and not df.empty:
         return np.round(daily_matrix).astype(int)
 
     # ---------------------------------------------------------
-    # 🧠 สมองกลหลัก: True Voronoi Proximity Assignment Engine (No Overlap)
+    # 🧠 สมองกลหลัก: True Contiguous Region-Growing Engine (Flood-Fill / Wavefront)
     # ---------------------------------------------------------
-    def run_voronoi_proximity_zoning(data, base_t, new_t, pct_dict, manual_locks):
+    def run_contiguous_region_growing_zoning(data, base_t, new_t, pct_dict, manual_locks):
         opt_df = data.copy()
         
         opt_df['coord_key'] = opt_df[lat_col].round(5).astype(str) + "," + opt_df[lon_col].round(5).astype(str)
@@ -389,7 +384,7 @@ if df is not None and not df.empty:
             has_lock=('is_locked', 'any')
         ).reset_index()
 
-        # คำนวณ Seed ของรถแต่ละคันจากข้อมูลจริง
+        # คำนวณ Seed ของรถแต่ละคัน
         seeds = {}
         for t in available_trucks:
             if t == base_t: continue
@@ -406,11 +401,12 @@ if df is not None and not df.empty:
             else:
                 seeds[new_t] = (branch_lat, branch_lon)
 
-        # PHASE 1: หากมียุบรถ ให้ดูดซับงานเข้าสู่รถเดิมที่อยู่ใกล้ที่สุดทันที
+        # PHASE 1: ยุบรถ (base_t) เข้าสู่รถเดิมที่อยู่ใกล้ที่สุดก่อน
+        stops['assigned_truck'] = stops['orig_truck']
         if has_base:
             base_stops_idx = stops[stops['orig_truck'] == base_t].index
             for idx in base_stops_idx:
-                s_lat = stops.at[idx, 'lat']
+                s_lat, s_lon = stops.at[idx, 'lat']
                 s_lon = stops.at[idx, 'lon']
                 best_t = active_trucks[0]
                 min_dist = float('inf')
@@ -421,21 +417,12 @@ if df is not None and not df.empty:
                     if dist < min_dist:
                         min_dist = dist
                         best_t = t
-                stops.at[idx, 'orig_truck'] = best_t # อัปเดต orig_truck เพื่อให้ Seed คำนวณแม่นยำขึ้น
+                stops.at[idx, 'assigned_truck'] = best_t
 
-        # อัปเดต Seeds อีกรอบหลังยุบรถ
-        for t in active_trucks:
-            t_stops = stops[stops['orig_truck'] == t]
-            if not t_stops.empty:
-                seeds[t] = (t_stops['lat'].mean(), t_stops['lon'].mean())
-
-        # PHASE 2: TRUE VORONOI PROXIMITY ASSIGNMENT (ไม่แย่งมั่วซั่ว เทียบระยะทางใกล้ที่สุดจริง)
-        stops['assigned_truck'] = None
-        
-        # 1. จัดสรรจุดที่ล็อก (VIP / Manual Locks) ก่อน
+        # ล็อก VIP
         for idx, s in stops.iterrows():
             if s['has_lock']:
-                orig = s['orig_truck']
+                orig = s['assigned_truck']
                 assigned = orig if orig in active_trucks and orig != base_t else active_trucks[0]
                 stops.at[idx, 'assigned_truck'] = assigned
 
@@ -444,44 +431,57 @@ if df is not None and not df.empty:
             t = s['assigned_truck']
             if t in current_loads: current_loads[t] += s['total_vol']
 
-        # 2. สำหรับจุดที่เหลือ ให้คำนวณระยะทางเทียบกับ Seed ทุกคัน และเลือกคันที่ "ใกล้ที่สุดจริง" โดยเคารพ Hard-Cap ของสไลเดอร์
-        unassigned_indices = stops[stops['assigned_truck'].isna()].index.tolist()
-        
-        # จัดเรียงลำดับจุดตามระยะห่างจากศูนย์กลางสาขา เพื่อเกลี่ยจากในออกนอกอย่างเป็นระเบียบ
-        unassigned_indices.sort(key=lambda idx: (stops.at[idx, 'lat'] - branch_lat)**2 + (stops.at[idx, 'lon'] - branch_lon)**2)
-
-        for idx in unassigned_indices:
-            s_lat = stops.at[idx, 'lat']
-            s_lon = stops.at[idx, 'lon']
-            s_vol = stops.at[idx, 'total_vol']
-            
-            # เรียงลำดับรถ active ตามระยะทางจากจุดนี้ไปหา Seed ของรถคันนั้นๆ (ใกล้ที่สุดขึ้นก่อน)
-            truck_distances = []
+        # PHASE 2: CONTIGUOUS REGION GROWING (Wavefront Expansion จากอาณาเขตปัจจุบันออกไปรอบตัว)
+        # ป้องกันการทับซ้อนและจัดระเบียบให้พื้นที่เกาะกลุ่มเป็น Solid Contiguous Blobs
+        while True:
+            expanded_any = False
             for t in active_trucks:
-                if targets.get(t, 0.0) <= 0.0: continue # ข้ามรถที่ตั้งเป้า 0% (เช่น รถใหม่ที่ยังไม่เลื่อนสไลเดอร์)
-                c_lat, c_lon = seeds.get(t, (branch_lat, branch_lon))
-                dist = (s_lat - c_lat)**2 + (s_lon - c_lon)**2
-                truck_distances.append((t, dist))
-            
-            truck_distances.sort(key=lambda x: x[1])
-            
-            # เลือกไปคันที่ใกล้ที่สุดและยังไม่เต็ม Hard-Cap
-            assigned = False
-            for t, dist in truck_distances:
-                if current_loads[t] + s_vol <= targets[t] + 15.0:
-                    stops.at[idx, 'assigned_truck'] = t
-                    current_loads[t] += s_vol
-                    assigned = True
-                    break
-            
-            if not assigned and truck_distances:
-                # ถ้าทุกคันใกล้เคียงชนเพดานหมดแล้ว ให้เลือกคันที่ใกล้ที่สุดโดยอนุโลมเพื่อไม่ให้มีงานตกค้าง
-                t = truck_distances[0][0]
-                stops.at[idx, 'assigned_truck'] = t
-                current_loads[t] += s_vol
+                target_v = targets.get(t, 0.0)
+                if target_v <= 0.0: continue
+                if current_loads[t] >= target_v: continue
 
-        # 🛑 GUARANTEE 100% ALLOCATION (ไม่มีงานหลุดรอด)
-        stops.loc[stops['assigned_truck'].isna(), 'assigned_truck'] = active_trucks[0]
+                t_assigned = stops[stops['assigned_truck'] == t]
+                if t_assigned.empty:
+                    ref_lat, ref_lon = seeds.get(t, (branch_lat, branch_lon))
+                else:
+                    ref_lat, ref_lon = t_assigned['lat'].mean(), t_assigned['lon'].mean()
+
+                unassigned = stops[stops['assigned_truck'].isna()].copy()
+                if unassigned.empty: break
+
+                # คำนวณระยะห่างจากจุดที่ยังไม่ได้ assign ไปหาจุดศูนย์กลาง/อาณาเขตปัจจุบันของรถคันนี้
+                unassigned['dist'] = (unassigned['lat'] - ref_lat)**2 + (unassigned['lon'] - ref_lon)**2
+                unassigned = unassigned.sort_values('dist', ascending=True)
+
+                best_idx = None
+                for _, u_row in unassigned.iterrows():
+                    if current_loads[t] + u_row['total_vol'] <= target_v + 15.0:
+                        best_idx = u_row.name
+                        break
+                
+                if best_idx is None and not unassigned.empty:
+                    best_idx = unassigned.iloc[0].name
+
+                if best_idx is not None:
+                    stops.loc[best_idx, 'assigned_truck'] = t
+                    current_loads[t] += stops.loc[best_idx, 'total_vol']
+                    expanded_any = True
+
+            if not expanded_any:
+                break
+
+        # การันตีครบ 100% ไม่มีงานหลุดรอด
+        for idx, s in stops[stops['assigned_truck'].isna()].iterrows():
+            s_lat, s_lon = s['lat'], s['lon']
+            best_t = active_trucks[0]
+            min_d = float('inf')
+            for t in active_trucks:
+                c_lat, c_lon = seeds.get(t, (branch_lat, branch_lon))
+                d = (s_lat - c_lat)**2 + (s_lon - c_lon)**2
+                if d < min_d:
+                    min_d = d
+                    best_t = t
+            stops.at[idx, 'assigned_truck'] = best_t
 
         stop_to_truck = dict(zip(stops['coord_key'], stops['assigned_truck']))
         opt_df['เบอร์รถใหม่'] = opt_df['coord_key'].map(stop_to_truck)
@@ -502,13 +502,13 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทาง Voronoi Proximity Architecture... 💧</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทาง Contiguous Region-Growing... 💧</div>'''
         except FileNotFoundError:
-            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทาง Voronoi Proximity Architecture... 💧</div>'
+            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทาง Contiguous Region-Growing... 💧</div>'
             
         calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
         
-        res_df, daily_matrix = run_voronoi_proximity_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips)
+        res_df, daily_matrix = run_contiguous_region_growing_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips)
         st.session_state['result_df'] = res_df
         st.session_state['daily_matrix'] = daily_matrix
         time.sleep(0.5) 
@@ -530,7 +530,7 @@ if df is not None and not df.empty:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
             st.dataframe(sum_before, use_container_width=True)
         with col2:
-            st.markdown("**หลังปรับโครงสร้าง (Voronoi Proximity Zoning - ครบ 100%)**")
+            st.markdown("**หลังปรับโครงสร้าง (Contiguous Region-Growing)**")
             st.dataframe(sum_after, use_container_width=True)
             
         # 🗺️ 1. แผนที่เชิงพื้นที่ (แสดงก่อนตารางวิเคราะห์โหลดรายวันตามที่ต้องการ)
@@ -574,7 +574,7 @@ if df is not None and not df.empty:
             components.html(m1.get_root().render(), height=450)
 
         with map_col2:
-            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Voronoi Zoning)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Contiguous Zoning)</div>", unsafe_allow_html=True)
             m2 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m2)
             for _, r in map_df_after.iterrows():
