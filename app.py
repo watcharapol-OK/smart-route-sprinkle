@@ -460,38 +460,58 @@ if df is not None and not df.empty:
             t = s['assigned_truck']
             if t in active_trucks: current_loads[t] += s['total_vol']
 
-        # 2. ให้รถแต่ละคันดึงจุดจอดที่ใกล้ Seed/centroid ของตัวเองที่สุดเข้าสังกัดจนกว่าจะชน Hard-Cap Target
-        while True:
-            assigned_any = False
-            for t in active_trucks:
-                target_v = targets.get(t, 0.0)
-                if target_v <= 0.0: continue
-                if current_loads[t] >= target_v: continue
+        # 2. แก้ไข: บั๊กสำคัญที่ทำให้โซนสีปะปน/ทับซ้อนกัน — เดิมให้ "รถแต่ละคันหยิบจุดที่ใกล้ตัวเองที่สุด"
+        # ทีละคันสลับกันไปเรื่อยๆ โดยแต่ละคันเทียบระยะห่างจากตัวเองเท่านั้น ไม่เทียบกับคันอื่นเลย
+        # ทำให้รถ 2 คันที่ seed อยู่ใกล้กันแย่งหยิบจุดสลับกันไปมาในโซนเดียวกัน (เห็นเป็นสีปนกันเป็นจุดๆ)
+        # ตอนนี้เปลี่ยนเป็น: ในแต่ละรอบ หาว่าจุดที่ยังไม่ถูก assign แต่ละจุด "ใกล้คันไหนที่สุดจริงๆ"
+        # โดยเทียบกับทุกคันที่ยังมีที่ว่างพร้อมกัน (เหมือนแบ่งเขต Voronoi ที่มีเพดานความจุ) แล้วเรียง
+        # จากคู่ (จุด, คัน) ที่ใกล้กันที่สุดไปไกลสุดก่อนค่อยจัดสรรจริง ลดการแย่ง/กระโดดข้ามโซนกัน
+        MAX_ROUNDS = 60
+        for _round in range(MAX_ROUNDS):
+            eligible_trucks = [t for t in active_trucks if targets.get(t, 0.0) > current_loads[t]]
+            if not eligible_trucks:
+                break
 
+            centroids = {}
+            for t in active_trucks:
                 t_assigned = stops[stops['assigned_truck'] == t]
                 if t_assigned.empty:
-                    ref_lat, ref_lon = seeds.get(t, (branch_lat, branch_lon))
+                    centroids[t] = seeds.get(t, (branch_lat, branch_lon))
                 else:
-                    ref_lat, ref_lon = t_assigned['lat'].mean(), t_assigned['lon'].mean()
+                    centroids[t] = (t_assigned['lat'].mean(), t_assigned['lon'].mean())
 
-                candidate_indices = stops[stops['assigned_truck'].isna()].index
-                if len(candidate_indices) == 0: break
+            candidate_indices = stops[stops['assigned_truck'].isna()].index
+            if len(candidate_indices) == 0:
+                break
 
-                best_idx = None
-                min_d = float('inf')
-                for idx in candidate_indices:
-                    s_row = stops.loc[idx]
-                    if current_loads[t] + s_row['total_vol'] > target_v + 10.0:
+            scored = []
+            for idx in candidate_indices:
+                s_row = stops.loc[idx]
+                best_t, best_d = None, float('inf')
+                for t in eligible_trucks:
+                    if current_loads[t] + s_row['total_vol'] > targets[t] + 10.0:
                         continue
-                    d = (s_row['lat'] - ref_lat)**2 + (s_row['lon'] - ref_lon)**2
-                    if d < min_d:
-                        min_d = d
-                        best_idx = idx
+                    d = (s_row['lat'] - centroids[t][0]) ** 2 + (s_row['lon'] - centroids[t][1]) ** 2
+                    if d < best_d:
+                        best_d, best_t = d, t
+                if best_t is not None:
+                    scored.append((best_d, idx, best_t))
 
-                if best_idx is not None:
-                    stops.loc[best_idx, 'assigned_truck'] = t
-                    current_loads[t] += stops.loc[best_idx, 'total_vol']
-                    assigned_any = True
+            if not scored:
+                break
+
+            scored.sort(key=lambda x: x[0])
+
+            assigned_any = False
+            for _, idx, t in scored:
+                if pd.notna(stops.at[idx, 'assigned_truck']):
+                    continue
+                s_row = stops.loc[idx]
+                if current_loads[t] + s_row['total_vol'] > targets[t] + 10.0:
+                    continue  # เต็มไปแล้วระหว่างรอบนี้ รอบหน้าจะหาคันที่ใกล้รองลงมาให้ใหม่
+                stops.at[idx, 'assigned_truck'] = t
+                current_loads[t] += s_row['total_vol']
+                assigned_any = True
 
             if not assigned_any: break
 
