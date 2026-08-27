@@ -18,7 +18,7 @@ def reset_results():
             del st.session_state[k]
 
 # -------------------------------------------------------------
-# 💎 PREMIUM GLASSMORPHISM ARCHITECTURE (MATCHING USER REFERENCE)
+# 💎 TRUE GLASSMORPHISM & TRANSPARENCY ARCHITECTURE (ENHANCED)
 # -------------------------------------------------------------
 st.markdown('''
     <style>
@@ -30,8 +30,9 @@ st.markdown('''
             font-weight: 400;
         }
 
+        /* App Background: Rich Gradient with Depth */
         .stApp { 
-            background: linear-gradient(135deg, #000B18 0%, #001F3F 50%, #002D62 100%) !important;
+            background: linear-gradient(135deg, #000814 0%, #001D3D 45%, #003566 100%) !important;
             background-attachment: fixed;
         }
 
@@ -48,12 +49,12 @@ st.markdown('''
             font-weight: 400 !important;
         }
 
-        /* Sidebar: Frosted Glassmorphism */
+        /* Sidebar: Translucent Frosted Glass */
         [data-testid="stSidebar"] { 
-            background: rgba(0, 15, 31, 0.65) !important; 
+            background: rgba(0, 13, 26, 0.55) !important; 
             backdrop-filter: blur(25px);
             -webkit-backdrop-filter: blur(25px);
-            border-right: 1px solid rgba(255, 255, 255, 0.12); 
+            border-right: 1px solid rgba(255, 255, 255, 0.15); 
         }
         [data-testid="stSidebar"] * { color: #FFFFFF !important; }
         [data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown p {
@@ -66,11 +67,11 @@ st.markdown('''
             padding-bottom: 8px;
         }
 
-        /* Input Fields & Selectboxes: Translucent Glass Card Style */
+        /* Input Fields & Selectboxes: High Translucency Glass */
         div[data-baseweb="select"] > div, input { 
-            background: rgba(0, 40, 80, 0.35) !important; 
+            background: rgba(0, 30, 60, 0.3) !important; 
             backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.18) !important; 
+            border: 1px solid rgba(255, 255, 255, 0.2) !important; 
             color: #FFFFFF !important;
             border-radius: 12px !important;
             font-weight: 500;
@@ -78,7 +79,7 @@ st.markdown('''
         input::placeholder { color: #CBD5E1 !important; opacity: 1 !important; }
         input:focus, div[data-baseweb="select"] > div:focus-within {
             border-color: #FFD700 !important;
-            box-shadow: 0 0 15px rgba(255, 215, 0, 0.3) !important;
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.35) !important;
         }
 
         div[role="listbox"], ul[role="listbox"], div[data-baseweb="menu"], [data-baseweb="select-dropdown"] {
@@ -117,15 +118,15 @@ st.markdown('''
             transform: translateY(-2px); 
         }
 
-        /* DataFrames & Cards: Frosted Glass Container with Soft Border */
+        /* DataFrames Container: True Glassmorphism with Reduced Opacity */
         .stDataFrame { 
-            background: rgba(0, 31, 63, 0.35) !important; 
+            background: rgba(0, 24, 48, 0.25) !important; 
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
             padding: 1.2rem; 
             border-radius: 16px; 
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35); 
-            border: 1px solid rgba(255, 255, 255, 0.12); 
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); 
+            border: 1px solid rgba(255, 255, 255, 0.15); 
             border-top: 3px solid #D4AF37;
         }
         .stDataFrame td, .stDataFrame th, .stDataFrame div { color: #0F172A !important; font-weight: 500 !important; }
@@ -141,13 +142,13 @@ st.markdown('''
             font-weight: bold; 
             font-size: 1.2rem; 
             border-radius: 16px; 
-            background: rgba(0, 31, 63, 0.65); 
+            background: rgba(0, 24, 48, 0.5); 
             backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.15); 
+            border: 1px solid rgba(255, 255, 255, 0.18); 
             margin-bottom: 20px; 
             position: relative;
             overflow: hidden;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
         }
         .custom-truck-loader::after {
             content: ""; position: absolute; bottom: 10px; left: 0; width: 100%; height: 4px;
@@ -167,7 +168,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Glassmorphic Trip-Efficient Architecture)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Two-Phase Glassmorphic Architecture)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
@@ -353,9 +354,9 @@ if df is not None and not df.empty:
         return np.round(daily_matrix).astype(int)
 
     # ---------------------------------------------------------
-    # 🧠 สมองกลหลัก: Trip-Efficient Integer Zoning Engine
+    # 🧠 สมองกลหลัก: Two-Phase Absorption & Trip-Efficient Zoning
     # ---------------------------------------------------------
-    def run_trip_efficient_zoning(data, base_t, new_t, pct_dict, manual_locks, applied_truck_adjustments=None):
+    def run_two_phase_absorption_zoning(data, base_t, new_t, pct_dict, manual_locks, applied_truck_adjustments=None):
         opt_df = data.copy()
         if applied_truck_adjustments is None: applied_truck_adjustments = {}
         
@@ -364,7 +365,8 @@ if df is not None and not df.empty:
         opt_df['is_locked'] = (opt_df['VIP_Status'].str.upper().str.strip() == 'VIP') | (opt_df[id_col].str.strip().isin(locked_manual))
         
         has_base = base_t != "(ไม่มี - เพิ่มรถคันใหม่กระจายงาน)"
-        active_trucks = [t for t in available_trucks if t != base_t]
+        original_active_trucks = [t for t in available_trucks if t != base_t]
+        active_trucks = original_active_trucks.copy()
         if new_t and new_t not in active_trucks: 
             active_trucks.append(new_t)
             
@@ -380,29 +382,44 @@ if df is not None and not df.empty:
         ).reset_index()
 
         seeds = {}
-        for t in available_trucks:
-            if t == base_t: continue
+        for t in original_active_trucks:
             t_stops = stops[stops['orig_truck'] == t]
             if not t_stops.empty:
                 seeds[t] = (t_stops['lat'].mean(), t_stops['lon'].mean())
 
-        if new_t:
+        branch_lat = stops['lat'].mean()
+        branch_lon = stops['lon'].mean()
+        if new_t and new_t not in seeds:
             if seeds:
                 seeds[new_t] = (np.mean([s[0] for s in seeds.values()]), np.mean([s[1] for s in seeds.values()]))
             else:
-                seeds[new_t] = (stops['lat'].mean(), stops['lon'].mean())
+                seeds[new_t] = (branch_lat, branch_lon)
 
-        stops['assigned_truck'] = None
+        # PHASE 1: หากมียุบรถ (base_t) ให้ดึงงานของรถที่ถูกยุบไปฝากไว้กับรถหลักเดิมที่อยู่ใกล้ที่สุดทันที
+        stops['assigned_truck'] = stops['orig_truck']
+        if has_base:
+            base_stops_idx = stops[stops['orig_truck'] == base_t].index
+            for idx in base_stops_idx:
+                s_lat = stops.at[idx, 'lat']
+                s_lon = stops.at[idx, 'lon']
+                best_t = original_active_trucks[0]
+                min_dist = float('inf')
+                for t in original_active_trucks:
+                    c_lat, c_lon = seeds.get(t, (branch_lat, branch_lon))
+                    dist = (s_lat - c_lat)**2 + (s_lon - c_lon)**2
+                    if dist < min_dist:
+                        min_dist = dist
+                        best_t = t
+                stops.at[idx, 'assigned_truck'] = best_t
+
+        # PHASE 2: จัดสรรตามเป้าหมายสไลเดอร์และรถใหม่
+        current_loads = {t: 0.0 for t in active_trucks}
         for idx, s in stops.iterrows():
             if s['has_lock']:
-                orig = s['orig_truck']
+                orig = s['assigned_truck']
                 assigned = orig if orig in active_trucks else active_trucks[0]
                 stops.at[idx, 'assigned_truck'] = assigned
-
-        current_loads = {t: 0.0 for t in active_trucks}
-        for _, s in stops[stops['assigned_truck'].notna()].iterrows():
-            t = s['assigned_truck']
-            if t in active_trucks: current_loads[t] += s['total_vol']
+                current_loads[assigned] += s['total_vol']
 
         while True:
             assigned_any = False
@@ -412,18 +429,19 @@ if df is not None and not df.empty:
 
                 t_assigned = stops[stops['assigned_truck'] == t]
                 if t_assigned.empty:
-                    ref_lat, ref_lon = seeds.get(t, (stops['lat'].mean(), stops['lon'].mean()))
+                    ref_lat, ref_lon = seeds.get(t, (branch_lat, branch_lon))
                 else:
                     ref_lat, ref_lon = t_assigned['lat'].mean(), t_assigned['lon'].mean()
 
-                candidate_indices = stops[stops['assigned_truck'].isna()].index
+                candidate_indices = stops[stops['assigned_truck'].isna() | (stops['assigned_truck'] == base_t)].index
                 if len(candidate_indices) == 0: break
 
                 best_idx = None
                 min_d = float('inf')
                 for idx in candidate_indices:
                     s_row = stops.loc[idx]
-                    if current_loads[t] + s_row['total_vol'] > targets[t] + 5.0:
+                    if s_row['has_lock']: continue
+                    if current_loads[t] + s_row['total_vol'] > targets[t] + 10.0:
                         continue
                     d = (s_row['lat'] - ref_lat)**2 + (s_row['lon'] - ref_lon)**2
                     if d < min_d:
@@ -439,12 +457,12 @@ if df is not None and not df.empty:
 
         stops.loc[stops['assigned_truck'].isna(), 'assigned_truck'] = 'ส่วนเกิน (Overflow)'
 
-        # 🚛 TRIP-EFFICIENT INTEGER BALANCING: จัดการเกลี่ยจุดจอดชายขอบเมื่อกดปุ่มจัดการเบอร์รถ
+        # 🚛 TRIP-EFFICIENT HOLISTIC BALANCING: จัดการเกลี่ยจุดจอดชายขอบเมื่อกดปุ่มจัดการเบอร์รถ
         for truck_id, is_active in applied_truck_adjustments.items():
             if is_active:
                 truck_stops_df = stops[stops['assigned_truck'] == truck_id].copy()
                 if not truck_stops_df.empty and not truck_stops_df['has_lock'].all():
-                    c_lat, c_lon = seeds.get(truck_id, (stops['lat'].mean(), stops['lon'].mean()))
+                    c_lat, c_lon = seeds.get(truck_id, (branch_lat, branch_lon))
                     truck_stops_df['dist'] = (truck_stops_df['lat'] - c_lat)**2 + (truck_stops_df['lon'] - c_lon)**2
                     fringe_stops = truck_stops_df[~truck_stops_df['has_lock']].sort_values('dist', ascending=False)
                     cutoff_count = max(1, int(len(fringe_stops) * 0.35))
@@ -489,13 +507,13 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทาง Trip-Efficient Architecture... 💧</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทาง Two-Phase Absorption... 💧</div>'''
         except FileNotFoundError:
-            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทาง Trip-Efficient Architecture... 💧</div>'
+            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทาง Two-Phase Absorption... 💧</div>'
             
         calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
         
-        res_df, daily_matrix = run_trip_efficient_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state.get('applied_truck_recs', {}))
+        res_df, daily_matrix = run_two_phase_absorption_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state.get('applied_truck_recs', {}))
         st.session_state['result_df'] = res_df
         st.session_state['daily_matrix'] = daily_matrix
         time.sleep(0.5) 
@@ -517,7 +535,7 @@ if df is not None and not df.empty:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
             st.dataframe(sum_before, use_container_width=True)
         with col2:
-            st.markdown("**หลังปรับโครงสร้าง (Trip-Efficient Zoning)**")
+            st.markdown("**หลังปรับโครงสร้าง (Two-Phase Absorption)**")
             st.dataframe(sum_after, use_container_width=True)
             
         # 🗺️ 1. แผนที่เชิงพื้นที่ (แสดงก่อนตารางวิเคราะห์โหลดรายวันตามที่ต้องการ)
@@ -561,7 +579,7 @@ if df is not None and not df.empty:
             components.html(m1.get_root().render(), height=450)
 
         with map_col2:
-            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Trip-Efficient Zoning)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Two-Phase Zoning)</div>", unsafe_allow_html=True)
             m2 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m2)
             for _, r in map_df_after.iterrows():
@@ -615,7 +633,7 @@ if df is not None and not df.empty:
                     else:
                         if st.button(f"✨ กดจัดการรถ {r['เบอร์รถ']}", key=f"btn_truck_{r['id']}"):
                             st.session_state['applied_truck_recs'][r['id']] = True
-                            res_df_new, daily_matrix_new = run_trip_efficient_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state['applied_truck_recs'])
+                            res_df_new, daily_matrix_new = run_two_phase_absorption_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state['applied_truck_recs'])
                             st.session_state['result_df'] = res_df_new
                             st.session_state['daily_matrix'] = daily_matrix_new
                             st.rerun()
@@ -623,7 +641,7 @@ if df is not None and not df.empty:
                     if st.session_state['applied_truck_recs'].get(r['id'], False):
                         if st.button("🔄 ยกเลิก", key=f"reset_truck_{r['id']}"):
                             st.session_state['applied_truck_recs'][r['id']] = False
-                            res_df_new, daily_matrix_new = run_trip_efficient_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state['applied_truck_recs'])
+                            res_df_new, daily_matrix_new = run_two_phase_absorption_zoning(df, base_truck, new_truck_name, target_pcts, manual_vips, st.session_state['applied_truck_recs'])
                             st.session_state['result_df'] = res_df_new
                             st.session_state['daily_matrix'] = daily_matrix_new
                             st.rerun()
