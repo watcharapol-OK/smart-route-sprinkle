@@ -18,7 +18,7 @@ def reset_results():
             del st.session_state[k]
 
 # -------------------------------------------------------------
-# 💎 ENHANCED TRANSPARENCY LIQUID GLASS ARCHITECTURE (CSS)
+# 💎 PREMIUM GLASSMORPHISM ARCHITECTURE (MATCHING USER REFERENCE)
 # -------------------------------------------------------------
 st.markdown('''
     <style>
@@ -48,12 +48,12 @@ st.markdown('''
             font-weight: 400 !important;
         }
 
-        /* Sidebar: Increased Transparency */
+        /* Sidebar: Frosted Glassmorphism */
         [data-testid="stSidebar"] { 
-            background: rgba(0, 15, 31, 0.75) !important; 
+            background: rgba(0, 15, 31, 0.65) !important; 
             backdrop-filter: blur(25px);
             -webkit-backdrop-filter: blur(25px);
-            border-right: 1px solid rgba(212, 175, 55, 0.25); 
+            border-right: 1px solid rgba(255, 255, 255, 0.12); 
         }
         [data-testid="stSidebar"] * { color: #FFFFFF !important; }
         [data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown p {
@@ -66,27 +66,27 @@ st.markdown('''
             padding-bottom: 8px;
         }
 
-        /* Input Fields & Selectboxes: Higher Translucency */
+        /* Input Fields & Selectboxes: Translucent Glass Card Style */
         div[data-baseweb="select"] > div, input { 
-            background: rgba(0, 40, 80, 0.45) !important; 
+            background: rgba(0, 40, 80, 0.35) !important; 
             backdrop-filter: blur(12px);
-            border: 1px solid rgba(212, 175, 55, 0.4) !important; 
+            border: 1px solid rgba(255, 255, 255, 0.18) !important; 
             color: #FFFFFF !important;
-            border-radius: 8px !important;
+            border-radius: 12px !important;
             font-weight: 500;
         }
         input::placeholder { color: #CBD5E1 !important; opacity: 1 !important; }
         input:focus, div[data-baseweb="select"] > div:focus-within {
             border-color: #FFD700 !important;
-            box-shadow: 0 0 12px rgba(255, 215, 0, 0.4) !important;
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.3) !important;
         }
 
         div[role="listbox"], ul[role="listbox"], div[data-baseweb="menu"], [data-baseweb="select-dropdown"] {
-            background: rgba(248, 250, 252, 0.95) !important;
+            background: rgba(248, 250, 252, 0.92) !important;
             backdrop-filter: blur(16px);
             border: 1px solid #D4AF37 !important;
-            border-radius: 8px !important;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
+            border-radius: 12px !important;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4) !important;
         }
         div[role="option"], ul[role="listbox"] > li {
             color: #0F172A !important;
@@ -104,7 +104,7 @@ st.markdown('''
             background: linear-gradient(135deg, #D4AF37 0%, #AA8C2C 100%) !important; 
             color: #000B18 !important; 
             border: none !important; 
-            border-radius: 8px; 
+            border-radius: 10px; 
             font-weight: 700; 
             padding: 0.6rem 2rem; 
             width: 100%; 
@@ -117,15 +117,15 @@ st.markdown('''
             transform: translateY(-2px); 
         }
 
-        /* DataFrames Container: Enhanced Glass Transparency */
+        /* DataFrames & Cards: Frosted Glass Container with Soft Border */
         .stDataFrame { 
-            background: rgba(0, 31, 63, 0.45) !important; 
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
+            background: rgba(0, 31, 63, 0.35) !important; 
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
             padding: 1.2rem; 
-            border-radius: 14px; 
+            border-radius: 16px; 
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35); 
-            border: 1px solid rgba(212, 175, 55, 0.25); 
+            border: 1px solid rgba(255, 255, 255, 0.12); 
             border-top: 3px solid #D4AF37;
         }
         .stDataFrame td, .stDataFrame th, .stDataFrame div { color: #0F172A !important; font-weight: 500 !important; }
@@ -140,13 +140,14 @@ st.markdown('''
             color: #FFD700; 
             font-weight: bold; 
             font-size: 1.2rem; 
-            border-radius: 14px; 
-            background: rgba(0, 31, 63, 0.75); 
-            backdrop-filter: blur(16px);
-            border: 1px solid rgba(212, 175, 55, 0.4); 
+            border-radius: 16px; 
+            background: rgba(0, 31, 63, 0.65); 
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.15); 
             margin-bottom: 20px; 
             position: relative;
             overflow: hidden;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
         }
         .custom-truck-loader::after {
             content: ""; position: absolute; bottom: 10px; left: 0; width: 100%; height: 4px;
@@ -158,7 +159,7 @@ st.markdown('''
         [data-testid="stDownloadButton"] > button { 
             background: linear-gradient(135deg, #28A745 0%, #1E7E34 100%) !important; 
             color: #FFFFFF !important; 
-            border-radius: 8px !important;
+            border-radius: 10px !important;
             padding: 0.8rem 2rem; font-size: 1.1rem; font-weight: 700;
             box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
         }
@@ -166,7 +167,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Trip-Efficient Integer Logistics Architecture)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Glassmorphic Trip-Efficient Architecture)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
