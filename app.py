@@ -18,7 +18,7 @@ def reset_results():
             del st.session_state[k]
 
 # -------------------------------------------------------------
-# 💎 TRIP-EFFICIENT INTEGER LOGISTICS LIQUID GLASS SYSTEM
+# 💎 ENHANCED TRANSPARENCY LIQUID GLASS ARCHITECTURE (CSS)
 # -------------------------------------------------------------
 st.markdown('''
     <style>
@@ -48,11 +48,12 @@ st.markdown('''
             font-weight: 400 !important;
         }
 
+        /* Sidebar: Increased Transparency */
         [data-testid="stSidebar"] { 
-            background: rgba(0, 15, 31, 0.9) !important; 
+            background: rgba(0, 15, 31, 0.75) !important; 
             backdrop-filter: blur(25px);
             -webkit-backdrop-filter: blur(25px);
-            border-right: 1px solid rgba(212, 175, 55, 0.35); 
+            border-right: 1px solid rgba(212, 175, 55, 0.25); 
         }
         [data-testid="stSidebar"] * { color: #FFFFFF !important; }
         [data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown p {
@@ -65,10 +66,11 @@ st.markdown('''
             padding-bottom: 8px;
         }
 
+        /* Input Fields & Selectboxes: Higher Translucency */
         div[data-baseweb="select"] > div, input { 
-            background: rgba(0, 40, 80, 0.75) !important; 
+            background: rgba(0, 40, 80, 0.45) !important; 
             backdrop-filter: blur(12px);
-            border: 1px solid rgba(212, 175, 55, 0.55) !important; 
+            border: 1px solid rgba(212, 175, 55, 0.4) !important; 
             color: #FFFFFF !important;
             border-radius: 8px !important;
             font-weight: 500;
@@ -80,7 +82,8 @@ st.markdown('''
         }
 
         div[role="listbox"], ul[role="listbox"], div[data-baseweb="menu"], [data-baseweb="select-dropdown"] {
-            background: #F8FAFC !important;
+            background: rgba(248, 250, 252, 0.95) !important;
+            backdrop-filter: blur(16px);
             border: 1px solid #D4AF37 !important;
             border-radius: 8px !important;
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
@@ -114,13 +117,15 @@ st.markdown('''
             transform: translateY(-2px); 
         }
 
+        /* DataFrames Container: Enhanced Glass Transparency */
         .stDataFrame { 
-            background: rgba(0, 31, 63, 0.7) !important; 
+            background: rgba(0, 31, 63, 0.45) !important; 
             backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
             padding: 1.2rem; 
             border-radius: 14px; 
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45); 
-            border: 1px solid rgba(212, 175, 55, 0.35); 
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35); 
+            border: 1px solid rgba(212, 175, 55, 0.25); 
             border-top: 3px solid #D4AF37;
         }
         .stDataFrame td, .stDataFrame th, .stDataFrame div { color: #0F172A !important; font-weight: 500 !important; }
@@ -136,9 +141,9 @@ st.markdown('''
             font-weight: bold; 
             font-size: 1.2rem; 
             border-radius: 14px; 
-            background: rgba(0, 31, 63, 0.9); 
+            background: rgba(0, 31, 63, 0.75); 
             backdrop-filter: blur(16px);
-            border: 1px solid rgba(212, 175, 55, 0.5); 
+            border: 1px solid rgba(212, 175, 55, 0.4); 
             margin-bottom: 20px; 
             position: relative;
             overflow: hidden;
@@ -344,7 +349,6 @@ if df is not None and not df.empty:
             days = parse_days_from_string(val)
             vol_per_day = vol / (len(days) * 4.333) 
             for d in days: daily_matrix[i, d] = vol_per_day
-        # ปัดเศษรายวันเป็นจำนวนเต็ม (Integer) ทุกช่อง
         return np.round(daily_matrix).astype(int)
 
     # ---------------------------------------------------------
@@ -434,7 +438,7 @@ if df is not None and not df.empty:
 
         stops.loc[stops['assigned_truck'].isna(), 'assigned_truck'] = 'ส่วนเกิน (Overflow)'
 
-        # 🚛 TRIP-EFFICIENT HOLISTIC BALANCING: เมื่อกดจัดการเบอร์รถใด ระบบจะทำการเกลี่ยและตัดแบ่งจุดจอดชายขอบออกสู่ Overflow เพื่อแก้ปัญหาโหลดเกินพิกัดและหลีกเลี่ยง Dead Zone
+        # 🚛 TRIP-EFFICIENT INTEGER BALANCING: จัดการเกลี่ยจุดจอดชายขอบเมื่อกดปุ่มจัดการเบอร์รถ
         for truck_id, is_active in applied_truck_adjustments.items():
             if is_active:
                 truck_stops_df = stops[stops['assigned_truck'] == truck_id].copy()
@@ -442,7 +446,7 @@ if df is not None and not df.empty:
                     c_lat, c_lon = seeds.get(truck_id, (stops['lat'].mean(), stops['lon'].mean()))
                     truck_stops_df['dist'] = (truck_stops_df['lat'] - c_lat)**2 + (truck_stops_df['lon'] - c_lon)**2
                     fringe_stops = truck_stops_df[~truck_stops_df['has_lock']].sort_values('dist', ascending=False)
-                    cutoff_count = max(1, int(len(fringe_stops) * 0.35)) # ตัด 35% ของจุดชายขอบออกไปเกลี่ย
+                    cutoff_count = max(1, int(len(fringe_stops) * 0.35))
                     for _, f_row in fringe_stops.head(cutoff_count).iterrows():
                         stops.loc[stops['coord_key'] == f_row['coord_key'], 'assigned_truck'] = 'ส่วนเกิน (Overflow)'
 
@@ -465,7 +469,6 @@ if df is not None and not df.empty:
             if not t_mask.any(): continue
             max_load = daily_mat[t_mask].sum(axis=0).max()
             
-            # ตรวจจับโหลดที่เกินพิกัดวิกฤต (> 200 ถัง) หรือเข้าสู่ Dead Zone ที่ไม่คุ้มค่าเที่ยววิ่ง
             if max_load > 200:
                 recs.append({
                     'id': f"truck_{t}",
