@@ -18,7 +18,7 @@ def reset_results():
             del st.session_state[k]
 
 # -------------------------------------------------------------
-# 💎 TRUE GLASSMORPHISM & TRANSPARENCY ARCHITECTURE (ENHANCED)
+# 💎 TRUE GLASSMORPHISM & BOUNDARY CARVE-OUT ARCHITECTURE
 # -------------------------------------------------------------
 st.markdown('''
     <style>
@@ -51,7 +51,7 @@ st.markdown('''
 
         /* Sidebar: Translucent Frosted Glass */
         [data-testid="stSidebar"] { 
-            background: rgba(0, 13, 26, 0.55) !important; 
+            background: rgba(0, 13, 26, 0.45) !important; 
             backdrop-filter: blur(25px);
             -webkit-backdrop-filter: blur(25px);
             border-right: 1px solid rgba(255, 255, 255, 0.15); 
@@ -69,7 +69,7 @@ st.markdown('''
 
         /* Input Fields & Selectboxes: High Translucency Glass */
         div[data-baseweb="select"] > div, input { 
-            background: rgba(0, 30, 60, 0.3) !important; 
+            background: rgba(0, 30, 60, 0.25) !important; 
             backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.2) !important; 
             color: #FFFFFF !important;
@@ -120,12 +120,12 @@ st.markdown('''
 
         /* DataFrames Container: True Glassmorphism with Reduced Opacity */
         .stDataFrame { 
-            background: rgba(0, 24, 48, 0.25) !important; 
+            background: rgba(0, 24, 48, 0.18) !important; 
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
             padding: 1.2rem; 
             border-radius: 16px; 
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); 
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.25); 
             border: 1px solid rgba(255, 255, 255, 0.15); 
             border-top: 3px solid #D4AF37;
         }
@@ -142,13 +142,13 @@ st.markdown('''
             font-weight: bold; 
             font-size: 1.2rem; 
             border-radius: 16px; 
-            background: rgba(0, 24, 48, 0.5); 
+            background: rgba(0, 24, 48, 0.4); 
             backdrop-filter: blur(20px);
             border: 1px solid rgba(255, 255, 255, 0.18); 
             margin-bottom: 20px; 
             position: relative;
             overflow: hidden;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.25);
         }
         .custom-truck-loader::after {
             content: ""; position: absolute; bottom: 10px; left: 0; width: 100%; height: 4px;
@@ -168,7 +168,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 st.title("🚛 Smart Route Rebalancer Dashboard")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Two-Phase Glassmorphic Architecture)**")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Boundary Carve-out Glassmorphic Architecture)**")
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล (Data Source)")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
@@ -354,7 +354,7 @@ if df is not None and not df.empty:
         return np.round(daily_matrix).astype(int)
 
     # ---------------------------------------------------------
-    # 🧠 สมองกลหลัก: Two-Phase Absorption & Trip-Efficient Zoning
+    # 🧠 สมองกลหลัก: Two-Phase Absorption & Boundary Carve-out Engine
     # ---------------------------------------------------------
     def run_two_phase_absorption_zoning(data, base_t, new_t, pct_dict, manual_locks, applied_truck_adjustments=None):
         opt_df = data.copy()
@@ -389,9 +389,13 @@ if df is not None and not df.empty:
 
         branch_lat = stops['lat'].mean()
         branch_lon = stops['lon'].mean()
-        if new_t and new_t not in seeds:
+        
+        # วางตำแหน่งรถใหม่ (New Truck Seed) ไว้ที่กึ่งกลางรอยต่อระหว่างรถเดิม
+        if new_t:
             if seeds:
-                seeds[new_t] = (np.mean([s[0] for s in seeds.values()]), np.mean([s[1] for s in seeds.values()]))
+                mean_lat = np.mean([s[0] for s in seeds.values()])
+                mean_lon = np.mean([s[1] for s in seeds.values()])
+                seeds[new_t] = (mean_lat, mean_lon)
             else:
                 seeds[new_t] = (branch_lat, branch_lon)
 
@@ -412,8 +416,10 @@ if df is not None and not df.empty:
                         best_t = t
                 stops.at[idx, 'assigned_truck'] = best_t
 
-        # PHASE 2: จัดสรรตามเป้าหมายสไลเดอร์และรถใหม่
+        # PHASE 2: แกะสลักพื้นที่ชายขอบ (Boundary Carve-out) ให้รถใหม่ (new_t) ตามเป้าหมายเปอร์เซ็นต์
         current_loads = {t: 0.0 for t in active_trucks}
+        
+        # จัดสรรจุดที่ล็อกไว้ก่อน
         for idx, s in stops.iterrows():
             if s['has_lock']:
                 orig = s['assigned_truck']
@@ -421,6 +427,26 @@ if df is not None and not df.empty:
                 stops.at[idx, 'assigned_truck'] = assigned
                 current_loads[assigned] += s['total_vol']
 
+        # ถ้ามีรถใหม่และตั้งเป้าหมาย > 0 ให้ดึงจุดจากรอบรอยต่อของรถเดิมมาให้รถใหม่
+        if new_t and targets.get(new_t, 0.0) > 0.0:
+            new_target = targets[new_t]
+            n_lat, n_lon = seeds[new_t]
+            
+            # ค้นหาจุดที่ยังไม่ล็อกและอยู่ใกล้รอยต่อของรถใหม่
+            candidates = stops[~stops['has_lock'] & (stops['assigned_truck'] != new_t)].copy()
+            if not candidates.empty:
+                candidates['dist_to_new'] = (candidates['lat'] - n_lat)**2 + (candidates['lon'] - n_lon)**2
+                candidates = candidates.sort_values('dist_to_new', ascending=True)
+                
+                for _, cand in candidates.iterrows():
+                    if current_loads[new_t] + cand['total_vol'] <= new_target + 15.0:
+                        old_t = cand['assigned_truck']
+                        stops.loc[stops['coord_key'] == cand['coord_key'], 'assigned_truck'] = new_t
+                        current_loads[new_t] += cand['total_vol']
+                        if old_t in current_loads:
+                            current_loads[old_t] -= cand['total_vol']
+
+        # จัดสรรจุดที่เหลือให้เข้ากับเป้าหมายของรถแต่ละคัน
         while True:
             assigned_any = False
             for t in active_trucks:
@@ -507,9 +533,9 @@ if df is not None and not df.empty:
         try:
             with open("truck.jpg", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทาง Two-Phase Absorption... 💧</div>'''
+            loader_html = f'''<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{encoded_string}" alt="รถกำลังวิ่ง..."><br>กำลังประมวลผลจัดสรรเส้นทาง Boundary Carve-out... 💧</div>'''
         except FileNotFoundError:
-            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทาง Two-Phase Absorption... 💧</div>'
+            loader_html = '<div class="custom-truck-loader">กำลังประมวลผลจัดสรรเส้นทาง Boundary Carve-out... 💧</div>'
             
         calc_placeholder.markdown(loader_html, unsafe_allow_html=True)
         
@@ -535,7 +561,7 @@ if df is not None and not df.empty:
             st.markdown("**ก่อนปรับโครงสร้างสายส่ง**")
             st.dataframe(sum_before, use_container_width=True)
         with col2:
-            st.markdown("**หลังปรับโครงสร้าง (Two-Phase Absorption)**")
+            st.markdown("**หลังปรับโครงสร้าง (Boundary Carve-out Zoning)**")
             st.dataframe(sum_after, use_container_width=True)
             
         # 🗺️ 1. แผนที่เชิงพื้นที่ (แสดงก่อนตารางวิเคราะห์โหลดรายวันตามที่ต้องการ)
@@ -579,7 +605,7 @@ if df is not None and not df.empty:
             components.html(m1.get_root().render(), height=450)
 
         with map_col2:
-            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Two-Phase Zoning)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px;'>โซนการวิ่งสายใหม่ (Boundary Carve-out Zoning)</div>", unsafe_allow_html=True)
             m2 = folium.Map(location=[c_lat, c_lon], zoom_start=12 if color_mode=='truck' else 14)
             plugins.Fullscreen(position='topright').add_to(m2)
             for _, r in map_df_after.iterrows():
