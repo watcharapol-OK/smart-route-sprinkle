@@ -86,6 +86,23 @@ st.markdown('''
             border-radius: 12px !important;
             font-weight: 500;
         }
+        /* แก้ไข: เดิม "> div" เจาะจงแค่ลูกชั้นเดียว แต่ข้อความค่าที่เลือกจริงๆ ซ้อนลึกกว่านั้น 2-3 ชั้น
+           (เช่น "ยอด(ถัง/เดือน)" ในกล่อง selectbox ที่ปิดอยู่) ทำให้สีตัวอักษรหลุด ไปรับสีอื่นที่กลืนพื้นหลัง
+           ตอนนี้บังคับสีให้ทุก element ที่อยู่ข้างในกล่อง select/multiselect (ไม่ว่าจะซ้อนลึกแค่ไหน) */
+        div[data-baseweb="select"] * {
+            color: #FFFFFF !important;
+        }
+        div[data-baseweb="select"] [class*="placeholder"] {
+            color: #CBD5E1 !important;
+        }
+        /* ป้ายชื่อ (tag/chip) ของค่าที่เลือกในช่อง multiselect เช่นรายชื่อรหัส VIP ที่ล็อกไว้ */
+        div[data-baseweb="tag"] {
+            background: rgba(212, 175, 55, 0.28) !important;
+            border: 1px solid #D4AF37 !important;
+        }
+        div[data-baseweb="tag"] * {
+            color: #FFFFFF !important;
+        }
         input::placeholder { color: #CBD5E1 !important; opacity: 1 !important; }
         input:focus, div[data-baseweb="select"] > div:focus-within {
             border-color: #FFD700 !important;
@@ -106,6 +123,12 @@ st.markdown('''
             border-bottom: 1px solid #E2E8F0 !important;
         }
         div[role="option"] > div, div[role="option"] span { color: #0F172A !important; font-weight: 500 !important; }
+        /* แก้ไข: กล่องแจ้งเตือน (info/warning/success/error) เดิมโดนกฎ "div,span {color:#FFF}" ด้านบน
+           บังคับตัวอักษรขาว ซึ่งพื้นหลังกล่องแจ้งเตือนของ Streamlit เป็นโทนอ่อน (เหลือง/เขียว/แดงอ่อน)
+           ทำให้ตัวหนังสือขาวกลืนไปกับพื้นหลังอ่อนเช่นกัน ตอนนี้บังคับให้เป็นตัวหนังสือเข้มอ่านง่ายแทน */
+        div[data-testid="stNotification"], div[data-testid="stNotification"] * {
+            color: #0F172A !important;
+        }
         div[role="option"]:hover { background-color: #FFF8E1 !important; color: #000B18 !important; }
         div[role="option"]:hover div, div[role="option"]:hover span { color: #000B18 !important; }
         div[role="option"][aria-selected="true"] { background-color: #FFD700 !important; color: #000B18 !important; }
@@ -460,19 +483,23 @@ if df is not None and not df.empty:
                 for d in d_list: daily[t][d] += per_day
             return daily
 
-        for _pass in range(4):
+        # แก้ไข: บั๊กสำคัญ — เดิม "if daily[t][d] > ESCALATE_THRESHOLD: continue" ทำให้วันที่โหลดเกิน 160
+        # ถูกข้ามไปเลยไม่พยายามเกลี่ยแม้แต่น้อย (ตั้งใจจะ "ยอมรับเป็นรอบ 3" แต่ดันเขียนเป็น "ข้ามทันที")
+        # ผลคือวันที่หนักมากๆ (เช่น 271 ถัง) ไม่ถูกแตะเลย ทั้งที่ควรพยายามเกลี่ยลงมาให้ได้มากที่สุดก่อน
+        # ค่อยยอมรับเป็นรอบ 3 (180-190) ก็ต่อเมื่อเกลี่ยจนสุดความสามารถแล้วยังลงไม่ถึง
+        # ตอนนี้พยายามเกลี่ยทุกวันที่เกินเพดานเสมอ โดยจัดการวันที่หนักที่สุดก่อน (worst-day-first)
+        # และเพิ่มจำนวนรอบเป็น 10 รอบ เพื่อรองรับกรณีเบี้ยวหนักที่ต้องย้ายลูกค้าหลายคน
+        for _pass in range(10):
             daily = compute_daily()
             changed = False
             for t in active_trucks_list:
-                for d in range(6):
+                day_order = np.argsort(-daily[t])  # เรียงจากวันหนักสุดไปเบาสุด จัดการวันแย่สุดก่อน
+                for d in day_order:
                     if daily[t][d] <= MAX_DAY_CAP:
                         continue
-                    if daily[t][d] > ESCALATE_THRESHOLD:
-                        # เกิน 160 แล้ว ปล่อยให้เป็นรอบ 3 (180-190) ไม่ฝืนเกลี่ยต่อ ตามกฎข้อ 5
-                        continue
                     target_d = int(np.argmin(daily[t]))
-                    if target_d == d or daily[t][target_d] >= MAX_DAY_CAP - 10:
-                        continue
+                    if target_d == d or daily[t][target_d] >= MAX_DAY_CAP - 5:
+                        continue  # ไม่มีวันที่ยังว่างพอให้ย้ายไปแล้ว
                     movable = [idx for idx in idx_list
                                if opt_df.at[idx, 'เบอร์รถใหม่'] == t and not opt_df.at[idx, 'is_locked']
                                and d in assigned_days[idx] and len(assigned_days[idx]) <= 3
@@ -563,6 +590,49 @@ if df is not None and not df.empty:
         except Exception:
             return None
 
+    def cleanup_stray_points(stops_df, active_trucks_list, loads, targets_dict, tol_units):
+        """แก้ปัญหา: จุดเดี่ยวๆ/กลุ่มเล็กๆ ที่หลุดไปไกลจากกลุ่มก้อนหลักของรถตัวเอง (เกาะเดี่ยวรอบนอก)
+        แต่จริงๆ อยู่ใกล้รถคันอื่นมากกว่ามาก — ย้ายไปอยู่กับรถที่ใกล้กว่าจริงๆ แทน (ถ้ายังพอมีที่ว่าง)
+        เพื่อไม่ให้จุดกระจัดกระจายรอบนอกที่ควรเป็นของรถเดียวกันถูกแบ่งแยกกันคนละคัน"""
+        stops_df = stops_df.copy()
+        for _pass in range(3):
+            changed = False
+            for t in active_trucks_list:
+                t_mask = (stops_df['assigned_truck'] == t) & (~stops_df['is_locked'])
+                t_stops = stops_df[t_mask]
+                if len(t_stops) < 3:
+                    continue
+                c_lat, c_lon = t_stops['lat'].mean(), t_stops['lon'].mean()
+                dists = np.sqrt((t_stops['lat'] - c_lat) ** 2 + (t_stops['lon'] - c_lon) ** 2)
+                radius = dists.median() * 3 + 1e-6
+                stray_idx = t_stops.index[dists > radius]
+                for idx in stray_idx:
+                    s = stops_df.loc[idx]
+                    best_t, best_d = None, float('inf')
+                    for ot in active_trucks_list:
+                        if ot == t:
+                            continue
+                        ot_stops = stops_df[stops_df['assigned_truck'] == ot]
+                        if ot_stops.empty:
+                            continue
+                        oc_lat, oc_lon = ot_stops['lat'].mean(), ot_stops['lon'].mean()
+                        d = (s['lat'] - oc_lat) ** 2 + (s['lon'] - oc_lon) ** 2
+                        if d < best_d:
+                            best_d, best_t = d, ot
+                    if best_t is None:
+                        continue
+                    own_d = (s['lat'] - c_lat) ** 2 + (s['lon'] - c_lon) ** 2
+                    headroom_ok = (loads.get(best_t, 0.0) + s['total_vol']) <= targets_dict.get(best_t, 0.0) + tol_units * 1.5
+                    # ต้องใกล้รถอื่นกว่าอย่างมีนัยสำคัญ (ไม่ใช่ใกล้กว่านิดเดียว) ถึงจะย้าย กันย้ายไปมาไม่จบ
+                    if best_d < own_d * 0.6 and headroom_ok:
+                        stops_df.at[idx, 'assigned_truck'] = best_t
+                        loads[t] = loads.get(t, 0.0) - s['total_vol']
+                        loads[best_t] = loads.get(best_t, 0.0) + s['total_vol']
+                        changed = True
+            if not changed:
+                break
+        return stops_df, loads
+
     # ---------------------------------------------------------
     # 🧠 สมองกลหลัก: Unified Pool & Hard-Cap Zoning Engine
     # ลำดับความสำคัญ: 1) VIP/Manual Lock  2) Core Preservation Lock  3) (ทำต่อใน smooth_daily_loads)
@@ -586,7 +656,7 @@ if df is not None and not df.empty:
         if has_base: targets[base_t] = 0.0
         tolerance_units = (tol_pct / 100.0) * MONTHLY_CAPACITY_PER_TRUCK
 
-        stops = opt_df.groupby('coord_key').agg(
+        stops_base = opt_df.groupby('coord_key').agg(
             lat=(lat_col, 'first'),
             lon=(lon_col, 'first'),
             total_vol=(vol_col, 'sum'),
@@ -596,23 +666,31 @@ if df is not None and not df.empty:
 
         # แก้ไข: เตือนถ้ามี "จุดจอด" (พิกัดเดียวกัน) ที่ยอดรวมใหญ่กว่าความจุของทุกคันรวมกัน —
         # กรณีนี้จุดนั้นจะตกไป Overflow เสมอไม่ว่าจะตั้งค่ายังไง เพราะเป็นก้อนที่แบ่งแยกไม่ได้
-        if not stops.empty:
-            max_stop_vol = stops['total_vol'].max()
+        if not stops_base.empty:
+            max_stop_vol = stops_base['total_vol'].max()
             max_single_target = max(targets.values()) if targets else 0
             if max_stop_vol > max_single_target and max_single_target > 0:
                 st.warning(f"⚠️ พบจุดพิกัดที่มียอดรวม {max_stop_vol:,.0f} ถัง/เดือน (ลูกค้าหลายรายพิกัดชนกัน) ซึ่งมากกว่าความจุสูงสุดต่อคันที่ตั้งไว้ ({max_single_target:,.0f}) จุดนี้จะตกไป '{OVERFLOW_LABEL}' เสมอ — ควรตรวจสอบพิกัด GPS ของลูกค้ากลุ่มนี้")
 
         # -------------------------------------------------------------
         # PRIORITY 2: Core Preservation — ล็อกกลุ่มลูกค้าแกนกลาง (เกาะกลุ่มแน่นใกล้ศูนย์กลาง
-        # ของรถเดิม ตามสัดส่วนยอด core_ratio) ให้อยู่กับรถเดิม ไม่ยุ่งเกี่ยว เหลือแค่รอบนอกให้ดึงไปจัดใหม่
+        # ของรถเดิม ตามสัดส่วนยอด) ให้อยู่กับรถเดิม เหลือแค่รอบนอกให้ดึงไปจัดใหม่
         # รถที่ถูกยุบ (base_t) ไม่มี core lock เลย เพราะลูกค้าทั้งหมดต้องถูกจัดสรรใหม่อยู่แล้ว
+        #
+        # แก้ไข (ใหม่): core lock ตายตัวที่ % เดียวกันทุกคัน เคยชนกับ PRIORITY 4 (Strict Target
+        # Matching) รุนแรง — ถ้าเป้าหมายสไลเดอร์ของรถคันหนึ่งต่างจากยอดเดิมมาก แต่ core lock ยังกันไว้
+        # ที่ % เท่าเดิม แกนกลางเพียงอย่างเดียวอาจเกิน/ต่ำกว่าเป้าไปแล้ว (เช่น ตั้ง 35% แต่ได้ 53%)
+        # ตอนนี้เพิ่มลูปลดสัดส่วน core ทีละขั้นโดยอัตโนมัติถ้ายังหลุดค่าเผื่อ (tolerance) จนกว่าจะเข้าเกณฑ์
+        # หรือแตะ "พื้นขั้นต่ำ" ที่ยังคงหลักการ core preservation ไว้บ้าง (ไม่ปล่อยแกนกลางออกหมด)
         # -------------------------------------------------------------
-        core_keys = set()
-        if core_ratio > 0:
+        def compute_core_keys(ratio):
+            keys = set()
+            if ratio <= 0:
+                return keys
             for t in available_trucks:
                 if t == base_t:
                     continue
-                t_stops = stops[stops['orig_truck'] == t].copy()
+                t_stops = stops_base[stops_base['orig_truck'] == t].copy()
                 if t_stops.empty:
                     continue
                 c_lat, c_lon = t_stops['lat'].mean(), t_stops['lon'].mean()
@@ -620,38 +698,43 @@ if df is not None and not df.empty:
                 t_stops = t_stops.sort_values('dist')
                 t_stops['cum_vol'] = t_stops['total_vol'].cumsum()
                 total_t_vol = max(1e-6, t_stops['total_vol'].sum())
-                core_mask = (t_stops['cum_vol'] / total_t_vol) <= (core_ratio / 100.0)
+                core_mask = (t_stops['cum_vol'] / total_t_vol) <= (ratio / 100.0)
                 if not core_mask.any() and len(t_stops) > 0:
                     core_mask.iloc[0] = True
-                core_keys.update(t_stops.loc[core_mask, 'coord_key'].tolist())
-
-        stops['is_core_locked'] = stops['coord_key'].isin(core_keys)
-        stops['is_locked'] = stops['has_vip_lock'] | stops['is_core_locked']
-        opt_df['is_locked'] = opt_df['is_vip_locked'] | opt_df['coord_key'].isin(core_keys)
+                keys.update(t_stops.loc[core_mask, 'coord_key'].tolist())
+            return keys
 
         seeds = {}
         for t in available_trucks:
             if t == base_t: continue
-            t_stops = stops[stops['orig_truck'] == t]
+            t_stops = stops_base[stops_base['orig_truck'] == t]
             if not t_stops.empty:
                 seeds[t] = (t_stops['lat'].mean(), t_stops['lon'].mean())
 
-        branch_lat = stops['lat'].mean()
-        branch_lon = stops['lon'].mean()
+        branch_lat = stops_base['lat'].mean()
+        branch_lon = stops_base['lon'].mean()
 
+        # แก้ไข: เดิม seed ของรถใหม่ = ค่าเฉลี่ยของ seed รถอื่นทั้งหมด ซึ่งมักตกอยู่ "กลางพื้นที่" ของ
+        # ทุกคันพอดี ทำให้รถใหม่แย่งพื้นที่ตรงกลางไปจากรถเดิมที่อาจมีแกนกลางอยู่แถวนั้นอยู่แล้ว — ตรงกับ
+        # ปัญหา "รถเดิมโดนล้อมอยู่กลางพื้นที่" ที่พบ ตอนนี้ใช้จุดศูนย์กลางของ "รอบนอกที่ยังว่าง" (periphery
+        # pool ตาม core ratio ที่ตั้งไว้) แทน เพราะเป็นตำแหน่งที่งานที่จะจัดสรรให้จริงๆ กระจุกตัวอยู่
         if new_t:
-            if seeds:
+            core_keys_for_seed = compute_core_keys(core_ratio)
+            periphery_stops = stops_base[~stops_base['coord_key'].isin(core_keys_for_seed)]
+            if not periphery_stops.empty:
+                seeds[new_t] = (periphery_stops['lat'].mean(), periphery_stops['lon'].mean())
+            elif seeds:
                 seeds[new_t] = (np.mean([s[0] for s in seeds.values()]), np.mean([s[1] for s in seeds.values()]))
             else:
                 seeds[new_t] = (branch_lat, branch_lon)
 
         # แก้ไข (ใหม่): คำนวณระยะทางถนนจริงจาก "จุดจอดทุกจุด" ไปยัง "seed คงที่ของแต่ละคัน" ครั้งเดียว
-        # ก่อนเริ่มจัดสรร (ไม่เรียก API ซ้ำทุกรอบ กันโดน rate-limit) ถ้าเรียกไม่สำเร็จจะ fallback
-        # เป็นระยะทางเส้นตรงอัตโนมัติพร้อมแจ้งเตือน — ตามกฎข้อ 3 "อิงเส้นทางจราจรจริง"
+        # ก่อนเริ่มจัดสรร (ไม่เรียก API ซ้ำทุกรอบ/ทุกครั้งที่ลด core ratio กันโดน rate-limit) ถ้าเรียกไม่
+        # สำเร็จจะ fallback เป็นระยะทางเส้นตรงอัตโนมัติ — ตามกฎข้อ 3 "อิงเส้นทางจราจรจริง"
         road_dist_matrix = None
-        if use_road_dist and active_trucks and not stops.empty:
+        if use_road_dist and active_trucks and not stops_base.empty:
             dest_coords = [seeds.get(t, (branch_lat, branch_lon)) for t in active_trucks]
-            src_coords = list(zip(stops['lat'].tolist(), stops['lon'].tolist()))
+            src_coords = list(zip(stops_base['lat'].tolist(), stops_base['lon'].tolist()))
             if road_prov == 'osrm':
                 mat = fetch_osrm_distance_matrix(tuple(src_coords), tuple(dest_coords), osrm_server_url)
             elif gmaps_key:
@@ -670,110 +753,132 @@ if df is not None and not df.empty:
                     return dval
             return (s_lat - centroid_lat) ** 2 + (s_lon - centroid_lon) ** 2
 
-        # เริ่มต้นให้ทุกจุดเป็น None (Unassigned Pool) ยกเว้นจุดที่ล็อกไว้ (VIP หรือ Core)
-        stops['assigned_truck'] = None
-        
-        # 1. จัดสรรจุดที่ล็อก (VIP / Manual / Core Lock) — ทั้งหมดนี้ priority สูงกว่าการจัดสรรใหม่เสมอ
-        # แก้ไข: เดิมถ้ารถต้นทางของลูกค้าที่ล็อกถูกยุบไป จะส่งไป active_trucks[0] แบบสุ่ม/ไม่สนใจภูมิศาสตร์
-        # ตอนนี้ถ้ารถต้นทางไม่มีแล้ว จะหารถที่ "ใกล้ที่สุด" จาก seed แทน (ใช้ระยะทางถนนจริงถ้าเปิดใช้งาน)
-        for idx, s in stops.iterrows():
-            if s['is_locked']:
-                orig = s['orig_truck']
-                if orig in active_trucks and orig != base_t:
-                    assigned = orig
-                else:
+        def run_zoning_pass(ratio):
+            """รันการจัดสรรทั้งหมด (ล็อก -> จัดสรรรอบนอก -> fallback) ด้วย core ratio ที่กำหนด"""
+            pass_stops = stops_base.copy()
+            core_keys = compute_core_keys(ratio)
+            pass_stops['is_core_locked'] = pass_stops['coord_key'].isin(core_keys)
+            pass_stops['is_locked'] = pass_stops['has_vip_lock'] | pass_stops['is_core_locked']
+            pass_stops['assigned_truck'] = None
+
+            # 1. จัดสรรจุดที่ล็อก (VIP / Manual / Core Lock) — priority สูงกว่าการจัดสรรใหม่เสมอ
+            for idx, s in pass_stops.iterrows():
+                if s['is_locked']:
+                    orig = s['orig_truck']
+                    if orig in active_trucks and orig != base_t:
+                        assigned = orig
+                    else:
+                        best_t, best_d = None, float('inf')
+                        for t in active_trucks:
+                            ref_lat, ref_lon = seeds.get(t, (branch_lat, branch_lon))
+                            d = get_dist(idx, t, s['lat'], s['lon'], ref_lat, ref_lon)
+                            if d < best_d:
+                                best_d, best_t = d, t
+                        assigned = best_t if best_t else (active_trucks[0] if active_trucks else None)
+                    pass_stops.at[idx, 'assigned_truck'] = assigned
+
+            loads = {t: 0.0 for t in active_trucks}
+            for _, s in pass_stops[pass_stops['assigned_truck'].notna()].iterrows():
+                t = s['assigned_truck']
+                if t in active_trucks: loads[t] += s['total_vol']
+
+            # 2. จัดสรรรอบนอก: หาว่าจุดที่ยังไม่ถูก assign แต่ละจุด "ใกล้คันไหนที่สุดจริงๆ" เทียบทุกคัน
+            # ที่ยังมีที่ว่างพร้อมกัน (แบ่งเขต Voronoi ที่มีเพดานความจุ) แล้วจัดจากคู่ใกล้สุดก่อน
+            MAX_ROUNDS = 60
+            for _round in range(MAX_ROUNDS):
+                eligible_trucks = [t for t in active_trucks if targets.get(t, 0.0) > loads[t]]
+                if not eligible_trucks:
+                    break
+                centroids = {}
+                for t in active_trucks:
+                    t_assigned = pass_stops[pass_stops['assigned_truck'] == t]
+                    if t_assigned.empty:
+                        centroids[t] = seeds.get(t, (branch_lat, branch_lon))
+                    else:
+                        centroids[t] = (t_assigned['lat'].mean(), t_assigned['lon'].mean())
+
+                candidate_indices = pass_stops[pass_stops['assigned_truck'].isna()].index
+                if len(candidate_indices) == 0:
+                    break
+
+                scored = []
+                for idx in candidate_indices:
+                    s_row = pass_stops.loc[idx]
                     best_t, best_d = None, float('inf')
-                    for t in active_trucks:
-                        ref_lat, ref_lon = seeds.get(t, (branch_lat, branch_lon))
-                        d = get_dist(idx, t, s['lat'], s['lon'], ref_lat, ref_lon)
+                    for t in eligible_trucks:
+                        if loads[t] + s_row['total_vol'] > targets[t] + tolerance_units:
+                            continue
+                        d = get_dist(idx, t, s_row['lat'], s_row['lon'], centroids[t][0], centroids[t][1])
                         if d < best_d:
                             best_d, best_t = d, t
-                    assigned = best_t if best_t else (active_trucks[0] if active_trucks else None)
-                stops.at[idx, 'assigned_truck'] = assigned
+                    if best_t is not None:
+                        scored.append((best_d, idx, best_t))
 
-        current_loads = {t: 0.0 for t in active_trucks}
-        for _, s in stops[stops['assigned_truck'].notna()].iterrows():
-            t = s['assigned_truck']
-            if t in active_trucks: current_loads[t] += s['total_vol']
+                if not scored:
+                    break
+                scored.sort(key=lambda x: x[0])
 
-        # 2. แก้ไข: บั๊กสำคัญที่ทำให้โซนสีปะปน/ทับซ้อนกัน — เดิมให้ "รถแต่ละคันหยิบจุดที่ใกล้ตัวเองที่สุด"
-        # ทีละคันสลับกันไปเรื่อยๆ โดยแต่ละคันเทียบระยะห่างจากตัวเองเท่านั้น ไม่เทียบกับคันอื่นเลย
-        # ทำให้รถ 2 คันที่ seed อยู่ใกล้กันแย่งหยิบจุดสลับกันไปมาในโซนเดียวกัน (เห็นเป็นสีปนกันเป็นจุดๆ)
-        # ตอนนี้เปลี่ยนเป็น: ในแต่ละรอบ หาว่าจุดที่ยังไม่ถูก assign แต่ละจุด "ใกล้คันไหนที่สุดจริงๆ"
-        # โดยเทียบกับทุกคันที่ยังมีที่ว่างพร้อมกัน (เหมือนแบ่งเขต Voronoi ที่มีเพดานความจุ) แล้วเรียง
-        # จากคู่ (จุด, คัน) ที่ใกล้กันที่สุดไปไกลสุดก่อนค่อยจัดสรรจริง ลดการแย่ง/กระโดดข้ามโซนกัน
-        # PRIORITY 4: ใช้ tolerance_units (จาก % ค่าเผื่อที่ตั้งในไซด์บาร์) แทนเลข +10 ตายตัวเดิม
-        MAX_ROUNDS = 60
-        for _round in range(MAX_ROUNDS):
-            eligible_trucks = [t for t in active_trucks if targets.get(t, 0.0) > current_loads[t]]
-            if not eligible_trucks:
-                break
-
-            centroids = {}
-            for t in active_trucks:
-                t_assigned = stops[stops['assigned_truck'] == t]
-                if t_assigned.empty:
-                    centroids[t] = seeds.get(t, (branch_lat, branch_lon))
-                else:
-                    centroids[t] = (t_assigned['lat'].mean(), t_assigned['lon'].mean())
-
-            candidate_indices = stops[stops['assigned_truck'].isna()].index
-            if len(candidate_indices) == 0:
-                break
-
-            scored = []
-            for idx in candidate_indices:
-                s_row = stops.loc[idx]
-                best_t, best_d = None, float('inf')
-                for t in eligible_trucks:
-                    if current_loads[t] + s_row['total_vol'] > targets[t] + tolerance_units:
+                assigned_any = False
+                for _, idx, t in scored:
+                    if pd.notna(pass_stops.at[idx, 'assigned_truck']):
                         continue
-                    d = get_dist(idx, t, s_row['lat'], s_row['lon'], centroids[t][0], centroids[t][1])
-                    if d < best_d:
-                        best_d, best_t = d, t
-                if best_t is not None:
-                    scored.append((best_d, idx, best_t))
+                    s_row = pass_stops.loc[idx]
+                    if loads[t] + s_row['total_vol'] > targets[t] + tolerance_units:
+                        continue  # เต็มไปแล้วระหว่างรอบนี้ รอบหน้าจะหาคันที่ใกล้รองลงมาให้ใหม่
+                    pass_stops.at[idx, 'assigned_truck'] = t
+                    loads[t] += s_row['total_vol']
+                    assigned_any = True
+                if not assigned_any:
+                    break
 
-            if not scored:
-                break
-
-            scored.sort(key=lambda x: x[0])
-
-            assigned_any = False
-            for _, idx, t in scored:
-                if pd.notna(stops.at[idx, 'assigned_truck']):
+            # จุดที่ assign แบบพอดีเป๊ะไม่ได้ ลองใส่ให้รถที่มีที่ว่างเหลือมากที่สุด (best-fit ผ่อนปรน)
+            # ก่อนจะยอมให้ตกเป็น Overflow จริงๆ
+            remaining = pass_stops[pass_stops['assigned_truck'].isna()].index.tolist()
+            for idx in remaining:
+                s_row = pass_stops.loc[idx]
+                eligible = [t for t in active_trucks if targets.get(t, 0.0) > 0.0]
+                if not eligible:
                     continue
-                s_row = stops.loc[idx]
-                if current_loads[t] + s_row['total_vol'] > targets[t] + tolerance_units:
-                    continue  # เต็มไปแล้วระหว่างรอบนี้ รอบหน้าจะหาคันที่ใกล้รองลงมาให้ใหม่
-                stops.at[idx, 'assigned_truck'] = t
-                current_loads[t] += s_row['total_vol']
-                assigned_any = True
+                best_t = max(eligible, key=lambda t: targets[t] - loads[t])
+                headroom = targets[best_t] - loads[best_t]
+                if headroom > -0.2 * MONTHLY_CAPACITY_PER_TRUCK:
+                    pass_stops.loc[idx, 'assigned_truck'] = best_t
+                    loads[best_t] += s_row['total_vol']
 
-            if not assigned_any: break
+            pass_stops.loc[pass_stops['assigned_truck'].isna(), 'assigned_truck'] = OVERFLOW_LABEL
+            return pass_stops, loads
 
-        # แก้ไข: เดิมจุดที่เหลือ (assign แบบพอดีเป๊ะไม่ได้เพราะเกิน target+tolerance ทุกคัน) จะถูกโยนเข้า
-        # Overflow ทันทีโดยไม่ลองทางเลือกอื่น ทั้งที่รถบางคันอาจมีที่ว่างเหลือพอสมควร (แค่ไม่ถึงขนาดพอดี)
-        # ตอนนี้เพิ่ม fallback pass: ลองใส่จุดที่เหลือให้รถที่มี "ที่ว่างเหลือมากที่สุด" (best-fit แบบผ่อนปรน)
-        # ก่อนจะยอมให้ตกเป็น Overflow จริงๆ
-        remaining = stops[stops['assigned_truck'].isna()].index.tolist()
-        for idx in remaining:
-            s_row = stops.loc[idx]
-            eligible = [t for t in active_trucks if targets.get(t, 0.0) > 0.0]
-            if not eligible:
-                continue
-            best_t = max(eligible, key=lambda t: targets[t] - current_loads[t])
-            headroom = targets[best_t] - current_loads[best_t]
-            # ยอมให้เกิน target ได้ไม่เกิน 20% ของความจุมาตรฐาน เพื่อไม่ทิ้งลูกค้าไปกองไว้เฉยๆ ถ้าพอมีที่ว่างเหลือบ้าง
-            if headroom > -0.2 * MONTHLY_CAPACITY_PER_TRUCK:
-                stops.loc[idx, 'assigned_truck'] = best_t
-                current_loads[best_t] += s_row['total_vol']
+        CORE_RATIO_FLOOR = 20
+        CORE_RATIO_STEP = 10
+        ratio_used = core_ratio
+        best_stops, best_loads, best_ratio, best_violation = None, None, core_ratio, float('inf')
+        while True:
+            try_stops, try_loads = run_zoning_pass(ratio_used)
+            eligible_for_check = [t for t in active_trucks if targets.get(t, 0.0) > 0]
+            violation = sum(max(0.0, abs(try_loads.get(t, 0.0) - targets[t]) - tolerance_units) for t in eligible_for_check)
+            within_all = violation <= 1e-6
+            # แก้ไข: บั๊กเดิม — เก็บผลของ "ครั้งแรก" ไว้เป็น best เสมอ เว้นแต่จะมีครั้งที่ผ่าน tolerance
+            # ครบทุกคันเป๊ะๆ (within_all=True) เท่านั้น ทำให้ core ratio ที่ลดลงระหว่างทางไม่เคยถูกใช้จริง
+            # เลยแม้จะลดค่าเผื่อ (violation) ลงได้มากก็ตาม ตอนนี้เก็บ "ครั้งที่ดีที่สุดเท่าที่ลองมา" แทน
+            if violation < best_violation:
+                best_stops, best_loads, best_ratio, best_violation = try_stops, try_loads, ratio_used, violation
+            if within_all or ratio_used <= CORE_RATIO_FLOOR:
+                break
+            ratio_used = max(CORE_RATIO_FLOOR, ratio_used - CORE_RATIO_STEP)
 
-        # จุดที่ยังเหลือแม้ fallback แล้วก็ยังไม่มีที่ไปจริงๆ ให้ปัดไป Overflow
-        stops.loc[stops['assigned_truck'].isna(), 'assigned_truck'] = OVERFLOW_LABEL
+        if best_ratio < core_ratio:
+            st.info(f"ℹ️ ระบบลดสัดส่วนแกนกลางที่ล็อก (Core %) จาก {core_ratio}% เหลือ {best_ratio}% โดยอัตโนมัติ เพื่อพยายามให้ยอดจริงเข้าใกล้เป้าหมายสไลเดอร์มากขึ้น (ยังคงหลักการ core preservation ไว้บางส่วน ไม่ปล่อยหมด)")
+
+        stops, current_loads = best_stops, best_loads
+
+        # ล้างจุดเดี่ยวๆ ที่หลุดไปไกลจากกลุ่มก้อนหลักของรถตัวเอง (เกาะเดี่ยวรอบนอก) ให้ไปอยู่กับรถที่อยู่
+        # ใกล้กว่าจริงๆ แทน — แก้ปัญหาจุดกระจัดกระจายรอบนอกที่ควรเป็นของรถเดียวกันแต่ดันแยกกันอยู่
+        stops, current_loads = cleanup_stray_points(stops, active_trucks, current_loads, targets, tolerance_units)
 
         stop_to_truck = dict(zip(stops['coord_key'], stops['assigned_truck']))
         opt_df['เบอร์รถใหม่'] = opt_df['coord_key'].map(stop_to_truck)
+        core_locked_keys = set(stops.loc[stops['is_core_locked'], 'coord_key']) if 'is_core_locked' in stops.columns else set()
+        opt_df['is_locked'] = opt_df['is_vip_locked'] | opt_df['coord_key'].isin(core_locked_keys)
 
         opt_df['สถานะ'] = np.where(opt_df[truck_col] == opt_df['เบอร์รถใหม่'], 'คงเดิม', 'ย้ายไปสาย ' + opt_df['เบอร์รถใหม่'])
         opt_df.loc[opt_df['is_locked'], 'สถานะ'] = opt_df.loc[opt_df['is_locked'], 'สถานะ'] + ' 🔒'
@@ -912,13 +1017,14 @@ if df is not None and not df.empty:
             components.html(m2.get_root().render(), height=450)
 
         st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์-เสาร์)")
-        st.caption(f"🟢 เหมาะสม {OPTIMAL_MIN}-{OPTIMAL_MAX} | 🟡 ควรเลี่ยง {AVOID_MIN}-{AVOID_MAX} | 🔴 เกินเพดาน >{MAX_DAY_CAP} | 🚚 รอบ 3 (ยอมรับ) {ESCALATE_TARGET_MIN}-{ESCALATE_TARGET_MAX}")
+        st.caption(f"🟢 เหมาะสม {OPTIMAL_MIN}-{OPTIMAL_MAX} | 🟡 ควรเลี่ยง {AVOID_MIN}-{AVOID_MAX} | ⚪ เบาเกิน <{AVOID_MIN} | 🔴 เกินเพดาน >{MAX_DAY_CAP} | 🚚 รอบ 3 (ยอมรับ) {ESCALATE_TARGET_MIN}-{ESCALATE_TARGET_MAX} | 🆘 เกินรอบ3 ต้องทบทวน >{ESCALATE_TARGET_MAX}")
 
         def day_status(v):
-            if v > ESCALATE_THRESHOLD: return "🚚 รอบ3"
-            if v > MAX_DAY_CAP: return "🔴 เกิน"
+            if v > ESCALATE_TARGET_MAX: return "🆘 เกินรอบ3"
+            if v > MAX_DAY_CAP: return "🚚 รอบ3"
             if OPTIMAL_MIN <= v <= OPTIMAL_MAX: return "🟢 เหมาะสม"
             if AVOID_MIN <= v <= AVOID_MAX: return "🟡 เลี่ยง"
+            if v < AVOID_MIN: return "⚪ เบาเกิน"
             return ""
 
         daily_summary = []
