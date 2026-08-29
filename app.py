@@ -633,6 +633,57 @@ if df is not None and not df.empty:
                 break
         return stops_df, loads
 
+    def majority_vote_smoothing(stops_df, active_trucks_list, targets_dict, loads, tol_units, k=8, rounds=4, max_n=4000):
+        """แก้ปัญหา: จุดปะปนกันแบบละเอียด (checkerboard) ตรงรอยต่อระหว่างกลุ่มก้อนใหญ่ๆ ของ 2 คัน —
+        ปัญหานี้คนละแบบกับ "จุดเดี่ยวหลุดไกล" ที่ cleanup_stray_points จัดการ นี่คือจุดที่อยู่ใกล้กัน
+        เป็นกลุ่มแต่ถูกแบ่งสลับสีกันไปมาเพราะการ assign แบบ centroid ที่ขยับตัวทุกรอบ (คลาสสิกของ
+        capacitated greedy clustering) วิธีแก้: สำหรับแต่ละจุด ดูว่า "เพื่อนบ้านใกล้ที่สุด k ราย" (ไม่ว่าจะ
+        ล็อกหรือไม่) ส่วนใหญ่เป็นของรถคันไหน ถ้าเสียงข้างมากชัดเจนเป็นคันอื่น (ไม่ใช่คันปัจจุบัน) และ
+        ยังพอมีที่ว่าง ให้ย้ายไปตามเสียงข้างมาก คล้าย majority filter ที่ใช้ทำความสะอาดภาพแบ่งโซนพื้นที่"""
+        stops_df = stops_df.reset_index(drop=True)
+        n = len(stops_df)
+        if n < k + 2:
+            return stops_df, loads
+        if n > max_n:
+            st.info(f"ℹ️ ข้ามขั้นตอนขัดผิวรอยต่อโซน (majority-vote smoothing) เพราะจำนวนจุดจอด ({n:,}) มากเกินขีดจำกัด {max_n:,} จุด เพื่อไม่ให้ประมวลผลช้าเกินไป")
+            return stops_df, loads
+
+        coords = stops_df[['lat', 'lon']].values
+        diff = coords[:, None, :] - coords[None, :, :]
+        d2 = np.sum(diff ** 2, axis=2)
+        np.fill_diagonal(d2, np.inf)
+        neighbor_idx = np.argsort(d2, axis=1)[:, :k]
+
+        is_locked_arr = stops_df['is_locked'].values
+        vol_arr = stops_df['total_vol'].values
+
+        for _r in range(rounds):
+            changed = False
+            assigned = stops_df['assigned_truck'].values.copy()
+            for i in range(n):
+                if is_locked_arr[i]:
+                    continue  # จุดที่ล็อก (VIP/Core) ห้ามแตะต้องเด็ดขาด (Priority 1-2 สูงกว่าเรื่องความเรียบร้อยของโซน)
+                cur_t = assigned[i]
+                neigh_trucks = assigned[neighbor_idx[i]]
+                vals, counts = np.unique(neigh_trucks, return_counts=True)
+                maj_t = vals[np.argmax(counts)]
+                maj_count = counts.max()
+                if maj_t == cur_t or maj_t == OVERFLOW_LABEL:
+                    continue
+                if maj_count < k * 0.6:
+                    continue  # ต้องเป็นเสียงข้างมากชัดเจน (>=60%) กันแกว่งไปมาไม่จบ
+                vol = vol_arr[i]
+                headroom_ok = (loads.get(maj_t, 0.0) + vol) <= targets_dict.get(maj_t, 0.0) + tol_units * 1.5
+                if headroom_ok:
+                    loads[cur_t] = loads.get(cur_t, 0.0) - vol
+                    loads[maj_t] = loads.get(maj_t, 0.0) + vol
+                    assigned[i] = maj_t
+                    changed = True
+            stops_df['assigned_truck'] = assigned
+            if not changed:
+                break
+        return stops_df, loads
+
     # ---------------------------------------------------------
     # 🧠 สมองกลหลัก: Unified Pool & Hard-Cap Zoning Engine
     # ลำดับความสำคัญ: 1) VIP/Manual Lock  2) Core Preservation Lock  3) (ทำต่อใน smooth_daily_loads)
@@ -874,6 +925,11 @@ if df is not None and not df.empty:
         # ล้างจุดเดี่ยวๆ ที่หลุดไปไกลจากกลุ่มก้อนหลักของรถตัวเอง (เกาะเดี่ยวรอบนอก) ให้ไปอยู่กับรถที่อยู่
         # ใกล้กว่าจริงๆ แทน — แก้ปัญหาจุดกระจัดกระจายรอบนอกที่ควรเป็นของรถเดียวกันแต่ดันแยกกันอยู่
         stops, current_loads = cleanup_stray_points(stops, active_trucks, current_loads, targets, tolerance_units)
+
+        # ขัดผิวรอยต่อระหว่างโซน: จุดที่ปะปนกันแบบละเอียด (checkerboard) ตรงพรมแดนของ 2 คัน ให้ปรับตาม
+        # เสียงข้างมากของเพื่อนบ้านใกล้เคียง — แก้ปัญหาสีปนกันเป็นจุดๆ ตรงรอยต่อที่ cleanup ด้านบนจับไม่ได้
+        # (เพราะจุดพวกนี้ไม่ได้ "หลุดไปไกล" แค่สลับสีกันในบริเวณใกล้เคียงกัน)
+        stops, current_loads = majority_vote_smoothing(stops, active_trucks, targets, current_loads, tolerance_units)
 
         stop_to_truck = dict(zip(stops['coord_key'], stops['assigned_truck']))
         opt_df['เบอร์รถใหม่'] = opt_df['coord_key'].map(stop_to_truck)
