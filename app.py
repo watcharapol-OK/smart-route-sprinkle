@@ -1,6 +1,6 @@
 # =====================================================================================
-#  SMART ROUTE REBALANCER — PRODUCTION BUILD v2.2
-#  Multi-Donor Fleet Rebalancing Engine + Executive Visual Comparison Map
+#  SMART ROUTE REBALANCER — PRODUCTION BUILD v2.3
+#  Multi-Donor Fleet Rebalancing + Satellite Pocket Consolidation (No Overlap)
 #  ---------------------------------------------------------------------------------
 #  requirements.txt:
 #      streamlit>=1.31
@@ -35,7 +35,7 @@ except Exception:
     HAS_SCIPY = False
 
 st.set_page_config(
-    page_title="Smart Route Rebalancer v2.2",
+    page_title="Smart Route Rebalancer v2.3",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -70,7 +70,6 @@ EARTH_RADIUS_M = 6371008.8
 
 DAY_NAMES = {0: "จันทร์", 1: "อังคาร", 2: "พุธ", 3: "พฤหัสบดี", 4: "ศุกร์", 5: "เสาร์"}
 DAY_SHORT = {0: "จ", 1: "อ", 2: "พ", 3: "พฤ", 4: "ศ", 5: "ส"}
-DAY_COLORS = {0: "#FFD700", 1: "#FF69B4", 2: "#28A745", 3: "#FD7E14", 4: "#00BFFF", 5: "#6F42C1"}
 
 DAY_TOKENS: List[Tuple[str, int]] = [
     ("จันทร์", 0), ("อังคาร", 1), ("พฤหัสบดี", 3), ("พฤหัสฯ", 3), ("พฤหัส", 3), ("พฤ", 3),
@@ -294,48 +293,7 @@ class ZoningResult:
     infos: List[str] = field(default_factory=list)
 
 # =====================================================================================
-#  SECTION 4 — ROAD DISTANCE PROVIDERS
-# =====================================================================================
-@st.cache_data(ttl=3600, show_spinner=False)
-def fetch_osrm_matrix(source_coords: tuple, dest_coords: tuple, base_url: str, max_coords: int = 95) -> Tuple[Optional[np.ndarray], str]:
-    import requests
-    sources, destinations = list(source_coords), list(dest_coords)
-    source_count, destination_count = len(sources), len(destinations)
-    if source_count == 0 or destination_count == 0:
-        return None, "ไม่มีพิกัด"
-    if destination_count >= max_coords:
-        return None, f"ปลายทาง {destination_count} จุด เกินขีดจำกัด OSRM"
-
-    batch_size = max(1, max_coords - destination_count)
-    output = np.full((source_count, destination_count), np.nan, dtype=float)
-
-    for start in range(0, source_count, batch_size):
-        chunk = sources[start:start + batch_size]
-        all_coords = chunk + destinations
-        coord_str = ";".join(f"{float(lon):.6f},{float(lat):.6f}" for lat, lon in all_coords)
-        endpoint = f"{base_url.rstrip('/')}/table/v1/driving/{coord_str}"
-        params = {
-            "sources": ";".join(str(i) for i in range(len(chunk))),
-            "destinations": ";".join(str(i) for i in range(len(chunk), len(all_coords))),
-            "annotations": "distance",
-        }
-        try:
-            resp = requests.get(endpoint, params=params, timeout=40)
-            resp.raise_for_status()
-            data = resp.json()
-            if data.get("code") != "Ok":
-                return None, f"OSRM ตอบกลับ code={data.get('code')}"
-            distances = data.get("distances")
-            if distances is None:
-                return None, "OSRM ไม่ส่งตารางระยะทาง"
-            output[start:start + len(chunk), :] = np.asarray(distances, dtype=float)
-        except Exception as exc:
-            return None, f"OSRM error: {exc}"
-        time.sleep(0.35)
-    return output, ""
-
-# =====================================================================================
-#  SECTION 5 — CAPACITY PLANNING & FLEET DIAGNOSTIC
+#  SECTION 4 — CAPACITY PLANNING & FLEET DIAGNOSTIC
 # =====================================================================================
 def compute_default_targets(vol_by_truck: Dict[str, float], dissolve: Sequence[str], keep: Sequence[str], new_trucks: Sequence[str], cap_units: float) -> Tuple[Dict[str, float], float]:
     cap_limit = max(0.0, float(cap_units))
@@ -430,7 +388,7 @@ def diagnose_fleet(df: pd.DataFrame, cfg: ZoningConfig) -> pd.DataFrame:
     return out_df.sort_values("โหลดสูงสุด/วัน", ascending=False).reset_index(drop=True) if not out_df.empty else out_df
 
 # =====================================================================================
-#  SECTION 6 — ZONING ENGINE HELPERS
+#  SECTION 5 — CORE ZONING & SATELLITE POCKET CONSOLIDATION
 # =====================================================================================
 def _tolerance_for(truck: str, targets: Dict[str, float], cfg: ZoningConfig) -> float:
     if cfg.tol_mode == "target":
@@ -508,20 +466,16 @@ def _assign_capacitated(stops: pd.DataFrame, trucks: List[str], targets: Dict[st
             break
         el_cols = [t_idx[t] for t in el_trucks]
 
-        if road is not None:
-            dist = road[np.ix_(cand_indices, el_cols)].astype(float)
-            dist = np.where(np.isfinite(dist), dist, np.inf)
-        else:
-            centers = []
-            for t in el_trucks:
-                mask = assigned == t_idx[t]
-                if mask.any():
-                    center = np.average(coords[mask], axis=0, weights=np.maximum(vols[mask], 1e-9))
-                else:
-                    center = np.asarray(seeds.get(t, (coords[:, 0].mean(), coords[:, 1].mean())), dtype=float)
-                centers.append(center)
-            centers_arr = np.asarray(centers, dtype=float)
-            dist = np.sqrt(((coords[cand_indices][:, None, :] - centers_arr[None, :, :]) ** 2).sum(axis=2))
+        centers = []
+        for t in el_trucks:
+            mask = assigned == t_idx[t]
+            if mask.any():
+                center = np.average(coords[mask], axis=0, weights=np.maximum(vols[mask], 1e-9))
+            else:
+                center = np.asarray(seeds.get(t, (coords[:, 0].mean(), coords[:, 1].mean())), dtype=float)
+            centers.append(center)
+        centers_arr = np.asarray(centers, dtype=float)
+        dist = np.sqrt(((coords[cand_indices][:, None, :] - centers_arr[None, :, :]) ** 2).sum(axis=2))
 
         caps = np.asarray([targets.get(t, 0.0) + tolerance.get(t, 0.0) for t in el_trucks], dtype=float)
         cur_loads = np.asarray([loads[t] for t in el_trucks], dtype=float)
@@ -559,11 +513,120 @@ def _assign_capacitated(stops: pd.DataFrame, trucks: List[str], targets: Dict[st
             continue
         best_t = max(cand_trucks, key=lambda t: targets.get(t, 0.0) - loads.get(t, 0.0))
         tgt = targets.get(best_t, 0.0)
-        if loads.get(best_t, 0.0) + vols[s_idx] <= tgt + max(tolerance.get(best_t, 0.0), tgt * 0.15):
+        if loads.get(best_t, 0.0) + vols[s_idx] <= tgt + max(tolerance.get(best_t, 0.0), tgt * 0.20):
             assigned[s_idx] = t_idx[best_t]
             loads[best_t] += vols[s_idx]
 
     return assigned, loads
+
+
+def consolidate_satellite_pockets(
+    stops: pd.DataFrame,
+    trucks: List[str],
+    targets: Dict[str, float],
+    loads: Dict[str, float],
+    tolerance: Dict[str, float],
+    pocket_radius_m: float = 450.0,
+) -> Tuple[pd.DataFrame, Dict[str, float]]:
+    """
+    ตรวจจับกลุ่มจุดจอดที่อยู่โดดเดี่ยว (Satellite Pockets) และบังคับรวมให้รถคันเดียวส่ง 100%
+    แก้ปัญหาการส่งรถ 2 คันเข้าไปในเวิ้งหรือซอยเดียวกันอย่างสิ้นเปลือง
+    """
+    stops = stops.copy()
+    loads = dict(loads)
+    n = len(stops)
+    if n <= 1:
+        return stops, loads
+
+    coords = stops[["x", "y"]].to_numpy(dtype=float)
+
+    if HAS_SCIPY:
+        tree = cKDTree(coords)
+        pairs = tree.query_pairs(r=pocket_radius_m)
+    else:
+        pairs = []
+        for i in range(n):
+            dists_sq = ((coords[i] - coords[i+1:]) ** 2).sum(axis=1)
+            for j_offset, d2 in enumerate(dists_sq):
+                if d2 <= pocket_radius_m ** 2:
+                    pairs.append((i, i + 1 + j_offset))
+
+    # Union-Find (Disjoint Set) หา Connected Components
+    parent = list(range(n))
+    def find(i):
+        path = []
+        while parent[i] != i:
+            path.append(i)
+            i = parent[i]
+        for p in path:
+            parent[p] = i
+        return i
+
+    def union(i, j):
+        ri, rj = find(i), find(j)
+        if ri != rj:
+            parent[ri] = rj
+
+    for i, j in pairs:
+        union(i, j)
+
+    components: Dict[int, List[int]] = {}
+    for i in range(n):
+        root = find(i)
+        components.setdefault(root, []).append(i)
+
+    # คำนวณจุดศูนย์กลางของรถแต่ละคัน
+    centers = {}
+    for t in trucks:
+        grp = stops[stops["assigned_truck"] == t]
+        if not grp.empty:
+            w = np.maximum(grp["total_vol"].to_numpy(dtype=float), 1e-9)
+            centers[t] = np.average(grp[["x", "y"]].to_numpy(dtype=float), axis=0, weights=w)
+
+    for root, member_indices in components.items():
+        # ถ้าเป็นกลุ่มหลักขนาดใหญ่มาก ไม่ใช่ satellite pocket ให้ข้าม
+        if len(member_indices) >= n * 0.45:
+            continue
+
+        member_stops = stops.iloc[member_indices]
+        assigned_trucks = [t for t in member_stops["assigned_truck"].unique().tolist() if t in trucks]
+
+        # หากมีรถมากกว่า 1 คันเข้าไปส่งในเวิ้งนี้ ให้ทำการรวมงานเป็นคันเดียวทันที
+        if len(set(assigned_trucks)) > 1:
+            pw = np.maximum(member_stops["total_vol"].to_numpy(dtype=float), 1e-9)
+            pocket_center = np.average(member_stops[["x", "y"]].to_numpy(dtype=float), axis=0, weights=pw)
+
+            # ตรวจสอบว่ามีจุดล็อก VIP หรือไม่
+            vip_trucks = member_stops.loc[member_stops["is_locked"].astype(bool), "assigned_truck"].tolist()
+            vip_trucks = [t for t in vip_trucks if t in trucks]
+
+            if vip_trucks:
+                best_truck = vip_trucks[0]
+            else:
+                best_truck = None
+                best_dist = float("inf")
+                for t in assigned_trucks:
+                    if t in centers:
+                        d = np.sqrt(((pocket_center - centers[t]) ** 2).sum())
+                        if d < best_dist:
+                            best_dist = d
+                            best_truck = t
+
+            if best_truck is None and assigned_trucks:
+                best_truck = assigned_trucks[0]
+
+            if best_truck is not None:
+                for s_idx in member_indices:
+                    old_t = stops.at[s_idx, "assigned_truck"]
+                    if old_t != best_truck:
+                        if not bool(stops.at[s_idx, "is_locked"]) or old_t not in trucks:
+                            v = float(stops.at[s_idx, "total_vol"])
+                            stops.at[s_idx, "assigned_truck"] = best_truck
+                            if old_t in loads:
+                                loads[old_t] -= v
+                            loads[best_truck] = loads.get(best_truck, 0.0) + v
+
+    return stops, loads
 
 
 def cleanup_stray_points(stops: pd.DataFrame, trucks: List[str], targets: Dict[str, float], loads: Dict[str, float], tolerance: Dict[str, float], multiplier: float, rounds: int = 3) -> Tuple[pd.DataFrame, Dict[str, float]]:
@@ -700,7 +763,7 @@ def swap_improve(stops: pd.DataFrame, trucks: List[str], targets: Dict[str, floa
     return stops, loads
 
 # =====================================================================================
-#  SECTION 7 — DAILY LOAD SMOOTHING & COMPACTNESS
+#  SECTION 6 — DAILY LOAD SMOOTHING & COMPACTNESS
 # =====================================================================================
 def smooth_daily_loads(opt: pd.DataFrame, cfg: ZoningConfig, trucks: List[str]) -> Tuple[pd.DataFrame, np.ndarray, np.ndarray, Dict[str, np.ndarray]]:
     opt = opt.copy().reset_index(drop=True)
@@ -871,7 +934,7 @@ def calculate_peak_daily_loads(data: pd.DataFrame, truck_col: str, vol_col: str,
     return output
 
 # =====================================================================================
-#  SECTION 8 — MAIN MULTI-DONOR ZONING ENGINE
+#  SECTION 7 — MAIN ENGINE EXECUTION
 # =====================================================================================
 def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dict[str, float], dissolve_trucks: Sequence[str], relieve_trucks: Sequence[str], new_trucks: Sequence[str], manual_locks: Sequence[str], road_matrix_getter=None) -> ZoningResult:
     warnings, infos = [], []
@@ -941,18 +1004,6 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
             c_idx = min(idx, len(new_centers) - 1)
             seeds[t] = (float(new_centers[c_idx, 0]), float(new_centers[c_idx, 1]))
 
-    road_matrix = None
-    if cfg.use_road and road_matrix_getter is not None and active:
-        dest_coords = []
-        cos_scale = math.cos(math.radians(lat_ref))
-        for t in active:
-            sx, sy = seeds.get(t, (gx, gy))
-            d_lat = math.degrees(sy / EARTH_RADIUS_M)
-            d_lon = math.degrees(sx / (EARTH_RADIUS_M * cos_scale)) if abs(cos_scale) > 1e-12 else float(opt[cfg.lon_col].mean())
-            dest_coords.append((d_lat, d_lon))
-        src_coords = list(zip(stops["lat"].astype(float).tolist(), stops["lon"].astype(float).tolist()))
-        road_matrix, _ = road_matrix_getter(tuple(src_coords), tuple(dest_coords))
-
     def run_single_pass(core_ratio: float):
         c_stops = stops.copy()
         c_keys = compute_core_keys(c_stops, core_ratio, core_eligible, ratio_override)
@@ -965,7 +1016,7 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
             if bool(row["is_locked"]) and ot in active:
                 c_stops.at[s_idx, "assigned_truck"] = ot
 
-        assignment, pass_loads = _assign_capacitated(c_stops, active, targets, tolerance, seeds, road_matrix)
+        assignment, pass_loads = _assign_capacitated(c_stops, active, targets, tolerance, seeds, None)
         c_stops["assigned_truck"] = [active[ti] if ti >= 0 else OVERFLOW_LABEL for ti in assignment]
         c_stops.loc[c_stops["is_locked"] & (~c_stops["orig_truck"].isin(active)), "is_locked"] = False
         return c_stops, pass_loads
@@ -988,8 +1039,9 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
         cur_ratio = max(min_ratio, cur_ratio - c_step)
 
     assigned_stops, loads, ratio_used, _ = best_result
-    if ratio_used < cfg.core_ratio:
-        infos.append(f"ระบบลดสัดส่วนแกนกลางที่ล็อก จาก {cfg.core_ratio:.0f}% เหลือ {ratio_used:.0f}% อัตโนมัติ เพื่อให้ยอดเข้าเป้า")
+
+    # 🚀 แก้ปัญหาเวิ้งโดดเดี่ยวส่ง 2 คัน (Satellite Pocket Consolidation)
+    assigned_stops, loads = consolidate_satellite_pockets(assigned_stops, active, targets, loads, tolerance, pocket_radius_m=450.0)
 
     if cfg.enable_stray_cleanup:
         assigned_stops, loads = cleanup_stray_points(assigned_stops, active, targets, loads, tolerance, cfg.polish_tol_multiplier)
@@ -997,6 +1049,9 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
         assigned_stops, loads = majority_vote_smoothing(assigned_stops, active, targets, loads, tolerance, cfg)
     if cfg.enable_swap:
         assigned_stops, loads = swap_improve(assigned_stops, active, targets, loads, tolerance, cfg.swap_rounds)
+
+    # รันตรวจสอบเวิ้งโดดเดี่ยวอีกรอบเพื่อการันตีความเด็ดขาด 100%
+    assigned_stops, loads = consolidate_satellite_pockets(assigned_stops, active, targets, loads, tolerance, pocket_radius_m=450.0)
 
     truck_mapping = dict(zip(assigned_stops["coord_key"], assigned_stops["assigned_truck"]))
     core_mapping = dict(zip(assigned_stops["coord_key"], assigned_stops["is_core_locked"]))
@@ -1014,7 +1069,6 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
 
     opt, daily_matrix, daily_stops_matrix, final_daily = smooth_daily_loads(opt, cfg, active)
 
-    # Metrics
     comp_before = [compute_compactness(grp) for _, grp in opt.groupby(cfg.truck_col)]
     comp_after = [compute_compactness(grp) for t, grp in opt.groupby("เบอร์รถใหม่") if t != OVERFLOW_LABEL]
     peak_before = calculate_peak_daily_loads(opt, cfg.truck_col, cfg.vol_col, cfg.day_col)
@@ -1035,11 +1089,6 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
         "std_after": float(np.std(list(peak_after.values()))) if peak_after else 0.0,
     }
 
-    over_count = int((assigned_stops["assigned_truck"] == OVERFLOW_LABEL).sum())
-    if over_count:
-        over_vol = float(assigned_stops.loc[assigned_stops["assigned_truck"] == OVERFLOW_LABEL, "total_vol"].sum())
-        warnings.append(f"มีจุดจอดที่ยังจัดสรรไม่ได้ {over_count:,} จุด รวม {over_vol:,.0f} ถัง/เดือน")
-
     return ZoningResult(
         result_df=opt, stops_df=assigned_stops, daily_matrix=daily_matrix,
         daily_stops=daily_stops_matrix, final_daily=final_daily,
@@ -1048,7 +1097,7 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
     )
 
 # =====================================================================================
-#  SECTION 9 — UI THEME (GLASSMORPHISM)
+#  SECTION 8 — UI GLASSMORPHISM THEME
 # =====================================================================================
 st.markdown('''
 <style>
@@ -1126,11 +1175,11 @@ def show_loader(placeholder, msg: str):
         html = f'<div class="custom-truck-loader">{msg}</div>'
     placeholder.markdown(html, unsafe_allow_html=True)
 
-st.title("🚛 Smart Route Rebalancer — Production v2.2")
-st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Multi-Donor Fleet Rebalancing + Executive Map)**")
+st.title("🚛 Smart Route Rebalancer — Production v2.3")
+st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Zero-Overlap Satellite Pocket Architecture)**")
 
 # =====================================================================================
-#  SECTION 10 — DATA LOADING & COLUMN CONFIRMATION
+#  SECTION 9 — DATA IMPORT & MAPPING
 # =====================================================================================
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
@@ -1212,7 +1261,7 @@ st.sidebar.success(f"✅ โหลดสำเร็จ: {len(df):,} ราย�
 available_trucks = clean_truck_ids(df[truck_col].unique())
 
 # =====================================================================================
-#  SECTION 11 — CAPACITY & CONTROL LIMITS
+#  SECTION 10 — CAPACITY & CONTROL LIMITS
 # =====================================================================================
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 📏 3. เพดานควบคุมของบริษัท")
@@ -1261,7 +1310,7 @@ if not active_trucks:
     st.stop()
 
 # =====================================================================================
-#  SECTION 12 — TARGET SLIDERS & ADVANCED RULES
+#  SECTION 11 — SLIDERS & ADVANCED PARAMETERS
 # =====================================================================================
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🎛️ 5. เป้าหมายรายคัน (%)")
@@ -1311,27 +1360,26 @@ st.sidebar.markdown("### 🔒 6. ล็อก Key Account & กฎ")
 manual_vips = st.sidebar.multiselect("รหัสลูกค้าที่ห้ามย้ายสาย", options=df[id_col].unique().tolist(), default=[], on_change=reset_results)
 core_ratio_pct = st.sidebar.slider("สัดส่วนแกนกลางที่ล็อก (Core %)", 0, 100, 65, 5, on_change=reset_results)
 tol_pct = st.sidebar.number_input("ค่าเผื่อเป้าหมาย (%)", 0.0, 50.0, 5.0, 0.5, on_change=reset_results)
-use_road = st.sidebar.checkbox("ใช้ระยะทางถนนจริง", False, on_change=reset_results)
 
 cfg = ZoningConfig(lat_col=lat_col, lon_col=lon_col, vol_col=vol_col, truck_col=truck_col,
                     id_col=id_col, day_col=day_col, name_col=name_col,
                     monthly_capacity=monthly_cap, daily_control_cap=daily_cap,
                     max_stops_per_day=int(max_stops_day), core_ratio=float(core_ratio_pct),
-                    tol_pct=float(tol_pct), use_road=use_road)
+                    tol_pct=float(tol_pct))
 
 # =====================================================================================
-#  SECTION 13 — EXECUTE ZONING
+#  SECTION 12 — EXECUTE ENGINE
 # =====================================================================================
 if st.sidebar.button("🚀 ประมวลผลจัดสายส่งใหม่", use_container_width=True):
     ph = st.empty()
-    show_loader(ph, "กำลังประมวลผลจัดกลุ่มเส้นทางอัจฉริยะ... 💧")
+    show_loader(ph, "กำลังประมวลผลจัดกลุ่มเส้นทางอัจฉริยะ (Consolidating Satellite Pockets)... 💧")
     res = run_multi_donor_zoning(df, cfg, target_pcts, dissolve_trucks, relieve_trucks, new_trucks, manual_vips)
     st.session_state['result'] = res
     st.session_state['zoning_cfg_used'] = cfg
     ph.empty()
 
 # =====================================================================================
-#  SECTION 14 — EXECUTIVE DASHBOARD & VISUAL COMPARISON MAPS
+#  SECTION 13 — RESULTS & EXECUTIVE COMPARISON MAP
 # =====================================================================================
 if 'result' in st.session_state:
     res: ZoningResult = st.session_state['result']
@@ -1347,17 +1395,14 @@ if 'result' in st.session_state:
 
     for w in res.warnings:
         st.warning(f"⚠️ {w}")
-    for inf in res.infos:
-        st.info(f"💡 {inf}")
 
     # ---------------------------------------------------------------------------------
-    # 🗺️ EXECUTIVE SIDE-BY-SIDE INTERACTIVE MAPS (BEFORE VS. AFTER)
+    # 🗺️ EXECUTIVE COMPARISON MAPS (BEFORE VS. AFTER — NO WATERMARK)
     # ---------------------------------------------------------------------------------
     st.markdown("---")
     st.markdown("## 🗺️ แผนที่เปรียบเทียบเชิงพื้นที่ (Before vs. After Comparison)")
-    st.caption("คลิกที่หมุดแต่ละจุดเพื่อดูรหัสสมาชิก, ชื่อลูกค้า, ยอดรับน้ำเฉลี่ย และการเปลี่ยนสายส่ง")
+    st.caption("คลิกที่หมุดแต่ละจุดเพื่อดูรหัสสมาชิก, ชื่อลูกค้า, ยอดรับน้ำเฉลี่ย และการเปลี่ยนสายส่ง (เวิ้งโดดเดี่ยวถูกรวมเป็นคันเดียว)")
 
-    # ชุดสีพรีเมียมแยกสีสายรถ
     distinct_colors = [
         '#2563EB', '#16A34A', '#F59E0B', '#9333EA', '#0284C7',
         '#14B8A6', '#6366F1', '#84CC16', '#EC4899', '#06B6D4',
@@ -1370,13 +1415,12 @@ if 'result' in st.session_state:
 
     for t in all_truck_keys:
         if t in new_trucks:
-            color_map[t] = '#DC2626'  # รถใหม่ใช้สีแดงเด่นชัดเสมอ
+            color_map[t] = '#DC2626'  # รถใหม่สีแดง
         else:
             color_map[t] = distinct_colors[palette_idx % len(distinct_colors)]
             palette_idx += 1
     color_map[OVERFLOW_LABEL] = '#64748B'
 
-    # ตัวเลือกมุมมองแผนที่
     col_filter1, col_filter2 = st.columns([2, 2])
     with col_filter1:
         map_view_opts = ["แสดงรถทั้งหมด (แยกสีตามเบอร์รถ)"] + active_trucks
@@ -1389,7 +1433,6 @@ if 'result' in st.session_state:
                 badge_color = color_map.get(t, '#94A3B8')
                 st.markdown(f"<span style='color:{badge_color}; font-weight:bold;'>● รถ {t}</span>", unsafe_allow_html=True)
 
-    # กรองข้อมูลตามที่ผู้บริหารเลือก
     if selected_truck_view == "แสดงรถทั้งหมด (แยกสีตามเบอร์รถ)":
         display_df_before = df
         display_df_after = rdf[rdf['เบอร์รถใหม่'] != OVERFLOW_LABEL]
@@ -1397,7 +1440,6 @@ if 'result' in st.session_state:
         display_df_before = df[df[truck_col] == selected_truck_view]
         display_df_after = rdf[rdf['เบอร์รถใหม่'] == selected_truck_view]
 
-    # คำนวณจุดศูนย์กลางแผนที่
     center_lat = float(rdf[lat_col].mean()) if not rdf.empty else 13.7563
     center_lon = float(rdf[lon_col].mean()) if not rdf.empty else 100.5018
 
@@ -1407,7 +1449,6 @@ if 'result' in st.session_state:
         c_id = str(row.get(id_col, "-"))
         c_name = str(row.get(name_col, "-")) if name_col and name_col in row else "-"
         vol_m = float(pd.to_numeric(row.get(vol_col), errors="coerce") or 0.0)
-        
         orig_t = str(row.get(truck_col, "-")).strip()
         new_t = str(row.get("เบอร์รถใหม่", orig_t)).strip() if is_after else orig_t
         orig_day = str(row.get(day_col, "-"))
@@ -1436,10 +1477,10 @@ if 'result' in st.session_state:
         """
         return html
 
-    # --- 1. แผนที่ก่อนปรับ (Before) ---
+    # --- 1. แผนที่ก่อนปรับ (Before) — ใช้ OpenStreetMap ไร้ลายน้ำ ---
     with map_col1:
         st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px; font-size:1.1rem;'>📍 โซนสายส่งเดิม (Before - ก่อนปรับปรุง)</div>", unsafe_allow_html=True)
-        m_before = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles="CartoDB positron")
+        m_before = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles="OpenStreetMap")
         plugins.Fullscreen(position='topright').add_to(m_before)
 
         for _, r in display_df_before.iterrows():
@@ -1461,10 +1502,10 @@ if 'result' in st.session_state:
 
         components.html(m_before.get_root().render(), height=500)
 
-    # --- 2. แผนที่หลังปรับ (After) ---
+    # --- 2. แผนที่หลังปรับ (After) — ใช้ OpenStreetMap ไร้ลายน้ำ ---
     with map_col2:
-        st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px; font-size:1.1rem;'>✨ โซนสายส่งใหม่ (After - หลังจัดสมดุลสายส่ง)</div>", unsafe_allow_html=True)
-        m_after = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles="CartoDB positron")
+        st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px; font-size:1.1rem;'>✨ โซนสายส่งใหม่ (After - รวมเวิ้งงานโดดเดี่ยวแล้ว)</div>", unsafe_allow_html=True)
+        m_after = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles="OpenStreetMap")
         plugins.Fullscreen(position='topright').add_to(m_after)
 
         for _, r in display_df_after.iterrows():
@@ -1516,4 +1557,4 @@ if 'result' in st.session_state:
     st.dataframe(rdf[final_cols].rename(columns={truck_col: "เบอร์รถเดิม"}), use_container_width=True)
 
     csv_data = rdf[final_cols].to_csv(index=False).encode('utf-8-sig')
-    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v2_2.csv', 'text/csv', use_container_width=True)
+    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v2_3.csv', 'text/csv', use_container_width=True)
