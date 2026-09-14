@@ -1,6 +1,6 @@
 # =====================================================================================
-#  SMART ROUTE REBALANCER — PRODUCTION BUILD v2.4
-#  Multi-Donor Fleet Rebalancing + High-Contrast UI & Dynamic Font Size Engine
+#  SMART ROUTE REBALANCER — PRODUCTION BUILD v2.5
+#  Multi-Donor Fleet Rebalancing + Sprinkle Cerulean Pure Water Theme
 #  ---------------------------------------------------------------------------------
 #  requirements.txt:
 #      streamlit>=1.31
@@ -35,7 +35,7 @@ except Exception:
     HAS_SCIPY = False
 
 st.set_page_config(
-    page_title="Smart Route Rebalancer v2.4",
+    page_title="Smart Route Rebalancer v2.5",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -1086,10 +1086,9 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
     )
 
 # =====================================================================================
-#  SECTION 8 — DYNAMIC FONT SIZE & HIGH-CONTRAST SOFT GLASSMORPHISM THEME
+#  SECTION 8 — SPRINKLE CERULEAN THEME & DYNAMIC FONT SIZE ENGINE
 # =====================================================================================
 
-# ส่วนควบคุมขนาดฟอนต์ (Font Size Selector)
 st.sidebar.markdown("### 🔤 ขนาดอักษร:")
 font_size_choice = st.sidebar.radio(
     "เลือกขนาดตัวอักษรของระบบ:",
@@ -1104,20 +1103,18 @@ if font_size_choice == "ก ใหญ่":
     h1_font = "30px"
     h2_font = "24px"
     h3_font = "20px"
-    small_font = "14.5px"
 elif font_size_choice == "ก ใหญ่พิเศษ (+)":
     base_font = "18.5px"
     h1_font = "34px"
     h2_font = "28px"
     h3_font = "22px"
-    small_font = "16px"
 else:
     base_font = "15px"
     h1_font = "26px"
     h2_font = "21px"
     h3_font = "18px"
-    small_font = "13px"
 
+# 💧 ชุดตกแต่งธีมสีฟ้าครามน้ำดื่มสปริงเคิล (Sprinkle Cerulean Water Theme)
 st.markdown(f'''
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
@@ -1128,34 +1125,45 @@ html, body, [class*="css"], p, span, label, div, small, li, a {{
     font-weight: 400;
 }}
 
-/* โทนสีพื้นหลังอ่อนลง สบายตา ไม่มืดทึบ */
+/* 🌊 พื้นหลังสีฟ้าครามสดชื่นประกายน้ำดื่มสปริงเคิล (Sprinkle Cerulean Palette) */
 .stApp {{
-    background: linear-gradient(135deg, #132238 0%, #1D314E 50%, #264064 100%) !important;
-    background-attachment: fixed;
+    background:
+        radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.28) 0%, transparent 45%),
+        radial-gradient(circle at 85% 25%, rgba(14, 165, 233, 0.22) 0%, transparent 45%),
+        radial-gradient(circle at 50% 85%, rgba(2, 132, 199, 0.35) 0%, transparent 55%),
+        linear-gradient(135deg, #033B60 0%, #02598B 35%, #0277B5 70%, #0284C7 100%) !important;
+    background-attachment: fixed !important;
 }}
 
-h1 {{ font-size: {h1_font} !important; color: #FFD700 !important; font-weight: 700 !important; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }}
-h2 {{ font-size: {h2_font} !important; color: #FFD700 !important; font-weight: 700 !important; }}
+h1 {{ font-size: {h1_font} !important; color: #FFD700 !important; font-weight: 700 !important; text-shadow: 0 2px 5px rgba(0,25,50,0.6); }}
+h2 {{ font-size: {h2_font} !important; color: #FFD700 !important; font-weight: 700 !important; text-shadow: 0 1px 4px rgba(0,25,50,0.5); }}
 h3 {{ font-size: {h3_font} !important; color: #FFD700 !important; font-weight: 600 !important; }}
 
-/* แถบด้านข้าง Sidebar */
+/* 🔒 เมนูด้านซ้าย Sidebar คงเดิมไว้ตามความต้องการ (เหมาะสมแล้ว) */
 [data-testid="stSidebar"] {{
-    background: rgba(18, 32, 53, 0.8) !important;
+    background: rgba(0, 13, 26, 0.55) !important;
     backdrop-filter: blur(25px);
-    border-right: 1px solid rgba(255,255,255,0.18);
+    border-right: 1px solid rgba(255,255,255,0.15);
 }}
+[data-testid="stSidebar"] * {{ color: #FFF !important; }}
 [data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown p {{
-    color: #F8FAFC !important;
+    color: #F3E5AB !important;
     font-weight: 600 !important;
 }}
+[data-testid="stSidebar"] h1,[data-testid="stSidebar"] h2,[data-testid="stSidebar"] h3 {{
+    color: #FFD700 !important;
+    border-bottom: 1px solid rgba(212,175,55,0.3);
+    padding-bottom: 8px;
+}}
 
-/* 🛑 แก้ปัญหาตัวอักษรกลืนกับกรอบ: บังคับพื้นหลังกรอบขาว/สว่าง ตัวอักษรสีเข้ม คมชัด 100% */
+/* 🛑 กรอบข้อมูลและช่องพิมพ์: พื้นสว่าง ตัวอักษรสีเข้ม คมชัด 100% ไม่กลืนกับกรอบ */
 input, textarea, div[data-baseweb="select"] > div {{
     background: #FFFFFF !important;
-    border: 1.5px solid #CBD5E1 !important;
+    border: 1.5px solid #94A3B8 !important;
     color: #0F172A !important;
     border-radius: 10px !important;
     font-weight: 600 !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08) !important;
 }}
 input::placeholder, textarea::placeholder {{
     color: #64748B !important;
@@ -1172,12 +1180,12 @@ div[data-baseweb="select"] svg {{
     fill: #0F172A !important;
 }}
 
-/* กล่อง Dropdown เมนูตัวเลือก */
+/* ดรอปดาวน์ */
 div[role="listbox"], ul[role="listbox"], div[data-baseweb="menu"], [data-baseweb="select-dropdown"] {{
     background: #FFFFFF !important;
-    border: 1.5px solid #D4AF37 !important;
+    border: 1.5px solid #0284C7 !important;
     border-radius: 12px !important;
-    box-shadow: 0 12px 32px rgba(0,0,0,0.3) !important;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.35) !important;
 }}
 div[role="option"], ul[role="listbox"] > li {{
     color: #0F172A !important;
@@ -1189,35 +1197,35 @@ div[role="option"] *, ul[role="listbox"] > li * {{
     color: #0F172A !important;
 }}
 div[role="option"]:hover {{
-    background: #FEF3C7 !important;
+    background: #E0F2FE !important;
 }}
 div[role="option"][aria-selected="true"] {{
-    background: #FFD700 !important;
+    background: #38BDF8 !important;
 }}
 div[role="option"][aria-selected="true"] * {{
-    color: #000B18 !important;
+    color: #002D62 !important;
     font-weight: 700 !important;
 }}
 
-/* Segmented Control ปุ่มปรับขนาดฟอนต์ (ก ปกติ, ก ใหญ่, ก ใหญ่พิเศษ) */
+/* Segmented Control ปุ่มปรับขนาดฟอนต์ */
 div[data-testid="stRadio"] > div {{
     flex-direction: row !important;
-    background: #F1F5F9 !important;
-    padding: 3px 5px !important;
+    background: rgba(255,255,255,0.92) !important;
+    padding: 4px 6px !important;
     border-radius: 12px !important;
-    border: 1px solid #CBD5E1 !important;
+    border: 1px solid #0284C7 !important;
     gap: 4px !important;
 }}
 div[data-testid="stRadio"] label {{
     background: transparent !important;
     border-radius: 8px !important;
-    padding: 4px 10px !important;
+    padding: 4px 12px !important;
     margin: 0 !important;
     cursor: pointer !important;
-    color: #1E293B !important;
+    color: #0F172A !important;
 }}
 div[data-testid="stRadio"] label:has(input:checked) {{
-    background: #2563EB !important;
+    background: #0284C7 !important;
     color: #FFFFFF !important;
     font-weight: 700 !important;
 }}
@@ -1225,20 +1233,21 @@ div[data-testid="stRadio"] label:has(input:checked) * {{
     color: #FFFFFF !important;
 }}
 div[data-testid="stRadio"] label:not(:has(input:checked)) * {{
-    color: #1E293B !important;
+    color: #0F172A !important;
 }}
 div[data-testid="stRadio"] input[type="radio"] {{
     display: none !important;
 }}
 
-/* ตารางข้อมูล */
+/* ตารางข้อมูล Frosted Aqua Glass */
 .stDataFrame {{
-    background: rgba(18, 32, 53, 0.45) !important;
+    background: rgba(2, 54, 88, 0.45) !important;
     backdrop-filter: blur(20px);
     padding: 1rem;
     border-radius: 16px;
-    border: 1px solid rgba(255,255,255,0.18);
-    border-top: 3px solid #D4AF37;
+    border: 1px solid rgba(255,255,255,0.25);
+    border-top: 3px solid #38BDF8;
+    box-shadow: 0 8px 25px rgba(0,25,50,0.3);
 }}
 .stDataFrame td, .stDataFrame th, .stDataFrame div {{
     color: #0F172A !important;
@@ -1246,29 +1255,30 @@ div[data-testid="stRadio"] input[type="radio"] {{
 }}
 
 .stButton>button {{
-    background: linear-gradient(135deg,#D4AF37 0%,#AA8C2C 100%) !important;
+    background: linear-gradient(135deg, #D4AF37 0%, #AA8C2C 100%) !important;
     color: #000B18 !important;
     border: none !important;
     border-radius: 10px;
     font-weight: 700;
     padding: .6rem 1.4rem;
     width: 100%;
-    box-shadow: 0 4px 15px rgba(212,175,55,0.35);
+    box-shadow: 0 4px 15px rgba(212,175,55,0.4);
     transition: all .3s;
 }}
 .stButton>button:hover {{
-    background: linear-gradient(135deg,#F3E5AB 0%,#D4AF37 100%) !important;
-    box-shadow: 0 6px 20px rgba(255,215,0,0.5);
+    background: linear-gradient(135deg, #F3E5AB 0%, #D4AF37 100%) !important;
+    box-shadow: 0 6px 20px rgba(255,215,0,0.6);
     transform: translateY(-2px);
 }}
-[data-testid="stMetricValue"] {{ color: #FFD700 !important; font-weight: 700 !important; }}
-[data-testid="stMetricLabel"] * {{ color: #F1F5F9 !important; }}
+[data-testid="stMetricValue"] {{ color: #FFD700 !important; font-weight: 700 !important; text-shadow: 0 2px 4px rgba(0,20,40,0.5); }}
+[data-testid="stMetricLabel"] * {{ color: #F0F9FF !important; font-weight: 600 !important; }}
 [data-testid="stDownloadButton"] > button {{
-    background: linear-gradient(135deg,#28A745 0%,#1E7E34 100%) !important;
+    background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%) !important;
     color: #FFF !important;
     border-radius: 10px !important;
     padding: .8rem 2rem;
     font-weight: 700;
+    box-shadow: 0 4px 15px rgba(2,132,199,0.4);
 }}
 </style>
 ''', unsafe_allow_html=True)
@@ -1281,12 +1291,12 @@ def show_loader(placeholder, msg: str):
     try:
         with open("truck.jpg", "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
-        html = f'<div style="text-align:center; padding:2rem; color:#FFD700; font-weight:bold; border-radius:16px; background:rgba(18,32,53,0.7); backdrop-filter:blur(20px); border:1px solid rgba(255,255,255,0.2);"><img src="data:image/jpeg;base64,{b64}" style="width:140px; margin-bottom:10px;"><br>{msg}</div>'
+        html = f'<div style="text-align:center; padding:2rem; color:#FFD700; font-weight:bold; border-radius:16px; background:rgba(2,54,88,0.75); backdrop-filter:blur(20px); border:1px solid rgba(255,255,255,0.25);"><img src="data:image/jpeg;base64,{b64}" style="width:140px; margin-bottom:10px;"><br>{msg}</div>'
     except FileNotFoundError:
-        html = f'<div style="text-align:center; padding:2rem; color:#FFD700; font-weight:bold;">{msg}</div>'
+        html = f'<div style="text-align:center; padding:2rem; color:#FFD700; font-weight:bold; border-radius:16px; background:rgba(2,54,88,0.75);">{msg}</div>'
     placeholder.markdown(html, unsafe_allow_html=True)
 
-st.title("🚛 Smart Route Rebalancer — Production v2.4")
+st.title("🚛 Smart Route Rebalancer — Production v2.5")
 st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Zero-Overlap Satellite Pocket Architecture)**")
 
 # =====================================================================================
@@ -1509,7 +1519,7 @@ if 'result' in st.session_state:
         st.warning(f"⚠️ {w}")
 
     # ---------------------------------------------------------------------------------
-    # 🗺️ EXECUTIVE COMPARISON MAPS (BEFORE VS. AFTER — NO WATERMARK)
+    # 🗺️ EXECUTIVE COMPARISON MAPS (BEFORE VS. AFTER — OPENSTREETMAP)
     # ---------------------------------------------------------------------------------
     st.markdown("---")
     st.markdown("## 🗺️ แผนที่เปรียบเทียบเชิงพื้นที่ (Before vs. After Comparison)")
@@ -1669,4 +1679,4 @@ if 'result' in st.session_state:
     st.dataframe(rdf[final_cols].rename(columns={truck_col: "เบอร์รถเดิม"}), use_container_width=True)
 
     csv_data = rdf[final_cols].to_csv(index=False).encode('utf-8-sig')
-    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v2_4.csv', 'text/csv', use_container_width=True)
+    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v2_5.csv', 'text/csv', use_container_width=True)
