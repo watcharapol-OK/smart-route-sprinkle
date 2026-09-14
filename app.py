@@ -1,6 +1,6 @@
 # =====================================================================================
-#  SMART ROUTE REBALANCER — PRODUCTION BUILD v3.2
-#  Multi-Donor Fleet Rebalancing + Fully Rendered HTML Metric Cards
+#  SMART ROUTE REBALANCER — PRODUCTION BUILD v3.3
+#  Multi-Donor Fleet Rebalancing + Native Streamlit Metric Cards Fix
 #  ---------------------------------------------------------------------------------
 #  requirements.txt:
 #      streamlit>=1.31
@@ -35,7 +35,7 @@ except Exception:
     HAS_SCIPY = False
 
 st.set_page_config(
-    page_title="Smart Route Rebalancer v3.2",
+    page_title="Smart Route Rebalancer v3.3",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -853,15 +853,14 @@ def smooth_daily_loads(opt: pd.DataFrame, cfg: ZoningConfig, trucks: List[str]) 
                     if len(new_days) != len(c_days):
                         continue
                     day_map[idx] = new_days
-                    note = f"{DAY_SHORT[src]}→{DAY_SHORT[destination_day] if 'destination_day' in locals() else DAY_SHORT[src]}"
+                    note = f"{DAY_SHORT[src]}→{DAY_SHORT[dest]}"
                     prev = str(opt.at[idx, "สถานะการย้ายวัน"]).strip()
                     if not prev or prev.lower() in NO_TRUCK_TOKENS:
-                        opt.at[idx, "สถานะการย้ายวัน"] = f"{DAY_SHORT[src]}→{DAY_SHORT[dest]}"
+                        opt.at[idx, "สถานะการย้ายวัน"] = note
                     else:
                         notes = [n.strip() for n in prev.split(",") if n.strip()]
-                        curr_note = f"{DAY_SHORT[src]}→{DAY_SHORT[dest]}"
-                        if curr_note not in notes:
-                            notes.append(curr_note)
+                        if note not in notes:
+                            notes.append(note)
                         opt.at[idx, "สถานะการย้ายวัน"] = ", ".join(notes)
 
                     d_vol[t][src] -= v_day
@@ -1138,7 +1137,7 @@ html, body, [class*="css"], .stApp {{
     font-family: 'Sarabun', sans-serif !important;
 }}
 
-/* พื้นหลังหลักสีฟ้าครามประกายน้ำดื่มสปริงเคิล */
+/* พื้นหลังหลักสีฟ้าครามสดชื่นของสปริงเคิล */
 .stApp {{
     background:
         radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.28) 0%, transparent 45%),
@@ -1169,6 +1168,7 @@ section.main h2 {{
     border-right: 1px solid rgba(56, 189, 248, 0.35) !important;
     border-bottom: 1px solid rgba(56, 189, 248, 0.35) !important;
     box-shadow: 0 4px 15px rgba(0, 15, 35, 0.45) !important;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
 }}
 h3 {{
     font-size: {h3_font} !important;
@@ -1349,7 +1349,7 @@ div[role="option"][aria-selected="true"] * {{
 </style>
 ''', unsafe_allow_html=True)
 
-# 🛑 ฟังก์ชันเรนเดอร์การ์ดสถิติด้วย st.markdown พร้อม unsafe_allow_html=True 100% ป้องกัน HTML ดิบหลุด
+# 🛑 ฟังก์ชันเรนเดอร์การ์ดสถิติด้วย st.markdown พร้อมกำหนด unsafe_allow_html=True ชัดเจน
 def render_metric_card(
     label: str,
     value: str,
