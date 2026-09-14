@@ -1,6 +1,6 @@
 # =====================================================================================
-#  SMART ROUTE REBALANCER — PRODUCTION BUILD v2.3
-#  Multi-Donor Fleet Rebalancing + Satellite Pocket Consolidation (No Overlap)
+#  SMART ROUTE REBALANCER — PRODUCTION BUILD v2.4
+#  Multi-Donor Fleet Rebalancing + High-Contrast UI & Dynamic Font Size Engine
 #  ---------------------------------------------------------------------------------
 #  requirements.txt:
 #      streamlit>=1.31
@@ -35,7 +35,7 @@ except Exception:
     HAS_SCIPY = False
 
 st.set_page_config(
-    page_title="Smart Route Rebalancer v2.3",
+    page_title="Smart Route Rebalancer v2.4",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -528,10 +528,6 @@ def consolidate_satellite_pockets(
     tolerance: Dict[str, float],
     pocket_radius_m: float = 450.0,
 ) -> Tuple[pd.DataFrame, Dict[str, float]]:
-    """
-    ตรวจจับกลุ่มจุดจอดที่อยู่โดดเดี่ยว (Satellite Pockets) และบังคับรวมให้รถคันเดียวส่ง 100%
-    แก้ปัญหาการส่งรถ 2 คันเข้าไปในเวิ้งหรือซอยเดียวกันอย่างสิ้นเปลือง
-    """
     stops = stops.copy()
     loads = dict(loads)
     n = len(stops)
@@ -551,7 +547,6 @@ def consolidate_satellite_pockets(
                 if d2 <= pocket_radius_m ** 2:
                     pairs.append((i, i + 1 + j_offset))
 
-    # Union-Find (Disjoint Set) หา Connected Components
     parent = list(range(n))
     def find(i):
         path = []
@@ -575,7 +570,6 @@ def consolidate_satellite_pockets(
         root = find(i)
         components.setdefault(root, []).append(i)
 
-    # คำนวณจุดศูนย์กลางของรถแต่ละคัน
     centers = {}
     for t in trucks:
         grp = stops[stops["assigned_truck"] == t]
@@ -584,19 +578,16 @@ def consolidate_satellite_pockets(
             centers[t] = np.average(grp[["x", "y"]].to_numpy(dtype=float), axis=0, weights=w)
 
     for root, member_indices in components.items():
-        # ถ้าเป็นกลุ่มหลักขนาดใหญ่มาก ไม่ใช่ satellite pocket ให้ข้าม
         if len(member_indices) >= n * 0.45:
             continue
 
         member_stops = stops.iloc[member_indices]
         assigned_trucks = [t for t in member_stops["assigned_truck"].unique().tolist() if t in trucks]
 
-        # หากมีรถมากกว่า 1 คันเข้าไปส่งในเวิ้งนี้ ให้ทำการรวมงานเป็นคันเดียวทันที
         if len(set(assigned_trucks)) > 1:
             pw = np.maximum(member_stops["total_vol"].to_numpy(dtype=float), 1e-9)
             pocket_center = np.average(member_stops[["x", "y"]].to_numpy(dtype=float), axis=0, weights=pw)
 
-            # ตรวจสอบว่ามีจุดล็อก VIP หรือไม่
             vip_trucks = member_stops.loc[member_stops["is_locked"].astype(bool), "assigned_truck"].tolist()
             vip_trucks = [t for t in vip_trucks if t in trucks]
 
@@ -1040,7 +1031,6 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
 
     assigned_stops, loads, ratio_used, _ = best_result
 
-    # 🚀 แก้ปัญหาเวิ้งโดดเดี่ยวส่ง 2 คัน (Satellite Pocket Consolidation)
     assigned_stops, loads = consolidate_satellite_pockets(assigned_stops, active, targets, loads, tolerance, pocket_radius_m=450.0)
 
     if cfg.enable_stray_cleanup:
@@ -1050,7 +1040,6 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
     if cfg.enable_swap:
         assigned_stops, loads = swap_improve(assigned_stops, active, targets, loads, tolerance, cfg.swap_rounds)
 
-    # รันตรวจสอบเวิ้งโดดเดี่ยวอีกรอบเพื่อการันตีความเด็ดขาด 100%
     assigned_stops, loads = consolidate_satellite_pockets(assigned_stops, active, targets, loads, tolerance, pocket_radius_m=450.0)
 
     truck_mapping = dict(zip(assigned_stops["coord_key"], assigned_stops["assigned_truck"]))
@@ -1097,68 +1086,190 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
     )
 
 # =====================================================================================
-#  SECTION 8 — UI GLASSMORPHISM THEME
+#  SECTION 8 — DYNAMIC FONT SIZE & HIGH-CONTRAST SOFT GLASSMORPHISM THEME
 # =====================================================================================
-st.markdown('''
+
+# ส่วนควบคุมขนาดฟอนต์ (Font Size Selector)
+st.sidebar.markdown("### 🔤 ขนาดอักษร:")
+font_size_choice = st.sidebar.radio(
+    "เลือกขนาดตัวอักษรของระบบ:",
+    options=["ก ปกติ", "ก ใหญ่", "ก ใหญ่พิเศษ (+)"],
+    index=0,
+    horizontal=True,
+    label_visibility="collapsed"
+)
+
+if font_size_choice == "ก ใหญ่":
+    base_font = "16.5px"
+    h1_font = "30px"
+    h2_font = "24px"
+    h3_font = "20px"
+    small_font = "14.5px"
+elif font_size_choice == "ก ใหญ่พิเศษ (+)":
+    base_font = "18.5px"
+    h1_font = "34px"
+    h2_font = "28px"
+    h3_font = "22px"
+    small_font = "16px"
+else:
+    base_font = "15px"
+    h1_font = "26px"
+    h2_font = "21px"
+    h3_font = "18px"
+    small_font = "13px"
+
+st.markdown(f'''
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
-html, body, [class*="css"], p, span, label, div, small, li, a, h1,h2,h3,h4,h5,h6 {
-    font-family:'Sarabun',sans-serif !important; color:#FFFFFF !important; font-weight:400; }
-.stApp { background:linear-gradient(135deg,#000814 0%,#001D3D 45%,#003566 100%) !important;
-    background-attachment:fixed; }
-h1,h2,h3,h4,h5,h6 { color:#FFD700 !important; font-weight:700 !important; letter-spacing:.5px;
-    text-shadow:0 2px 4px rgba(0,0,0,.6); }
-[data-testid="stSidebar"] { background:rgba(0,13,26,.55) !important; backdrop-filter:blur(25px);
-    border-right:1px solid rgba(255,255,255,.15); }
-[data-testid="stSidebar"] * { color:#FFF !important; }
-[data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown p {
-    color:#F3E5AB !important; font-weight:600 !important; }
-[data-testid="stSidebar"] h1,[data-testid="stSidebar"] h2,[data-testid="stSidebar"] h3 {
-    color:#FFD700 !important; border-bottom:1px solid rgba(212,175,55,.3); padding-bottom:8px; }
-div[data-baseweb="select"] > div, input, textarea {
-    background:rgba(0,30,60,.3) !important; backdrop-filter:blur(12px);
-    border:1px solid rgba(255,255,255,.2) !important; color:#FFF !important;
-    border-radius:12px !important; font-weight:500; }
-div[data-baseweb="select"] * { color:#FFF !important; }
-div[data-baseweb="select"] [class*="placeholder"] { color:#CBD5E1 !important; }
-div[data-baseweb="tag"] { background:rgba(212,175,55,.28) !important; border:1px solid #D4AF37 !important; }
-div[data-baseweb="tag"] * { color:#FFF !important; }
-input::placeholder { color:#CBD5E1 !important; opacity:1 !important; }
-input:focus, div[data-baseweb="select"] > div:focus-within {
-    border-color:#FFD700 !important; box-shadow:0 0 15px rgba(255,215,0,.35) !important; }
-div[role="listbox"], ul[role="listbox"], div[data-baseweb="menu"], [data-baseweb="select-dropdown"] {
-    background:rgba(248,250,252,.95) !important; border:1px solid #D4AF37 !important;
-    border-radius:12px !important; box-shadow:0 12px 32px rgba(0,0,0,.4) !important; }
-div[role="option"], ul[role="listbox"] > li { color:#0F172A !important; font-weight:500 !important;
-    padding:10px 16px !important; border-bottom:1px solid #E2E8F0 !important; }
-div[role="option"] *, ul[role="listbox"] > li * { color:#0F172A !important; }
-div[role="option"]:hover { background:#FFF8E1 !important; }
-div[role="option"][aria-selected="true"] { background:#FFD700 !important; }
-div[role="option"][aria-selected="true"] * { color:#000B18 !important; font-weight:700 !important; }
-div[data-testid="stNotification"], div[data-testid="stNotification"] * { color:#0F172A !important; }
-.stButton>button { background:linear-gradient(135deg,#D4AF37 0%,#AA8C2C 100%) !important;
-    color:#000B18 !important; border:none !important; border-radius:10px; font-weight:700;
-    padding:.6rem 1.4rem; width:100%; box-shadow:0 4px 15px rgba(212,175,55,.4); transition:all .3s; }
-.stButton>button:hover { background:linear-gradient(135deg,#F3E5AB 0%,#D4AF37 100%) !important;
-    box-shadow:0 6px 20px rgba(255,215,0,.6); transform:translateY(-2px); }
-.stDataFrame { background:rgba(0,24,48,.25) !important; backdrop-filter:blur(20px); padding:1rem;
-    border-radius:16px; border:1px solid rgba(255,255,255,.15); border-top:3px solid #D4AF37; }
-.stDataFrame td,.stDataFrame th,.stDataFrame div { color:#0F172A !important; font-weight:500 !important; }
-[data-testid="stMetricValue"] { color:#FFD700 !important; font-weight:700 !important; }
-[data-testid="stMetricLabel"] * { color:#F1F5F9 !important; }
-[data-testid="stDownloadButton"] > button {
-    background:linear-gradient(135deg,#28A745 0%,#1E7E34 100%) !important; color:#FFF !important;
-    border-radius:10px !important; padding:.8rem 2rem; font-weight:700; }
-@keyframes moveRoad { 0%{background-position:0 0} 100%{background-position:-120px 0} }
-@keyframes truckV { 0%{transform:translateY(0)} 50%{transform:translateY(-2px)} 100%{transform:translateY(0)} }
-.custom-truck-loader { text-align:center; padding:2.2rem; color:#FFD700; font-weight:bold;
-    font-size:1.15rem; border-radius:16px; background:rgba(0,24,48,.5); backdrop-filter:blur(20px);
-    border:1px solid rgba(255,255,255,.18); margin-bottom:20px; position:relative; overflow:hidden; }
-.custom-truck-loader::after { content:""; position:absolute; bottom:10px; left:0; width:100%; height:4px;
-    background:repeating-linear-gradient(90deg,#D4AF37,#D4AF37 35px,transparent 35px,transparent 70px);
-    animation:moveRoad 1s linear infinite; }
-.custom-truck-loader img { width:150px; animation:truckV .35s ease-in-out infinite; margin-bottom:8px; }
-.stSpinner > div > div { display:none !important; }
+
+html, body, [class*="css"], p, span, label, div, small, li, a {{
+    font-family: 'Sarabun', sans-serif !important;
+    font-size: {base_font} !important;
+    font-weight: 400;
+}}
+
+/* โทนสีพื้นหลังอ่อนลง สบายตา ไม่มืดทึบ */
+.stApp {{
+    background: linear-gradient(135deg, #132238 0%, #1D314E 50%, #264064 100%) !important;
+    background-attachment: fixed;
+}}
+
+h1 {{ font-size: {h1_font} !important; color: #FFD700 !important; font-weight: 700 !important; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }}
+h2 {{ font-size: {h2_font} !important; color: #FFD700 !important; font-weight: 700 !important; }}
+h3 {{ font-size: {h3_font} !important; color: #FFD700 !important; font-weight: 600 !important; }}
+
+/* แถบด้านข้าง Sidebar */
+[data-testid="stSidebar"] {{
+    background: rgba(18, 32, 53, 0.8) !important;
+    backdrop-filter: blur(25px);
+    border-right: 1px solid rgba(255,255,255,0.18);
+}}
+[data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown p {{
+    color: #F8FAFC !important;
+    font-weight: 600 !important;
+}}
+
+/* 🛑 แก้ปัญหาตัวอักษรกลืนกับกรอบ: บังคับพื้นหลังกรอบขาว/สว่าง ตัวอักษรสีเข้ม คมชัด 100% */
+input, textarea, div[data-baseweb="select"] > div {{
+    background: #FFFFFF !important;
+    border: 1.5px solid #CBD5E1 !important;
+    color: #0F172A !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+}}
+input::placeholder, textarea::placeholder {{
+    color: #64748B !important;
+    opacity: 1 !important;
+}}
+div[data-baseweb="select"] * {{
+    color: #0F172A !important;
+    font-weight: 600 !important;
+}}
+div[data-baseweb="select"] [class*="placeholder"] {{
+    color: #64748B !important;
+}}
+div[data-baseweb="select"] svg {{
+    fill: #0F172A !important;
+}}
+
+/* กล่อง Dropdown เมนูตัวเลือก */
+div[role="listbox"], ul[role="listbox"], div[data-baseweb="menu"], [data-baseweb="select-dropdown"] {{
+    background: #FFFFFF !important;
+    border: 1.5px solid #D4AF37 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.3) !important;
+}}
+div[role="option"], ul[role="listbox"] > li {{
+    color: #0F172A !important;
+    font-weight: 600 !important;
+    padding: 10px 16px !important;
+    border-bottom: 1px solid #E2E8F0 !important;
+}}
+div[role="option"] *, ul[role="listbox"] > li * {{
+    color: #0F172A !important;
+}}
+div[role="option"]:hover {{
+    background: #FEF3C7 !important;
+}}
+div[role="option"][aria-selected="true"] {{
+    background: #FFD700 !important;
+}}
+div[role="option"][aria-selected="true"] * {{
+    color: #000B18 !important;
+    font-weight: 700 !important;
+}}
+
+/* Segmented Control ปุ่มปรับขนาดฟอนต์ (ก ปกติ, ก ใหญ่, ก ใหญ่พิเศษ) */
+div[data-testid="stRadio"] > div {{
+    flex-direction: row !important;
+    background: #F1F5F9 !important;
+    padding: 3px 5px !important;
+    border-radius: 12px !important;
+    border: 1px solid #CBD5E1 !important;
+    gap: 4px !important;
+}}
+div[data-testid="stRadio"] label {{
+    background: transparent !important;
+    border-radius: 8px !important;
+    padding: 4px 10px !important;
+    margin: 0 !important;
+    cursor: pointer !important;
+    color: #1E293B !important;
+}}
+div[data-testid="stRadio"] label:has(input:checked) {{
+    background: #2563EB !important;
+    color: #FFFFFF !important;
+    font-weight: 700 !important;
+}}
+div[data-testid="stRadio"] label:has(input:checked) * {{
+    color: #FFFFFF !important;
+}}
+div[data-testid="stRadio"] label:not(:has(input:checked)) * {{
+    color: #1E293B !important;
+}}
+div[data-testid="stRadio"] input[type="radio"] {{
+    display: none !important;
+}}
+
+/* ตารางข้อมูล */
+.stDataFrame {{
+    background: rgba(18, 32, 53, 0.45) !important;
+    backdrop-filter: blur(20px);
+    padding: 1rem;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.18);
+    border-top: 3px solid #D4AF37;
+}}
+.stDataFrame td, .stDataFrame th, .stDataFrame div {{
+    color: #0F172A !important;
+    font-weight: 500 !important;
+}}
+
+.stButton>button {{
+    background: linear-gradient(135deg,#D4AF37 0%,#AA8C2C 100%) !important;
+    color: #000B18 !important;
+    border: none !important;
+    border-radius: 10px;
+    font-weight: 700;
+    padding: .6rem 1.4rem;
+    width: 100%;
+    box-shadow: 0 4px 15px rgba(212,175,55,0.35);
+    transition: all .3s;
+}}
+.stButton>button:hover {{
+    background: linear-gradient(135deg,#F3E5AB 0%,#D4AF37 100%) !important;
+    box-shadow: 0 6px 20px rgba(255,215,0,0.5);
+    transform: translateY(-2px);
+}}
+[data-testid="stMetricValue"] {{ color: #FFD700 !important; font-weight: 700 !important; }}
+[data-testid="stMetricLabel"] * {{ color: #F1F5F9 !important; }}
+[data-testid="stDownloadButton"] > button {{
+    background: linear-gradient(135deg,#28A745 0%,#1E7E34 100%) !important;
+    color: #FFF !important;
+    border-radius: 10px !important;
+    padding: .8rem 2rem;
+    font-weight: 700;
+}}
 </style>
 ''', unsafe_allow_html=True)
 
@@ -1170,17 +1281,18 @@ def show_loader(placeholder, msg: str):
     try:
         with open("truck.jpg", "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
-        html = f'<div class="custom-truck-loader"><img src="data:image/jpeg;base64,{b64}"><br>{msg}</div>'
+        html = f'<div style="text-align:center; padding:2rem; color:#FFD700; font-weight:bold; border-radius:16px; background:rgba(18,32,53,0.7); backdrop-filter:blur(20px); border:1px solid rgba(255,255,255,0.2);"><img src="data:image/jpeg;base64,{b64}" style="width:140px; margin-bottom:10px;"><br>{msg}</div>'
     except FileNotFoundError:
-        html = f'<div class="custom-truck-loader">{msg}</div>'
+        html = f'<div style="text-align:center; padding:2rem; color:#FFD700; font-weight:bold;">{msg}</div>'
     placeholder.markdown(html, unsafe_allow_html=True)
 
-st.title("🚛 Smart Route Rebalancer — Production v2.3")
+st.title("🚛 Smart Route Rebalancer — Production v2.4")
 st.markdown("**ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Zero-Overlap Satellite Pocket Architecture)**")
 
 # =====================================================================================
 #  SECTION 9 — DATA IMPORT & MAPPING
 # =====================================================================================
+st.sidebar.markdown("---")
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...", on_change=reset_results)
 raw_gid = st.sidebar.text_input("แท็บชีต (GID):", value="0", on_change=reset_results)
@@ -1415,7 +1527,7 @@ if 'result' in st.session_state:
 
     for t in all_truck_keys:
         if t in new_trucks:
-            color_map[t] = '#DC2626'  # รถใหม่สีแดง
+            color_map[t] = '#DC2626'
         else:
             color_map[t] = distinct_colors[palette_idx % len(distinct_colors)]
             palette_idx += 1
@@ -1477,7 +1589,7 @@ if 'result' in st.session_state:
         """
         return html
 
-    # --- 1. แผนที่ก่อนปรับ (Before) — ใช้ OpenStreetMap ไร้ลายน้ำ ---
+    # --- 1. แผนที่ก่อนปรับ (Before) ---
     with map_col1:
         st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px; font-size:1.1rem;'>📍 โซนสายส่งเดิม (Before - ก่อนปรับปรุง)</div>", unsafe_allow_html=True)
         m_before = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles="OpenStreetMap")
@@ -1502,7 +1614,7 @@ if 'result' in st.session_state:
 
         components.html(m_before.get_root().render(), height=500)
 
-    # --- 2. แผนที่หลังปรับ (After) — ใช้ OpenStreetMap ไร้ลายน้ำ ---
+    # --- 2. แผนที่หลังปรับ (After) ---
     with map_col2:
         st.markdown("<div style='text-align:center; color:#FFD700; font-weight:bold; margin-bottom:8px; font-size:1.1rem;'>✨ โซนสายส่งใหม่ (After - รวมเวิ้งงานโดดเดี่ยวแล้ว)</div>", unsafe_allow_html=True)
         m_after = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles="OpenStreetMap")
@@ -1557,4 +1669,4 @@ if 'result' in st.session_state:
     st.dataframe(rdf[final_cols].rename(columns={truck_col: "เบอร์รถเดิม"}), use_container_width=True)
 
     csv_data = rdf[final_cols].to_csv(index=False).encode('utf-8-sig')
-    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v2_3.csv', 'text/csv', use_container_width=True)
+    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v2_4.csv', 'text/csv', use_container_width=True)
