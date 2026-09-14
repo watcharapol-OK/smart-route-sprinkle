@@ -1087,7 +1087,7 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
     )
 
 # =====================================================================================
-#  SECTION 8 — RESTORED DARK SIDEBAR & HIGH-CONTRAST FOCUS CARDS THEME
+#  SECTION 8 — HIGH-CONTRAST FOCUS THEME & DYNAMIC FONT SIZE
 # =====================================================================================
 
 st.sidebar.markdown("### 🔤 ขนาดอักษร:")
@@ -1119,13 +1119,13 @@ st.markdown(f'''
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
 
-html, body, [class*="css"], p, span, label, div, small, li, a {{
+/* บังคับใช้ฟอนต์และขนาดตัวอักษร */
+html, body, [class*="css"], .stApp {{
     font-family: 'Sarabun', sans-serif !important;
     font-size: {base_font} !important;
-    font-weight: 400;
 }}
 
-/* พื้นหลังหลักของเว็บ */
+/* พื้นหลังหลักสีฟ้าครามสดชื่นของสปริงเคิล */
 .stApp {{
     background:
         radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.28) 0%, transparent 45%),
@@ -1133,6 +1133,97 @@ html, body, [class*="css"], p, span, label, div, small, li, a {{
         radial-gradient(circle at 50% 85%, rgba(2, 132, 199, 0.35) 0%, transparent 55%),
         linear-gradient(135deg, #033B60 0%, #02598B 35%, #0277B5 70%, #0284C7 100%) !important;
     background-attachment: fixed !important;
+}}
+
+/* 🛑 บังคับตัวหนังสือบนหน้าจอหลักเป็นสีขาวสว่าง คมชัด 100% ไม่จมหาย */
+p, span, label, small, li, div[data-testid="stMarkdownContainer"] p, [data-testid="stCaptionContainer"] p, .stCaption {{
+    color: #FFFFFF !important;
+    opacity: 1 !important;
+    font-weight: 500 !important;
+    text-shadow: 0 1px 3px rgba(0, 20, 40, 0.8) !important;
+}}
+.stCaption, [data-testid="stCaptionContainer"] p {{
+    color: #E0F2FE !important;
+    font-weight: 500 !important;
+}}
+
+/* 🛑 เส้นแบ่งเขตสายตา (Section Boundary Headers) */
+h1 {{
+    font-size: {h1_font} !important;
+    color: #FFD700 !important;
+    font-weight: 700 !important;
+    text-shadow: 0 2px 5px rgba(0,25,50,0.8);
+}}
+.stApp h2 {{
+    font-size: {h2_font} !important;
+    color: #FFFFFF !important;
+    font-weight: 700 !important;
+    background: rgba(3, 35, 65, 0.85) !important;
+    border-left: 6px solid #FFD700 !important;
+    padding: 10px 18px !important;
+    border-radius: 8px !important;
+    margin-top: 1.8rem !important;
+    margin-bottom: 1rem !important;
+    border-top: 1px solid rgba(56, 189, 248, 0.3) !important;
+    border-right: 1px solid rgba(56, 189, 248, 0.3) !important;
+    border-bottom: 1px solid rgba(56, 189, 248, 0.3) !important;
+    box-shadow: 0 4px 15px rgba(0, 15, 35, 0.4) !important;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}}
+h3 {{
+    font-size: {h3_font} !important;
+    color: #FFD700 !important;
+    font-weight: 600 !important;
+}}
+
+/* 🛑 การ์ดตัวเลขสถิติสีขาวสว่างเพื่อล็อกโฟกัสสายตา (Solid White Focus Metric Cards) */
+div[data-testid="stMetric"],
+div[data-testid="metric-container"],
+[data-testid="stMetric"] {{
+    background-color: #FFFFFF !important;
+    background: #FFFFFF !important;
+    border-radius: 14px !important;
+    padding: 16px 20px !important;
+    border: 2px solid #38BDF8 !important;
+    border-top: 6px solid #0284C7 !important;
+    box-shadow: 0 8px 24px rgba(0, 15, 35, 0.35) !important;
+    transition: all 0.2s ease !important;
+}}
+div[data-testid="stMetric"]:hover,
+div[data-testid="metric-container"]:hover {{
+    border-top-color: #FFD700 !important;
+    box-shadow: 0 10px 28px rgba(0, 15, 35, 0.5) !important;
+    transform: translateY(-2px);
+}}
+div[data-testid="stMetric"] *,
+div[data-testid="metric-container"] * {{
+    text-shadow: none !important;
+}}
+div[data-testid="stMetric"] [data-testid="stMetricLabel"] *,
+div[data-testid="stMetric"] [data-testid="stMetricLabel"],
+div[data-testid="metric-container"] [data-testid="stMetricLabel"] * {{
+    color: #0F172A !important;
+    font-size: 1.05rem !important;
+    font-weight: 700 !important;
+}}
+div[data-testid="stMetric"] [data-testid="stMetricValue"] *,
+div[data-testid="stMetric"] [data-testid="stMetricValue"],
+div[data-testid="metric-container"] [data-testid="stMetricValue"] * {{
+    color: #0284C7 !important;
+    font-size: 1.8rem !important;
+    font-weight: 800 !important;
+}}
+div[data-testid="stMetric"] [data-testid="stMetricDelta"] *,
+div[data-testid="stMetric"] [data-testid="stMetricDelta"],
+div[data-testid="metric-container"] [data-testid="stMetricDelta"] * {{
+    color: #0369A1 !important;
+    font-weight: 700 !important;
+    background-color: #E0F2FE !important;
+    border-radius: 6px !important;
+    padding: 2px 8px !important;
+}}
+div[data-testid="stMetric"] [data-testid="stMetricDelta"] svg {{
+    fill: #0369A1 !important;
 }}
 
 /* -------------------------------------------------------------
@@ -1145,6 +1236,7 @@ html, body, [class*="css"], p, span, label, div, small, li, a {{
 }}
 [data-testid="stSidebar"] * {{
     color: #FFFFFF !important;
+    text-shadow: none !important;
 }}
 [data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown p {{
     color: #F3E5AB !important;
@@ -1157,13 +1249,13 @@ html, body, [class*="css"], p, span, label, div, small, li, a {{
     background: transparent !important;
     border-left: none !important;
     box-shadow: none !important;
+    border-top: none !important;
+    border-right: none !important;
 }}
-
-/* กล่อง Input / Select ใน Sidebar คืนค่ากระจกมืด ตัวหนังสือขาวสว่าง */
 [data-testid="stSidebar"] input,
 [data-testid="stSidebar"] textarea,
 [data-testid="stSidebar"] div[data-baseweb="select"] > div {{
-    background: rgba(0, 30, 60, 0.45) !important;
+    background: rgba(0, 30, 60, 0.5) !important;
     backdrop-filter: blur(12px) !important;
     border: 1px solid rgba(255, 255, 255, 0.25) !important;
     color: #FFFFFF !important;
@@ -1214,102 +1306,18 @@ html, body, [class*="css"], p, span, label, div, small, li, a {{
     display: none !important;
 }}
 
-/* -------------------------------------------------------------
-   🎨 พื้นที่หน้าจอหลัก (MAIN CONTENT AREA)
-   ------------------------------------------------------------- */
-h1 {{
-    font-size: {h1_font} !important;
-    color: #FFD700 !important;
-    font-weight: 700 !important;
-    text-shadow: 0 2px 5px rgba(0,25,50,0.6);
-}}
-section.main h2 {{
-    font-size: {h2_font} !important;
-    color: #FFFFFF !important;
-    font-weight: 700 !important;
-    background: rgba(3, 35, 62, 0.8) !important;
-    border-left: 6px solid #FFD700 !important;
-    padding: 10px 18px !important;
-    border-radius: 8px !important;
-    margin-top: 1.8rem !important;
-    margin-bottom: 1rem !important;
-    box-shadow: 0 4px 15px rgba(0, 15, 35, 0.35) !important;
-}}
-
-/* 🛑 ตัวหนังสือบนหน้าจอหลัก: บังคับขาวสว่าง คมชัด 100% ไม่จมหาย */
-section.main .stMarkdown p,
-section.main .stCaption,
-section.main [data-testid="stCaptionContainer"],
-section.main [data-testid="stMarkdownContainer"] p,
-section.main span {{
-    color: #FFFFFF !important;
-    opacity: 1 !important;
-    font-weight: 600 !important;
-    text-shadow: 0 1px 3px rgba(0, 20, 40, 0.8) !important;
-}}
-section.main .stCaption, section.main [data-testid="stCaptionContainer"] {{
-    color: #E0F2FE !important;
-    font-size: 0.95em !important;
-}}
-
-/* -------------------------------------------------------------
-   🛑 การ์ดโฟกัสสายตาสีขาวคมชัด (SOLID WHITE FOCUS METRIC CARDS)
-   ------------------------------------------------------------- */
-section.main div[data-testid="stMetric"] {{
-    background: #FFFFFF !important;
-    border-radius: 12px !important;
-    padding: 14px 18px !important;
-    box-shadow: 0 8px 22px rgba(0, 15, 35, 0.28) !important;
-    border-top: 4px solid #0284C7 !important;
-    border-left: 1px solid #E2E8F0 !important;
-    border-right: 1px solid #E2E8F0 !important;
-    border-bottom: 2.5px solid #CBD5E1 !important;
-    transition: all 0.2s ease;
-}}
-section.main div[data-testid="stMetric"]:hover {{
-    border-top-color: #FFD700 !important;
-    box-shadow: 0 10px 26px rgba(0, 15, 35, 0.4) !important;
-    transform: translateY(-2px);
-}}
-
-/* ตัวหนังสือในการ์ด Metric: ดำ/น้ำเงินเข้ม คมชัด 100% */
-section.main div[data-testid="stMetric"] [data-testid="stMetricLabel"] * {{
-    color: #1E293B !important;
-    font-size: 0.95em !important;
-    font-weight: 700 !important;
-    text-shadow: none !important;
-}}
-section.main div[data-testid="stMetric"] [data-testid="stMetricValue"] {{
-    color: #0369A1 !important;
-    font-size: 1.6em !important;
-    font-weight: 800 !important;
-    text-shadow: none !important;
-}}
-section.main div[data-testid="stMetric"] [data-testid="stMetricDelta"] {{
-    color: #0284C7 !important;
-    background: #E0F2FE !important;
-    padding: 2px 8px !important;
-    border-radius: 6px !important;
-    font-weight: 700 !important;
-    font-size: 0.85em !important;
-    text-shadow: none !important;
-}}
-section.main div[data-testid="stMetric"] [data-testid="stMetricDelta"] svg {{
-    fill: #0284C7 !important;
-}}
-
-/* เฉพาะกล่องเลือกสายรถบนหน้าจอหลัก (เหนือแผนที่) */
-section.main div[data-baseweb="select"] > div {{
+/* กล่องเลือกสายรถบนหน้าจอหลัก (เหนือแผนที่) */
+div[data-baseweb="select"] > div {{
     background: #FFFFFF !important;
     border: 1.5px solid #0284C7 !important;
     border-radius: 10px !important;
     box-shadow: 0 2px 8px rgba(0,0,0,0.12) !important;
 }}
-section.main div[data-baseweb="select"] * {{
+div[data-baseweb="select"] * {{
     color: #0F172A !important;
     font-weight: 600 !important;
 }}
-section.main div[data-baseweb="select"] svg {{
+div[data-baseweb="select"] svg {{
     fill: #0F172A !important;
 }}
 
