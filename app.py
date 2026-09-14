@@ -1,6 +1,6 @@
 # =====================================================================================
-#  SMART ROUTE REBALANCER — PRODUCTION BUILD v3.0
-#  Multi-Donor Fleet Rebalancing + High-Contrast KPI Cards & Visual Banners
+#  SMART ROUTE REBALANCER — PRODUCTION BUILD v3.1
+#  Multi-Donor Fleet Rebalancing + Clean Metric Cards & Render Fix
 #  ---------------------------------------------------------------------------------
 #  requirements.txt:
 #      streamlit>=1.31
@@ -35,7 +35,7 @@ except Exception:
     HAS_SCIPY = False
 
 st.set_page_config(
-    page_title="Smart Route Rebalancer v3.0",
+    page_title="Smart Route Rebalancer v3.1",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -1148,6 +1148,53 @@ html, body, [class*="css"], .stApp {{
     background-attachment: fixed !important;
 }}
 
+/* 🛑 เส้นแบ่งเขตสายตา (Section Boundary Headers) */
+h1 {{
+    font-size: {h1_font} !important;
+    color: #FFD700 !important;
+    font-weight: 700 !important;
+    text-shadow: 0 2px 5px rgba(0,25,50,0.8);
+}}
+section.main h2 {{
+    font-size: {h2_font} !important;
+    color: #FFFFFF !important;
+    font-weight: 700 !important;
+    background: rgba(3, 35, 65, 0.88) !important;
+    border-left: 6px solid #FFD700 !important;
+    padding: 10px 18px !important;
+    border-radius: 8px !important;
+    margin-top: 1.8rem !important;
+    margin-bottom: 1rem !important;
+    border-top: 1px solid rgba(56, 189, 248, 0.35) !important;
+    border-right: 1px solid rgba(56, 189, 248, 0.35) !important;
+    border-bottom: 1px solid rgba(56, 189, 248, 0.35) !important;
+    box-shadow: 0 4px 15px rgba(0, 15, 35, 0.45) !important;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+}}
+h3 {{
+    font-size: {h3_font} !important;
+    color: #FFD700 !important;
+    font-weight: 600 !important;
+}}
+
+/* 🛑 ตารางข้อมูล */
+.stDataFrame, .stDataFrame * {{
+    font-size: {base_font} !important;
+}}
+.stDataFrame {{
+    background: rgba(2, 45, 75, 0.65) !important;
+    backdrop-filter: blur(20px);
+    padding: 1rem;
+    border-radius: 16px;
+    border: 1.5px solid rgba(255,255,255,0.3) !important;
+    border-top: 4px solid #38BDF8 !important;
+    box-shadow: 0 8px 25px rgba(0,20,45,0.35);
+}}
+.stDataFrame td, .stDataFrame th, .stDataFrame div {{
+    color: #0F172A !important;
+    font-weight: 500 !important;
+}}
+
 /* -------------------------------------------------------------
    🔒 คืนค่าแถบเมนูด้านซ้าย (SIDEBAR) ล็อกสไตล์เดิม 100%
    ------------------------------------------------------------- */
@@ -1158,6 +1205,7 @@ html, body, [class*="css"], .stApp {{
 }}
 [data-testid="stSidebar"] * {{
     color: #FFFFFF !important;
+    text-shadow: none !important;
     font-size: {base_font} !important;
 }}
 [data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown p {{
@@ -1168,6 +1216,11 @@ html, body, [class*="css"], .stApp {{
     color: #FFD700 !important;
     border-bottom: 1px solid rgba(212,175,55,0.3) !important;
     padding-bottom: 8px !important;
+    background: transparent !important;
+    border-left: none !important;
+    box-shadow: none !important;
+    border-top: none !important;
+    border-right: none !important;
 }}
 [data-testid="stSidebar"] input,
 [data-testid="stSidebar"] textarea,
@@ -1178,6 +1231,7 @@ html, body, [class*="css"], .stApp {{
     color: #FFFFFF !important;
     border-radius: 10px !important;
     font-weight: 500 !important;
+    box-shadow: none !important;
 }}
 [data-testid="stSidebar"] input::placeholder,
 [data-testid="stSidebar"] textarea::placeholder {{
@@ -1227,33 +1281,44 @@ section.main div[data-baseweb="select"] > div {{
     background: #FFFFFF !important;
     border: 1.5px solid #0284C7 !important;
     border-radius: 10px !important;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12) !important;
 }}
 section.main div[data-baseweb="select"] * {{
     color: #0F172A !important;
     font-size: {base_font} !important;
-    font-weight: 700 !important;
+    font-weight: 600 !important;
 }}
 section.main div[data-baseweb="select"] svg {{
     fill: #0F172A !important;
 }}
 
-/* ตารางข้อมูล */
-.stDataFrame, .stDataFrame * {{
+/* ดรอปดาวน์ */
+div[role="listbox"], ul[role="listbox"], div[data-baseweb="menu"], [data-baseweb="select-dropdown"] {{
+    background: #FFFFFF !important;
+    border: 1.5px solid #0284C7 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.35) !important;
+}}
+div[role="option"], ul[role="listbox"] > li {{
+    color: #0F172A !important;
+    font-size: {base_font} !important;
+    font-weight: 600 !important;
+    padding: 10px 16px !important;
+    border-bottom: 1px solid #E2E8F0 !important;
+}}
+div[role="option"] *, ul[role="listbox"] > li * {{
+    color: #0F172A !important;
     font-size: {base_font} !important;
 }}
-.stDataFrame {{
-    background: rgba(2, 45, 75, 0.65) !important;
-    backdrop-filter: blur(20px);
-    padding: 1rem;
-    border-radius: 16px;
-    border: 1.5px solid rgba(255,255,255,0.3) !important;
-    border-top: 4px solid #38BDF8 !important;
-    box-shadow: 0 8px 25px rgba(0,20,45,0.35);
+div[role="option"]:hover {{
+    background: #E0F2FE !important;
 }}
-.stDataFrame td, .stDataFrame th, .stDataFrame div {{
-    color: #0F172A !important;
-    font-weight: 500 !important;
+div[role="option"][aria-selected="true"] {{
+    background: #38BDF8 !important;
+}}
+div[role="option"][aria-selected="true"] * {{
+    color: #002D62 !important;
+    font-weight: 700 !important;
 }}
 
 .stButton>button {{
@@ -1285,36 +1350,34 @@ section.main div[data-baseweb="select"] svg {{
 </style>
 ''', unsafe_allow_html=True)
 
-# ฟังก์ชันสร้างการ์ดตัวเลขสถิติแบบโฟกัสสายตาพร้อมระบบสีตามเงื่อนไข
+# ฟังก์ชันสร้างการ์ดตัวเลขสถิติแบบปลอดภัยไร้ปัญหา HTML tag หลุดรอด
 def render_metric_card(
     label: str,
     value: str,
     delta: str = "",
     status: str = "normal",  # "good" (เขียว), "warning" (เหลือง), "danger" (แดง), "normal" (ฟ้าคราม)
 ) -> str:
-    # กำหนดสีตัวเลขหลัก
     color_map = {
-        "good": "#16A34A",       # เขียวสดใส (ปกติ/ดี)
-        "warning": "#D97706",    # ส้ม/เหลืองอำพัน (ใกล้เกินเพดาน)
-        "danger": "#DC2626",     # แดงชัดเจน (เกินเกณฑ์/วิกฤต)
-        "normal": "#0284C7",     # ฟ้าครามสปริงเคิล
+        "good": "#16A34A",
+        "warning": "#D97706",
+        "danger": "#DC2626",
+        "normal": "#0284C7",
     }
     val_color = color_map.get(status, "#0284C7")
 
-    # กำหนดสีของแถบตัวเลข Delta (ถ้ามีติดลบ '-' ให้แดงทันที)
     delta_html = ""
     if delta:
         d_str = str(delta).strip()
         if d_str.startswith("-") or "-" in d_str:
-            d_bg, d_color, d_border = "#FEE2E2", "#DC2626", "#FCA5A5"  # แดงสำหรับติดลบ
+            d_bg, d_color, d_border = "#FEE2E2", "#DC2626", "#FCA5A5"
         elif status == "danger":
             d_bg, d_color, d_border = "#FEE2E2", "#DC2626", "#FCA5A5"
         elif status == "warning":
-            d_bg, d_color, d_border = "#FEF3C7", "#D97706", "#FCD34D"  # เหลืองใกล้เพดาน
+            d_bg, d_color, d_border = "#FEF3C7", "#D97706", "#FCD34D"
         elif status == "good":
-            d_bg, d_color, d_border = "#DCFCE7", "#16A34A", "#86EFAC"  # เขียวสำหรับปกติ/ดี
+            d_bg, d_color, d_border = "#DCFCE7", "#16A34A", "#86EFAC"
         else:
-            d_bg, d_color, d_border = "#E0F2FE", "#0369A1", "#BAE6FD"  # ฟ้าครามอ่อน
+            d_bg, d_color, d_border = "#E0F2FE", "#0369A1", "#BAE6FD"
 
         delta_html = f'''
         <div style="margin-top: 6px;">
@@ -1332,7 +1395,6 @@ def render_metric_card(
     </div>
     '''
 
-# ฟังก์ชันสร้างแถบหัวข้อเสมือนเส้นแบ่งเขตสายตาพร้อมพื้นหลังขาวเด่น
 def section_header(title: str, subtitle: str = "") -> str:
     sub_html = f"<div style='font-size:{small_font}; color:#475569; font-weight:600; margin-top:3px;'>{subtitle}</div>" if subtitle else ""
     return f"""
@@ -1358,7 +1420,7 @@ def show_loader(placeholder, msg: str):
 # =====================================================================================
 #  SECTION 9 — DATA IMPORT & MAPPING
 # =====================================================================================
-st.title("🚛 Smart Route Rebalancer — Production v3.0")
+st.title("🚛 Smart Route Rebalancer — Production v3.1")
 st.markdown("<div style='background:rgba(2,45,75,0.6); display:inline-block; padding:5px 16px; border-radius:12px; border:1px solid rgba(56,189,248,0.3); font-weight:600; color:#E0F2FE;'>ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Zero-Overlap Satellite Pocket Architecture)</div>", unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
@@ -1462,17 +1524,10 @@ overloaded = diag.loc[diag['สถานะ'] == '🔴 เกินเพดา�
 st.markdown(section_header("🩺 ผลวินิจฉัยสถานะรถปัจจุบัน (ก่อนปรับ)"), unsafe_allow_html=True)
 d1, d2, d3, d4 = st.columns(4)
 
-# 1. จำนวนรถทั้งหมด
 d1.markdown(render_metric_card("จำนวนรถทั้งหมด", f"{len(diag)} คัน", status="normal"), unsafe_allow_html=True)
-
-# 2. รถที่เกินเพดาน (ถ้าเกินเป็นแดง)
 over_status = "danger" if len(overloaded) > 0 else "good"
 d2.markdown(render_metric_card("รถที่เกินเพดาน", f"{len(overloaded)} คัน", delta=f"เพดาน {daily_cap:,.0f} ถัง/วัน", status=over_status), unsafe_allow_html=True)
-
-# 3. ยอดรวมทั้งสาขา
 d3.markdown(render_metric_card("ยอดรวมทั้งสาขา", f"{df[vol_col].sum():,.0f} ถัง/เดือน", status="normal"), unsafe_allow_html=True)
-
-# 4. ยอดส่วนเกินที่ต้องย้าย (ถ้ามียอดต้องย้ายเป็นเหลือง/ส้มแจ้งเตือน)
 excess_total = float(diag['ส่วนเกิน/วัน'].sum()) * DAYS_PER_MONTH if not diag.empty else 0.0
 excess_status = "warning" if excess_total > 0 else "good"
 d4.markdown(render_metric_card("ยอดส่วนเกินที่ต้องย้าย", f"{excess_total:,.0f} ถัง/เดือน", delta=f"≈ {math.ceil(excess_total/max(1.0,cap_units))} คันรถ", status=excess_status), unsafe_allow_html=True)
@@ -1581,13 +1636,13 @@ if 'result' in st.session_state:
     st.markdown(section_header("📈 ตัวชี้วัดผลลัพธ์เพื่อการตัดสินใจของผู้บริหาร (Executive KPIs)"), unsafe_allow_html=True)
     k1, k2, k3, k4 = st.columns(4)
 
-    # 1. รถเกินเพดาน (ถ้าเป็น 0 ถือว่าดี = เขียว, ถ้าเหลือคันเกินเพดาน = แดง)
+    # 1. รถเกินเพดาน
     over_after = int(res.metrics['over_after'])
     over_diff = int(res.metrics['over_after'] - res.metrics['over_before'])
     k1_status = "good" if over_after == 0 else "danger"
     k1.markdown(render_metric_card("รถเกินเพดาน", f"{over_after} คัน", delta=f"{over_diff:+d}", status=k1_status), unsafe_allow_html=True)
 
-    # 2. โหลดสูงสุด (ถ้าเกินเพดาน = แดง, ถ้าใกล้เพดาน 140-156 = เหลือง, ถ้าน้อยกว่านั้น = เขียว)
+    # 2. โหลดสูงสุด
     peak_after = res.metrics['peak_after']
     peak_diff = res.metrics['peak_after'] - res.metrics['peak_before']
     if peak_after > cfg.daily_control_cap:
@@ -1596,11 +1651,12 @@ if 'result' in st.session_state:
         k2_status = "warning"
     else:
         k2_status = "good"
-    k2.markdown(render_metric_card("โหลดสูงสุด", f"{peak_after:,.0f} ถัง/วัน", delta=f"{peak_diff:,.0f} ถัง", status=k2_status), unsafe_allow_html=True)
+    k2.markdown(render_metric_card("โหลดสูงสุด", f"{peak_after:,.0f} ถัง/วัน", delta=f"{peak_diff:+,.0f} ถัง", status=k2_status), unsafe_allow_html=True)
 
     # 3. ความกระชับของโซน
     compact_diff = res.metrics['compact_after_km'] - res.metrics['compact_before_km']
-    k3.markdown(render_metric_card("ความกระชับของโซน", f"{res.metrics['compact_after_km']:.2f} กม.", delta=f"{compact_diff:+.2f} กม.", status="normal"), unsafe_allow_html=True)
+    k3_status = "good" if compact_diff <= 0 else "warning"
+    k3.markdown(render_metric_card("ความกระชับของโซน", f"{res.metrics['compact_after_km']:.2f} กม.", delta=f"{compact_diff:+.2f} กม.", status=k3_status), unsafe_allow_html=True)
 
     # 4. ลูกค้าที่โยกย้าย
     k4.markdown(render_metric_card("ลูกค้าที่โยกย้าย", f"{int(res.metrics['moved_cust']):,} ราย", delta=f"{res.metrics['moved_pct']:.1f}% ของสาขา", status="normal"), unsafe_allow_html=True)
@@ -1612,8 +1668,6 @@ if 'result' in st.session_state:
     # 🗺️ EXECUTIVE COMPARISON MAPS (BEFORE VS. AFTER — NO WATERMARK)
     # ---------------------------------------------------------------------------------
     st.markdown("---")
-    
-    # 🛑 แถบหัวข้อแผนที่พร้อมพื้นหลังขาวเด่นชัด ไม่จมหาย
     st.markdown(section_header("🗺️ แผนที่เปรียบเทียบเชิงพื้นที่ (Before vs. After Comparison)", "คลิกที่หมุดแต่ละจุดเพื่อดูรหัสสมาชิก, ชื่อลูกค้า, ยอดรับน้ำเฉลี่ย และการเปลี่ยนสายส่ง (เวิ้งโดดเดี่ยวถูกรวมเป็นคันเดียว)"), unsafe_allow_html=True)
 
     distinct_colors = [
@@ -1634,14 +1688,12 @@ if 'result' in st.session_state:
             palette_idx += 1
     color_map[OVERFLOW_LABEL] = '#64748B'
 
-    # 🛑 กรอบควบคุมการเลือกสายรถและป้ายสีคำอธิบาย (Legend) พร้อมพื้นหลังขาวคมชัด
     col_filter1, col_filter2 = st.columns([2, 3])
     with col_filter1:
         map_view_opts = ["แสดงรถทั้งหมด (แยกสีตามเบอร์รถ)"] + active_trucks
         selected_truck_view = st.selectbox("🔍 เลือกรถที่ต้องการตรวจสอบเป็นพิเศษ:", options=map_view_opts)
     
     with col_filter2:
-        # สร้างแถบคำอธิบายสีสายรถบนการ์ดขาวเด่นชัด
         legend_badges_html = "".join([
             f"<span style='display:inline-block; background:#FFFFFF; color:{color_map.get(t, '#0284C7')}; border:2px solid {color_map.get(t, '#0284C7')}; padding:5px 12px; border-radius:8px; font-weight:800; font-size:{base_font}; margin:3px 5px; box-shadow:0 2px 6px rgba(0,0,0,0.12);'>● รถ {t}</span>"
             for t in active_trucks
@@ -1777,4 +1829,4 @@ if 'result' in st.session_state:
     st.dataframe(rdf[final_cols].rename(columns={truck_col: "เบอร์รถเดิม"}), use_container_width=True)
 
     csv_data = rdf[final_cols].to_csv(index=False).encode('utf-8-sig')
-    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v3_0.csv', 'text/csv', use_container_width=True)
+    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v3_1.csv', 'text/csv', use_container_width=True)
