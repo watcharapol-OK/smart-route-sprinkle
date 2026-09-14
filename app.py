@@ -1,6 +1,6 @@
 # =====================================================================================
-#  SMART ROUTE REBALANCER — PRODUCTION BUILD v2.8
-#  Multi-Donor Fleet Rebalancing + High-Contrast Focus Cards & Clean Boundaries
+#  SMART ROUTE REBALANCER — PRODUCTION BUILD v2.9
+#  Multi-Donor Fleet Rebalancing + Real-Time Universal Font Scaling Engine
 #  ---------------------------------------------------------------------------------
 #  requirements.txt:
 #      streamlit>=1.31
@@ -35,7 +35,7 @@ except Exception:
     HAS_SCIPY = False
 
 st.set_page_config(
-    page_title="Smart Route Rebalancer v2.8",
+    page_title="Smart Route Rebalancer v2.9",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -1087,7 +1087,7 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
     )
 
 # =====================================================================================
-#  SECTION 8 — HIGH-CONTRAST FOCUS THEME & DYNAMIC FONT SIZE
+#  SECTION 8 — REAL-TIME UNIVERSAL FONT SCALING & HIGH-CONTRAST FOCUS THEME
 # =====================================================================================
 
 st.sidebar.markdown("### 🔤 ขนาดอักษร:")
@@ -1099,30 +1099,63 @@ font_size_choice = st.sidebar.radio(
     label_visibility="collapsed"
 )
 
+# กำหนดสเกลความต่างของขนาดฟอนต์ให้ชัดเจนครอบคลุมทุกจุด
 if font_size_choice == "ก ใหญ่":
-    base_font = "16.5px"
-    h1_font = "30px"
-    h2_font = "23px"
-    h3_font = "19px"
+    root_font = "18px"
+    base_font = "17.5px"
+    h1_font = "32px"
+    h2_font = "24px"
+    h3_font = "20px"
+    metric_val_font = "2.1rem"
+    metric_lbl_font = "1.1rem"
+    table_font = "16.5px"
 elif font_size_choice == "ก ใหญ่พิเศษ (+)":
-    base_font = "18.5px"
-    h1_font = "34px"
-    h2_font = "27px"
-    h3_font = "21px"
+    root_font = "21px"
+    base_font = "20.5px"
+    h1_font = "36px"
+    h2_font = "28px"
+    h3_font = "23px"
+    metric_val_font = "2.5rem"
+    metric_lbl_font = "1.25rem"
+    table_font = "19.5px"
 else:
+    root_font = "15px"
     base_font = "15px"
     h1_font = "26px"
     h2_font = "20px"
     h3_font = "17px"
+    metric_val_font = "1.7rem"
+    metric_lbl_font = "0.95rem"
+    table_font = "14px"
 
 st.markdown(f'''
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
 
-/* บังคับใช้ฟอนต์และขนาดตัวอักษร */
+/* 🛑 ปรับขนาดรากฐานให้ขยายครอบคลุมทุกองค์ประกอบ */
+html {{
+    font-size: {root_font} !important;
+}}
 html, body, [class*="css"], .stApp {{
     font-family: 'Sarabun', sans-serif !important;
+}}
+
+/* บังคับขนาดข้อความและตัวอักษรทุกประเภทบนหน้าจอหลัก */
+section.main p,
+section.main span,
+section.main label,
+section.main small,
+section.main li,
+section.main div[data-testid="stMarkdownContainer"] p,
+section.main [data-testid="stCaptionContainer"] p,
+section.main .stCaption,
+section.main [data-testid="stWidgetLabel"] p,
+section.main [data-testid="stWidgetLabel"] span {{
     font-size: {base_font} !important;
+    color: #FFFFFF !important;
+    opacity: 1 !important;
+    font-weight: 600 !important;
+    text-shadow: 0 1px 3px rgba(0, 20, 40, 0.9) !important;
 }}
 
 /* พื้นหลังหลักสีฟ้าครามสดชื่นของสปริงเคิล */
@@ -1135,40 +1168,28 @@ html, body, [class*="css"], .stApp {{
     background-attachment: fixed !important;
 }}
 
-/* 🛑 บังคับตัวหนังสือบนหน้าจอหลักเป็นสีขาวสว่าง คมชัด 100% ไม่จมหาย */
-p, span, label, small, li, div[data-testid="stMarkdownContainer"] p, [data-testid="stCaptionContainer"] p, .stCaption {{
-    color: #FFFFFF !important;
-    opacity: 1 !important;
-    font-weight: 500 !important;
-    text-shadow: 0 1px 3px rgba(0, 20, 40, 0.8) !important;
-}}
-.stCaption, [data-testid="stCaptionContainer"] p {{
-    color: #E0F2FE !important;
-    font-weight: 500 !important;
-}}
-
-/* 🛑 เส้นแบ่งเขตสายตา (Section Boundary Headers) */
+/* 🛑 แถบหัวข้อเสมือนเส้นแบ่งเขตสายตา (Section Boundary Headers) */
 h1 {{
     font-size: {h1_font} !important;
     color: #FFD700 !important;
     font-weight: 700 !important;
     text-shadow: 0 2px 5px rgba(0,25,50,0.8);
 }}
-.stApp h2 {{
+section.main h2 {{
     font-size: {h2_font} !important;
     color: #FFFFFF !important;
     font-weight: 700 !important;
-    background: rgba(3, 35, 65, 0.85) !important;
+    background: rgba(3, 35, 65, 0.88) !important;
     border-left: 6px solid #FFD700 !important;
     padding: 10px 18px !important;
     border-radius: 8px !important;
     margin-top: 1.8rem !important;
     margin-bottom: 1rem !important;
-    border-top: 1px solid rgba(56, 189, 248, 0.3) !important;
-    border-right: 1px solid rgba(56, 189, 248, 0.3) !important;
-    border-bottom: 1px solid rgba(56, 189, 248, 0.3) !important;
-    box-shadow: 0 4px 15px rgba(0, 15, 35, 0.4) !important;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    border-top: 1px solid rgba(56, 189, 248, 0.35) !important;
+    border-right: 1px solid rgba(56, 189, 248, 0.35) !important;
+    border-bottom: 1px solid rgba(56, 189, 248, 0.35) !important;
+    box-shadow: 0 4px 15px rgba(0, 15, 35, 0.45) !important;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
 }}
 h3 {{
     font-size: {h3_font} !important;
@@ -1176,7 +1197,7 @@ h3 {{
     font-weight: 600 !important;
 }}
 
-/* 🛑 การ์ดตัวเลขสถิติสีขาวสว่างเพื่อล็อกโฟกัสสายตา (Solid White Focus Metric Cards) */
+/* 🛑 การ์ดโฟกัสสายตาสีขาวคมชัด (Solid White Focus Metric Cards) */
 div[data-testid="stMetric"],
 div[data-testid="metric-container"],
 [data-testid="stMetric"] {{
@@ -1203,20 +1224,21 @@ div[data-testid="stMetric"] [data-testid="stMetricLabel"] *,
 div[data-testid="stMetric"] [data-testid="stMetricLabel"],
 div[data-testid="metric-container"] [data-testid="stMetricLabel"] * {{
     color: #0F172A !important;
-    font-size: 1.05rem !important;
+    font-size: {metric_lbl_font} !important;
     font-weight: 700 !important;
 }}
 div[data-testid="stMetric"] [data-testid="stMetricValue"] *,
 div[data-testid="stMetric"] [data-testid="stMetricValue"],
 div[data-testid="metric-container"] [data-testid="stMetricValue"] * {{
     color: #0284C7 !important;
-    font-size: 1.8rem !important;
+    font-size: {metric_val_font} !important;
     font-weight: 800 !important;
 }}
 div[data-testid="stMetric"] [data-testid="stMetricDelta"] *,
 div[data-testid="stMetric"] [data-testid="stMetricDelta"],
 div[data-testid="metric-container"] [data-testid="stMetricDelta"] * {{
     color: #0369A1 !important;
+    font-size: calc({base_font} * 0.9) !important;
     font-weight: 700 !important;
     background-color: #E0F2FE !important;
     border-radius: 6px !important;
@@ -1226,8 +1248,75 @@ div[data-testid="stMetric"] [data-testid="stMetricDelta"] svg {{
     fill: #0369A1 !important;
 }}
 
+/* 🛑 บังคับขนาดฟอนต์ในตารางข้อมูล */
+.stDataFrame,
+.stDataFrame * {{
+    font-size: {table_font} !important;
+}}
+.stDataFrame {{
+    background: rgba(2, 45, 75, 0.65) !important;
+    backdrop-filter: blur(20px);
+    padding: 1rem;
+    border-radius: 16px;
+    border: 1.5px solid rgba(255,255,255,0.3) !important;
+    border-top: 4px solid #38BDF8 !important;
+    box-shadow: 0 8px 25px rgba(0,20,45,0.35);
+}}
+.stDataFrame td, .stDataFrame th, .stDataFrame div {{
+    color: #0F172A !important;
+    font-weight: 500 !important;
+}}
+
+/* 🛑 บังคับขนาดฟอนต์ในกล่อง Dropdown และ Selectbox หน้าหลัก */
+section.main div[data-baseweb="select"] > div,
+section.main div[data-baseweb="select"] * {{
+    font-size: {base_font} !important;
+}}
+section.main div[data-baseweb="select"] > div {{
+    background: #FFFFFF !important;
+    border: 1.5px solid #0284C7 !important;
+    border-radius: 10px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12) !important;
+}}
+section.main div[data-baseweb="select"] * {{
+    color: #0F172A !important;
+    font-weight: 600 !important;
+}}
+section.main div[data-baseweb="select"] svg {{
+    fill: #0F172A !important;
+}}
+
+/* ดรอปดาวน์ */
+div[role="listbox"], ul[role="listbox"], div[data-baseweb="menu"], [data-baseweb="select-dropdown"] {{
+    background: #FFFFFF !important;
+    border: 1.5px solid #0284C7 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.35) !important;
+}}
+div[role="option"], ul[role="listbox"] > li {{
+    color: #0F172A !important;
+    font-size: {base_font} !important;
+    font-weight: 600 !important;
+    padding: 10px 16px !important;
+    border-bottom: 1px solid #E2E8F0 !important;
+}}
+div[role="option"] *, ul[role="listbox"] > li * {{
+    color: #0F172A !important;
+    font-size: {base_font} !important;
+}}
+div[role="option"]:hover {{
+    background: #E0F2FE !important;
+}}
+div[role="option"][aria-selected="true"] {{
+    background: #38BDF8 !important;
+}}
+div[role="option"][aria-selected="true"] * {{
+    color: #002D62 !important;
+    font-weight: 700 !important;
+}}
+
 /* -------------------------------------------------------------
-   🔒 คืนค่าแถบเมนูด้านซ้าย (SIDEBAR) กลับเป็นสไตล์เดิม 100%
+   🔒 คืนค่าแถบเมนูด้านซ้าย (SIDEBAR) ล็อกสไตล์เดิม 100%
    ------------------------------------------------------------- */
 [data-testid="stSidebar"] {{
     background: rgba(0, 13, 26, 0.65) !important;
@@ -1237,6 +1326,7 @@ div[data-testid="stMetric"] [data-testid="stMetricDelta"] svg {{
 [data-testid="stSidebar"] * {{
     color: #FFFFFF !important;
     text-shadow: none !important;
+    font-size: {base_font} !important;
 }}
 [data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown p {{
     color: #F3E5AB !important;
@@ -1306,68 +1396,13 @@ div[data-testid="stMetric"] [data-testid="stMetricDelta"] svg {{
     display: none !important;
 }}
 
-/* กล่องเลือกสายรถบนหน้าจอหลัก (เหนือแผนที่) */
-div[data-baseweb="select"] > div {{
-    background: #FFFFFF !important;
-    border: 1.5px solid #0284C7 !important;
-    border-radius: 10px !important;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.12) !important;
-}}
-div[data-baseweb="select"] * {{
-    color: #0F172A !important;
-    font-weight: 600 !important;
-}}
-div[data-baseweb="select"] svg {{
-    fill: #0F172A !important;
-}}
-
-/* ดรอปดาวน์ */
-div[role="listbox"], ul[role="listbox"], div[data-baseweb="menu"], [data-baseweb="select-dropdown"] {{
-    background: #FFFFFF !important;
-    border: 1.5px solid #0284C7 !important;
-    border-radius: 12px !important;
-    box-shadow: 0 12px 32px rgba(0,0,0,0.35) !important;
-}}
-div[role="option"], ul[role="listbox"] > li {{
-    color: #0F172A !important;
-    font-weight: 600 !important;
-    padding: 10px 16px !important;
-    border-bottom: 1px solid #E2E8F0 !important;
-}}
-div[role="option"] *, ul[role="listbox"] > li * {{
-    color: #0F172A !important;
-}}
-div[role="option"]:hover {{
-    background: #E0F2FE !important;
-}}
-div[role="option"][aria-selected="true"] {{
-    background: #38BDF8 !important;
-}}
-div[role="option"][aria-selected="true"] * {{
-    color: #002D62 !important;
-    font-weight: 700 !important;
-}}
-
-/* ตารางข้อมูล Frosted Glass */
-.stDataFrame {{
-    background: rgba(2, 45, 75, 0.65) !important;
-    backdrop-filter: blur(20px);
-    padding: 1rem;
-    border-radius: 16px;
-    border: 1.5px solid rgba(255,255,255,0.3) !important;
-    border-top: 4px solid #38BDF8 !important;
-    box-shadow: 0 8px 25px rgba(0,20,45,0.35);
-}}
-.stDataFrame td, .stDataFrame th, .stDataFrame div {{
-    color: #0F172A !important;
-    font-weight: 500 !important;
-}}
-
+/* ปุ่มประมวลผลและปุ่มดาวน์โหลด */
 .stButton>button {{
     background: linear-gradient(135deg, #D4AF37 0%, #AA8C2C 100%) !important;
     color: #000B18 !important;
     border: none !important;
     border-radius: 10px;
+    font-size: {base_font} !important;
     font-weight: 700;
     padding: .6rem 1.4rem;
     width: 100%;
@@ -1382,6 +1417,7 @@ div[role="option"][aria-selected="true"] * {{
 [data-testid="stDownloadButton"] > button {{
     background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%) !important;
     color: #FFF !important;
+    font-size: {base_font} !important;
     border-radius: 10px !important;
     padding: .8rem 2rem;
     font-weight: 700;
@@ -1403,7 +1439,7 @@ def show_loader(placeholder, msg: str):
         html = f'<div style="text-align:center; padding:2rem; color:#FFD700; font-weight:bold; border-radius:16px; background:rgba(2,54,88,0.85);">{msg}</div>'
     placeholder.markdown(html, unsafe_allow_html=True)
 
-st.title("🚛 Smart Route Rebalancer — Production v2.8")
+st.title("🚛 Smart Route Rebalancer — Production v2.9")
 st.markdown("<div style='background:rgba(2,45,75,0.6); display:inline-block; padding:4px 14px; border-radius:12px; border:1px solid rgba(56,189,248,0.3); font-weight:600; color:#E0F2FE;'>ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Zero-Overlap Satellite Pocket Architecture)</div>", unsafe_allow_html=True)
 
 # =====================================================================================
@@ -1786,4 +1822,4 @@ if 'result' in st.session_state:
     st.dataframe(rdf[final_cols].rename(columns={truck_col: "เบอร์รถเดิม"}), use_container_width=True)
 
     csv_data = rdf[final_cols].to_csv(index=False).encode('utf-8-sig')
-    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v2_8.csv', 'text/csv', use_container_width=True)
+    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v2_9.csv', 'text/csv', use_container_width=True)
