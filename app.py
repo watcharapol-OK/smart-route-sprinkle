@@ -1,10 +1,14 @@
 # =====================================================================================
-#  SMART ROUTE REBALANCER — PRODUCTION BUILD v2.0
+#  SMART ROUTE REBALANCER — PRODUCTION BUILD v2.1
 #  Multi-Donor Fleet Rebalancing Engine
 #  ---------------------------------------------------------------------------------
 #  requirements.txt:
-#     streamlit>=1.31  pandas>=2.0  numpy>=1.24  folium>=0.15
-#     scipy>=1.10      requests>=2.31
+#     streamlit>=1.31
+#     pandas>=2.0
+#     numpy>=1.24
+#     folium>=0.15
+#     scipy>=1.10
+#     requests>=2.31
 # =====================================================================================
 from __future__ import annotations
 
@@ -17,263 +21,455 @@ from dataclasses import dataclass, field
 from itertools import combinations
 from typing import Dict, List, Optional, Sequence, Tuple
 
+import folium
 import numpy as np
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
-import folium
 from folium import plugins
 
 try:
     from scipy.spatial import cKDTree
+
     HAS_SCIPY = True
 except Exception:
     HAS_SCIPY = False
 
-st.set_page_config(page_title="Smart Route Rebalancer v2", layout="wide",
-                   initial_sidebar_state="expanded")
+
+st.set_page_config(
+    page_title="Smart Route Rebalancer v2.1",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
 
 # =====================================================================================
 #  SECTION 1 — CONSTANTS & DOMAIN MODEL
 # =====================================================================================
-WORKING_DAYS = 6                      # จันทร์-เสาร์
-WEEKS_PER_MONTH = 4.333               # 52 / 12
-DAYS_PER_MONTH = WORKING_DAYS * WEEKS_PER_MONTH   # ≈ 26 วันทำงาน/เดือน
+WORKING_DAYS = 6
+WEEKS_PER_MONTH = 4.333
+DAYS_PER_MONTH = WORKING_DAYS * WEEKS_PER_MONTH
 
-DEFAULT_MONTHLY_CAPACITY = 4160.0     # ถัง/เดือน/คัน  (= 160 ถัง/วัน × 26 วัน)
-DEFAULT_DAILY_CONTROL_CAP = 156       # เพดานควบคุมของบริษัท (ถัง/วัน)
-DEFAULT_MAX_STOPS_PER_DAY = 90        # เพดานจำนวนจุดจอด/วัน (ข้อจำกัดด้านเวลาคนขับ)
+DEFAULT_MONTHLY_CAPACITY = 4160.0
+DEFAULT_DAILY_CONTROL_CAP = 156.0
+DEFAULT_MAX_STOPS_PER_DAY = 90
 
-OVERFLOW_LABEL = 'ส่วนเกิน (Overflow)'
-NO_TRUCK_TOKENS = {'', 'nan', 'none', 'null', '-', 'ไม่ระบุ', 'na', 'n/a'}
+OVERFLOW_LABEL = "ส่วนเกิน (Overflow)"
+
+NO_TRUCK_TOKENS = {
+    "",
+    "nan",
+    "none",
+    "null",
+    "-",
+    "ไม่ระบุ",
+    "na",
+    "n/a",
+}
 
 # โซนโหลดรายวัน (ถัง/วัน)
-OPTIMAL_MIN, OPTIMAL_MAX = 140, 155
-AVOID_MIN, AVOID_MAX = 121, 139
-TARGET_DAY_CAP = 148                  # เป้าที่ smoothing พยายามดันลงมา
-ESCALATE_THRESHOLD = 160              # เกินนี้ = smoothing เอาไม่อยู่
-ESCALATE_TARGET_MIN, ESCALATE_TARGET_MAX = 180, 190   # ช่วงที่ยอมรับเป็น "รอบ 3"
+OPTIMAL_MIN = 140
+OPTIMAL_MAX = 155
+AVOID_MIN = 121
+AVOID_MAX = 139
+TARGET_DAY_CAP = 148
+ESCALATE_THRESHOLD = 160
+ESCALATE_TARGET_MIN = 180
+ESCALATE_TARGET_MAX = 190
 
 EARTH_RADIUS_M = 6371008.8
 
-# ---- Single Source of Truth สำหรับชื่อวัน (แก้ปัญหา 'พฤหัสฯ' vs 'พฤหัสบดี') ----
-DAY_NAMES = {0: 'จันทร์', 1: 'อังคาร', 2: 'พุธ', 3: 'พฤหัสบดี', 4: 'ศุกร์', 5: 'เสาร์'}
-DAY_SHORT = {0: 'จ', 1: 'อ', 2: 'พ', 3: 'พฤ', 4: 'ศ', 5: 'ส'}
-DAY_COLORS = {0: '#FFD700', 1: '#FF69B4', 2: '#28A745',
-              3: '#FD7E14', 4: '#00BFFF', 5: '#6F42C1'}
+DAY_NAMES = {
+    0: "จันทร์",
+    1: "อังคาร",
+    2: "พุธ",
+    3: "พฤหัสบดี",
+    4: "ศุกร์",
+    5: "เสาร์",
+}
 
-# token เรียงจากยาว→สั้น สำคัญมาก: ไม่งั้น 'พ' จะกิน 'พฤหัสบดี'
+DAY_SHORT = {
+    0: "จ",
+    1: "อ",
+    2: "พ",
+    3: "พฤ",
+    4: "ศ",
+    5: "ส",
+}
+
+DAY_COLORS = {
+    0: "#FFD700",
+    1: "#FF69B4",
+    2: "#28A745",
+    3: "#FD7E14",
+    4: "#00BFFF",
+    5: "#6F42C1",
+}
+
+# เรียง token จากยาวไปสั้น เพื่อไม่ให้ "พ" จับ "พฤหัสบดี" ก่อน
 DAY_TOKENS: List[Tuple[str, int]] = [
-    ('จันทร์', 0), ('อังคาร', 1), ('พฤหัสบดี', 3), ('พฤหัส', 3), ('พฤหัสฯ', 3),
-    ('พฤ', 3), ('พุธ', 2), ('ศุกร์', 4), ('เสาร์', 5),
-    ('mon', 0), ('tue', 1), ('wed', 2), ('thu', 3), ('fri', 4), ('sat', 5),
-    ('จ', 0), ('อ', 1), ('พ', 2), ('ศ', 4), ('ส', 5),
+    ("จันทร์", 0),
+    ("อังคาร", 1),
+    ("พฤหัสบดี", 3),
+    ("พฤหัสฯ", 3),
+    ("พฤหัส", 3),
+    ("พฤ", 3),
+    ("พุธ", 2),
+    ("ศุกร์", 4),
+    ("เสาร์", 5),
+    ("monday", 0),
+    ("tuesday", 1),
+    ("wednesday", 2),
+    ("thursday", 3),
+    ("friday", 4),
+    ("saturday", 5),
+    ("mon", 0),
+    ("tue", 1),
+    ("wed", 2),
+    ("thu", 3),
+    ("fri", 4),
+    ("sat", 5),
+    ("จ", 0),
+    ("อ", 1),
+    ("พ", 2),
+    ("ศ", 4),
+    ("ส", 5),
 ]
-ALL_DAYS_TOKENS = ('ทุกวัน', 'จ-ส', 'จันทร์-เสาร์', 'จ.-ส.', 'ทุกวันทำการ')
+
+ALL_DAYS_TOKENS = (
+    "ทุกวัน",
+    "จ-ส",
+    "จันทร์-เสาร์",
+    "จ.-ส.",
+    "ทุกวันทำการ",
+)
 
 
 # =====================================================================================
-#  SECTION 2 — PURE HELPERS (testable, ไม่แตะ Streamlit)
+#  SECTION 2 — PURE HELPERS
 # =====================================================================================
 def parse_days_from_string(val_str) -> Tuple[List[int], str]:
-    """แปลงข้อความวันจัดส่ง -> (list ของ index วัน 0-5, สถานะ)
-
-    สถานะ: 'ok' | 'empty' | 'unparsed'
-    แก้บั๊ก v1:
-      - regex เดิมมี |1) |2) ทำให้ "สัปดาห์ 12" ถูกตีเป็น จันทร์+อังคาร
-      - typo ',ศ
-
----
-
-## 📋 ตารางสรุปการแก้ไขทั้งหมด
-
-| ประเด็นเดิม | สถานะ | วิธีแก้ใน v2 |
-|---|---|---|
-| `guess_col` คืน `cols[0]` | ✅ | เพิ่มพารามิเตอร์ `allow_none=True` |
-| regex วันจัดส่ง (ตัวเลขลอย + typo `,ศ$`) | ✅ | เปลี่ยนเป็น token-based + คืนสถานะ `unparsed` มาเตือน |
-| Google API เกิน 100 elements | ✅ | `chunk = 100 // n_dest` แบบไดนามิก + ประเมินค่าใช้จ่าย |
-| OSRM เกิน limit พิกัด | ✅ | แบ่ง batch ให้ `batch + n_dest ≤ 95` + `sleep(0.35)` |
-| ระยะทางเป็นองศา² | ✅ | `project_xy()` → เมตรทั้งระบบ ตรงหน่วยกับ road distance |
-| slider ไม่ reset เมื่อเปลี่ยนชีต | ✅ | fingerprint ครอบคลุม url/gid/คอลัมน์/donor/รถใหม่ + ล้าง widget key |
-| O(n²) จำกัด 4,000 จุด | ✅ | `cKDTree` + fallback แบบแบ่งก้อน ลบข้อจำกัด `max_n` |
-| tolerance เป็นค่าสัมบูรณ์ | ✅ | เลือกโหมด `target` / `capacity` ได้ |
-| `พฤหัสฯ` vs `พฤหัสบดี` | ✅ | `DAY_NAMES` ชุดเดียวใช้ร่วมทั้งไฟล์ |
-| แผนที่ After โชว์วันเดิม | ✅ | เปลี่ยนไปอ่าน `วันจัดส่ง(ใหม่)` |
-| `สถานะการย้ายวัน` ถูกเขียนทับ | ✅ | สะสมเป็น `จ→พ, ศ→อ` |
-| เบอร์รถขยะ (`nan`, `-`) | ✅ | `clean_truck_ids()` + กรองตอนโหลด |
-| ไม่มี KPI วัดผล | ✅ | 4 metric cards + compactness + std |
-| ไม่คิดจำนวนจุดจอด/วัน | ✅ | `max_stops_per_day` เข้าไปในการเกลี่ยวัน |
-| ติด local optimum | ✅ | เพิ่ม `swap_improve()` (2-opt exchange) |
-| engine ผูก global | ✅ | `ZoningConfig` / `ZoningResult` dataclass |
-| ไม่มี scenario save | ✅ | export/import JSON |
-| แผนที่หน่วงตอนหมุดเยอะ | ✅ | `prefer_canvas` + `MarkerCluster` เมื่อ >1,500 |
-
----
-
-## 🎯 ฟีเจอร์ใหม่ที่ตอบโจทย์ "หลายคันเกินพร้อมกัน" โดยตรง
-
-1. **ตารางวินิจฉัยฝูงรถ** — เปิดแอปปุ๊บเห็นทันทีว่าคันไหนเกินเพดาน เกินกี่ถัง/วัน และต้องเพิ่มรถกี่คัน
-2. **แยกโหมด Donor 2 แบบ** — "ยุบทั้งคัน" กับ "ดึงงานออกบางส่วน" ซึ่งแบบหลังจะ**คลาย Core Lock ให้พอดีกับเป้าใหม่อัตโนมัติ** (`ratio_override`) แก้ปัญหาที่แกนกลางล็อกไว้เยอะจนเกินเป้าตั้งแต่ยังไม่เริ่มจัด
-3. **รถใหม่หลายคัน** — seed แยกกันด้วย k-means++ ถ่วงน้ำหนักยอด บนพื้นที่รอบนอกที่ว่างจริง
-4. **คำนวณเป้าหมายอัตโนมัติ** — กดปุ่มเดียว ระบบกดทุกคันลงมาที่เพดาน แล้วเกลี่ยส่วนเกินลงรถใหม่ให้เอง
-
----
-
-ลองรันกับข้อมูลจริงของสาขาที่หนักที่สุดก่อนได้เลยครับ — อยากให้ผมช่วยเพิ่ม **ชุดเทส pytest** สำหรับ engine (เช่น เคส "ยอดรวมพอดีความจุต้องไม่มี Overflow", "รถที่ล็อก % ต้องไม่ถูกเปลี่ยน") หรืออยากให้ทำ **โหมดเปรียบเทียบหลายสถานการณ์พร้อมกัน** (เช่น เพิ่มรถ 1 คัน vs 2 คัน แล้วเทียบ KPI ข้างกัน) เพื่อใช้เสนอผู้บริหารดีครับ? ในเงื่อนไขวันเสาร์
-      - parse ไม่ได้แล้วคืน 'ทุกวัน' เงียบๆ ทำให้โหลดรายวันสูงเกินจริง
     """
-    raw = str(val_str) if val_str is not None else ''
-    val = raw.strip().lower().replace(' ', '')
-    if val in NO_TRUCK_TOKENS:
-        return [], 'empty'
-    if any(tok in val for tok in ALL_DAYS_TOKENS):
-        return list(range(WORKING_DAYS)), 'ok'
+    แปลงข้อความวันจัดส่งเป็น index วัน 0-5
 
-    days: set = set()
-    for tok in re.split(r'[,\|/\+\-\s;]+', val):
-        tok = tok.strip('.').strip()
-        if not tok:
+    Returns:
+        tuple:
+            - รายการ index วัน
+            - สถานะ: "ok", "empty" หรือ "unparsed"
+
+    หลักการ:
+        - ค่าว่างจะคืนสถานะ empty
+        - ข้อความทุกวัน/จันทร์-เสาร์จะคืนวัน 0-5
+        - ตัวเลขยอมรับเฉพาะ token ที่เป็นเลขล้วน 1-6
+        - กรณีอ่านไม่ได้จะไม่สมมติเป็นทุกวันโดยอัตโนมัติ
+    """
+    raw = "" if val_str is None else str(val_str)
+    val = raw.strip().lower()
+
+    if val.lower() in NO_TRUCK_TOKENS:
+        return [], "empty"
+
+    compact = re.sub(r"\s+", "", val)
+    if any(token in compact for token in ALL_DAYS_TOKENS):
+        return list(range(WORKING_DAYS)), "ok"
+
+    days = set()
+
+    # แยกตามเครื่องหมายคั่น แต่ไม่ทำลายคำ เช่น "พฤหัสบดี"
+    tokens = re.split(r"[,|/+\-;\s]+", val)
+
+    for token in tokens:
+        token = token.strip().strip(".")
+        if not token:
             continue
-        if tok.isdigit():                       # ยอมรับเลขเฉพาะ token ที่เป็นเลขล้วน
-            n = int(tok)
-            if 1 <= n <= WORKING_DAYS:
-                days.add(n - 1)
+
+        if token.isdigit():
+            number = int(token)
+            if 1 <= number <= WORKING_DAYS:
+                days.add(number - 1)
             continue
-        for name, d in DAY_TOKENS:              # จับตัวที่ยาวสุดตัวเดียวพอ
-            if name in tok:
-                days.add(d)
+
+        for name, day_index in DAY_TOKENS:
+            if name in token:
+                days.add(day_index)
                 break
+
     if not days:
-        return [], 'unparsed'
-    return sorted(days), 'ok'
+        return [], "unparsed"
+
+    return sorted(days), "ok"
 
 
 def format_days_to_string(days_list: Sequence[int]) -> str:
+    """แปลงรายการ index วันเป็นชื่อวันแบบเต็ม"""
     if not days_list:
-        return 'ไม่ระบุ'
-    d = sorted(set(int(x) for x in days_list))
-    if len(d) == WORKING_DAYS:
-        return 'จ-ส'
-    return ', '.join(DAY_NAMES[x] for x in d)
+        return "ไม่ระบุ"
+
+    days = sorted(
+        {
+            int(day)
+            for day in days_list
+            if 0 <= int(day) < WORKING_DAYS
+        }
+    )
+
+    if not days:
+        return "ไม่ระบุ"
+
+    if len(days) == WORKING_DAYS:
+        return "จ-ส"
+
+    return ", ".join(DAY_NAMES[day] for day in days)
 
 
 def format_days_short(days_list: Sequence[int]) -> str:
+    """แปลงรายการ index วันเป็นชื่อวันแบบย่อ"""
     if not days_list:
-        return '-'
-    d = sorted(set(int(x) for x in days_list))
-    if len(d) == WORKING_DAYS:
-        return 'จ-ส'
-    return ''.join(DAY_SHORT[x] for x in d)
+        return "-"
+
+    days = sorted(
+        {
+            int(day)
+            for day in days_list
+            if 0 <= int(day) < WORKING_DAYS
+        }
+    )
+
+    if not days:
+        return "-"
+
+    if len(days) == WORKING_DAYS:
+        return "จ-ส"
+
+    return "".join(DAY_SHORT[day] for day in days)
 
 
-def project_xy(lat, lon, lat0: Optional[float] = None) -> Tuple[np.ndarray, np.ndarray, float]:
-    """แปลง lat/lon -> ระนาบ x,y หน่วยเมตร (equirectangular ที่ lat อ้างอิง)
-
-    แก้บั๊ก v1: การใช้ (dlat² + dlon²) ตรงๆ ทำให้ระยะแนวตะวันออก-ตกผิดสัดส่วน
-    และทำให้ผสมกับ road distance (เมตร) ไม่ได้เพราะคนละหน่วย
+def project_xy(
+    lat,
+    lon,
+    lat0: Optional[float] = None,
+) -> Tuple[np.ndarray, np.ndarray, float]:
     """
-    lat = np.asarray(lat, dtype=float)
-    lon = np.asarray(lon, dtype=float)
+    แปลง latitude/longitude เป็นพิกัด x/y หน่วยเมตร
+    ด้วย equirectangular projection
+    """
+    lat_array = np.asarray(lat, dtype=float)
+    lon_array = np.asarray(lon, dtype=float)
+
+    if lat_array.size == 0 or lon_array.size == 0:
+        return (
+            np.asarray([], dtype=float),
+            np.asarray([], dtype=float),
+            0.0 if lat0 is None else float(lat0),
+        )
+
     if lat0 is None:
-        lat0 = float(np.nanmean(lat))
-    k = math.cos(math.radians(lat0))
-    x = np.radians(lon) * EARTH_RADIUS_M * k
-    y = np.radians(lat) * EARTH_RADIUS_M
+        lat0 = float(np.nanmean(lat_array))
+
+    scale = math.cos(math.radians(lat0))
+
+    x = np.radians(lon_array) * EARTH_RADIUS_M * scale
+    y = np.radians(lat_array) * EARTH_RADIUS_M
+
     return x, y, lat0
 
 
 def knn_indices(xy: np.ndarray, k: int) -> np.ndarray:
-    """หา index ของเพื่อนบ้านใกล้สุด k ตัว (ไม่รวมตัวเอง)
-
-    แก้บั๊ก v1: เดิมสร้าง distance matrix เต็ม O(n²) — ที่ 4,000 จุดกิน ~380MB
-    จนต้องตั้ง max_n ข้ามไป ตอนนี้ใช้ KDTree -> O(n log n), memory O(n·k)
     """
+    หา index เพื่อนบ้านใกล้ที่สุด k จุด โดยไม่รวมตัวเอง
+
+    ใช้ scipy cKDTree หากติดตั้งไว้
+    และใช้ brute-force แบบแบ่งก้อนเป็น fallback
+    """
+    xy = np.asarray(xy, dtype=float)
     n = len(xy)
-    k = int(min(k, max(0, n - 1)))
+    k = int(min(max(0, k), max(0, n - 1)))
+
     if k <= 0:
         return np.zeros((n, 0), dtype=int)
+
     if HAS_SCIPY:
         tree = cKDTree(xy)
-        _, idx = tree.query(xy, k=k + 1, workers=-1)
-        idx = np.atleast_2d(idx)
-        return idx[:, 1:]
-    out = np.zeros((n, k), dtype=int)           # fallback: brute force แบบแบ่งก้อน
-    CH = 512
-    for s in range(0, n, CH):
-        e = min(n, s + CH)
-        d = ((xy[s:e, None, :] - xy[None, :, :]) ** 2).sum(axis=2)
-        for i in range(e - s):
-            d[i, s + i] = np.inf
-        out[s:e] = np.argpartition(d, k, axis=1)[:, :k]
-    return out
+        _, indices = tree.query(xy, k=k + 1, workers=-1)
+
+        if k == 1:
+            indices = np.asarray(indices).reshape(n, 2)
+
+        return np.asarray(indices[:, 1:], dtype=int)
+
+    output = np.zeros((n, k), dtype=int)
+    chunk_size = 512
+
+    for start in range(0, n, chunk_size):
+        end = min(n, start + chunk_size)
+
+        distances = (
+            (xy[start:end, None, :] - xy[None, :, :]) ** 2
+        ).sum(axis=2)
+
+        local_rows = np.arange(end - start)
+        global_rows = np.arange(start, end)
+        distances[local_rows, global_rows] = np.inf
+
+        # kth ใช้ k-1 เพราะต้องการสมาชิกจำนวน k ตัวแรก
+        nearest = np.argpartition(
+            distances,
+            kth=k - 1,
+            axis=1,
+        )[:, :k]
+
+        nearest_distances = np.take_along_axis(
+            distances,
+            nearest,
+            axis=1,
+        )
+
+        order = np.argsort(nearest_distances, axis=1)
+        output[start:end] = np.take_along_axis(nearest, order, axis=1)
+
+    return output
 
 
-def kmeans_seeds(xy: np.ndarray, weights: np.ndarray, k: int,
-                 iters: int = 20, seed: int = 42) -> np.ndarray:
-    """k-means++ แบบถ่วงน้ำหนักด้วยยอด — ใช้หา seed ของ 'รถใหม่หลายคัน' ให้กระจายกัน
-
-    แก้บั๊ก v1: seed รถใหม่ = ค่าเฉลี่ยของ seed ทุกคัน -> ตกกลางแผนที่ แย่งพื้นที่รถเดิม
-    และถ้ามีรถใหม่ >1 คันจะได้ seed ซ้ำที่เดิมทั้งหมด
+def kmeans_seeds(
+    xy: np.ndarray,
+    weights: np.ndarray,
+    k: int,
+    iters: int = 20,
+    seed: int = 42,
+) -> np.ndarray:
     """
+    Weighted k-means++ สำหรับกำหนดตำแหน่งเริ่มต้นของรถใหม่หลายคัน
+    """
+    xy = np.asarray(xy, dtype=float)
+    weights = np.asarray(weights, dtype=float)
+
     n = len(xy)
-    k = max(1, min(k, n))
+    if n == 0:
+        return np.zeros((0, 2), dtype=float)
+
+    k = max(1, min(int(k), n))
     rng = np.random.default_rng(seed)
-    w = np.asarray(weights, dtype=float)
-    w = np.where(w > 0, w, 1e-9)
 
-    centers = [xy[rng.choice(n, p=w / w.sum())]]
+    valid_weights = np.where(
+        np.isfinite(weights) & (weights > 0),
+        weights,
+        1e-9,
+    )
+
+    first_index = rng.choice(
+        n,
+        p=valid_weights / valid_weights.sum(),
+    )
+
+    centers = [xy[first_index]]
+
     for _ in range(k - 1):
-        d2 = np.min(((xy[:, None, :] - np.array(centers)[None, :, :]) ** 2).sum(2), axis=1)
-        p = d2 * w
-        p = p / p.sum() if p.sum() > 0 else np.full(n, 1.0 / n)
-        centers.append(xy[rng.choice(n, p=p)])
-    C = np.array(centers, dtype=float)
+        current_centers = np.asarray(centers, dtype=float)
 
-    for _ in range(iters):
-        d2 = ((xy[:, None, :] - C[None, :, :]) ** 2).sum(2)
-        lab = d2.argmin(axis=1)
-        newC = C.copy()
-        for j in range(k):
-            m = lab == j
-            if m.any():
-                ww = w[m]
-                newC[j] = np.average(xy[m], axis=0, weights=ww)
-        if np.allclose(newC, C, atol=1e-3):
-            C = newC
+        distance_squared = np.min(
+            (
+                xy[:, None, :]
+                - current_centers[None, :, :]
+            ) ** 2,
+            axis=2,
+        ).sum(axis=1)
+
+        probabilities = distance_squared * valid_weights
+
+        if probabilities.sum() > 0:
+            probabilities = probabilities / probabilities.sum()
+        else:
+            probabilities = np.full(n, 1.0 / n)
+
+        next_index = rng.choice(n, p=probabilities)
+        centers.append(xy[next_index])
+
+    centers_array = np.asarray(centers, dtype=float)
+
+    for _ in range(max(1, int(iters))):
+        distance_squared = (
+            (
+                xy[:, None, :]
+                - centers_array[None, :, :]
+            ) ** 2
+        ).sum(axis=2)
+
+        labels = distance_squared.argmin(axis=1)
+        new_centers = centers_array.copy()
+
+        for cluster_index in range(k):
+            mask = labels == cluster_index
+            if not mask.any():
+                continue
+
+            cluster_weights = valid_weights[mask]
+            new_centers[cluster_index] = np.average(
+                xy[mask],
+                axis=0,
+                weights=cluster_weights,
+            )
+
+        if np.allclose(
+            new_centers,
+            centers_array,
+            atol=1e-3,
+            rtol=0.0,
+        ):
+            centers_array = new_centers
             break
-        C = newC
-    return C
+
+        centers_array = new_centers
+
+    return centers_array
 
 
 def clean_truck_ids(values: Sequence) -> List[str]:
-    """กรอง 'รถผี' (ค่าว่าง/nan/-) ออกจากรายการเบอร์รถ"""
-    out = []
-    for v in values:
-        s = str(v).strip()
-        if s.lower() in NO_TRUCK_TOKENS:
+    """กรองค่ารถว่าง รถ nan และค่าขยะออกจากรายการเบอร์รถ"""
+    output: List[str] = []
+
+    for value in values:
+        truck_id = str(value).strip()
+
+        if truck_id.lower() in NO_TRUCK_TOKENS:
             continue
-        out.append(s)
-    return sorted(set(out))
+
+        output.append(truck_id)
+
+    return sorted(set(output))
 
 
-def guess_col(substrings: Sequence[str], cols: Sequence[str],
-              fallback: Optional[str] = None, allow_none: bool = False) -> Optional[str]:
-    """เดาคอลัมน์จากคำในชื่อ
-
-    แก้บั๊ก v1 (ร้ายแรงที่สุด): เดิม `return fallback if fallback is not None else cols[0]`
-    ทำให้เรียกด้วย fallback=None แล้วได้ cols[0] เสมอ -> คอลัมน์ VIP/ชื่อ ถูกเดาเป็น
-    คอลัมน์แรกของชีตโดยอัตโนมัติ (มัก = 'ลำดับ') ผู้ใช้เข้าใจว่าล็อก VIP แล้วแต่จริงๆ ไม่ล็อก
+def guess_col(
+    substrings: Sequence[str],
+    cols: Sequence[str],
+    fallback: Optional[str] = None,
+    allow_none: bool = False,
+) -> Optional[str]:
     """
-    for c in cols:
-        if any(s.lower() in str(c).lower() for s in substrings):
-            return c
+    เดาคอลัมน์จากคำที่อยู่ในชื่อคอลัมน์
+
+    หาก allow_none=True และหาไม่พบ จะคืน None
+    เพื่อป้องกันคอลัมน์ VIP หรือชื่อลูกค้าถูกเลือกเป็นคอลัมน์แรกโดยไม่ตั้งใจ
+    """
+    for column in cols:
+        column_text = str(column).lower()
+
+        if any(
+            str(substring).lower() in column_text
+            for substring in substrings
+        ):
+            return column
+
     if allow_none:
         return None
-    return fallback if fallback is not None else (cols[0] if len(cols) else None)
+
+    if fallback is not None:
+        return fallback
+
+    return cols[0] if len(cols) else None
 
 
 # =====================================================================================
-#  SECTION 3 — CONFIG / RESULT DATACLASS
+#  SECTION 3 — CONFIG / RESULT DATACLASSES
 # =====================================================================================
 @dataclass
 class ZoningConfig:
@@ -292,13 +488,15 @@ class ZoningConfig:
     core_ratio: float = 65.0
     core_floor: float = 20.0
     core_step: float = 10.0
+
     tol_pct: float = 5.0
-    tol_mode: str = 'target'           # 'target' = % ของเป้าคันนั้น | 'capacity' = % ของความจุเต็ม
+    tol_mode: str = "target"
     polish_tol_multiplier: float = 1.2
 
     knn_k: int = 8
     knn_rounds: int = 4
     knn_majority: float = 0.6
+
     enable_stray_cleanup: bool = True
     enable_majority_vote: bool = True
     enable_swap: bool = True
@@ -308,9 +506,9 @@ class ZoningConfig:
     daily_passes: int = 12
 
     use_road: bool = False
-    road_provider: str = 'osrm'
-    osrm_url: str = 'https://router.project-osrm.org'
-    gmaps_key: str = ''
+    road_provider: str = "osrm"
+    osrm_url: str = "https://router.project-osrm.org"
+    gmaps_key: str = ""
 
 
 @dataclass
@@ -329,752 +527,3292 @@ class ZoningResult:
 
 
 # =====================================================================================
-#  SECTION 4 — ROAD DISTANCE PROVIDERS (แก้ปัญหา API limit)
+#  SECTION 4 — ROAD DISTANCE PROVIDERS
 # =====================================================================================
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_osrm_matrix(source_coords: tuple, dest_coords: tuple,
-                      base_url: str, max_coords: int = 95) -> Tuple[Optional[np.ndarray], str]:
-    """OSRM /table — แบ่งก้อน source ให้ (batch + n_dest) ไม่เกิน limit ของ server
+def fetch_osrm_matrix(
+    source_coords: tuple,
+    dest_coords: tuple,
+    base_url: str,
+    max_coords: int = 95,
+) -> Tuple[Optional[np.ndarray], str]:
+    """
+    ดึง Distance Matrix จาก OSRM
 
-    แก้บั๊ก v1: เดิมยัด source+dest ทั้งหมดใน request เดียว — public demo server
-    จำกัดราว 100 พิกัด ข้อมูลจริง 300-800 จุดจึงพังทุกครั้งแล้ว fallback เงียบๆ
+    แบ่ง source เป็นหลาย batch เพื่อให้จำนวนพิกัดรวมต่อ request
+    ไม่เกินข้อจำกัดของ OSRM server
     """
     import requests
-    dest = list(dest_coords)
-    src = list(source_coords)
-    n_dst = len(dest)
-    if n_dst == 0 or not src:
-        return None, 'ไม่มีปลายทาง'
-    batch = max(1, max_coords - n_dst)
-    out = np.full((len(src), n_dst), np.nan, dtype=float)
 
-    for start in range(0, len(src), batch):
-        chunk = src[start:start + batch]
-        all_c = chunk + dest
-        coord_str = ";".join(f"{lon:.6f},{lat:.6f}" for lat, lon in all_c)
-        url = f"{base_url.rstrip('/')}/table/v1/driving/{coord_str}"
+    sources = list(source_coords)
+    destinations = list(dest_coords)
+
+    source_count = len(sources)
+    destination_count = len(destinations)
+
+    if source_count == 0:
+        return None, "ไม่มีพิกัดต้นทาง"
+
+    if destination_count == 0:
+        return None, "ไม่มีพิกัดปลายทาง"
+
+    if destination_count >= max_coords:
+        return (
+            None,
+            f"จำนวนปลายทาง {destination_count} จุด "
+            f"มากกว่าขีดจำกัด OSRM ต่อคำขอ ({max_coords - 1} จุด)",
+        )
+
+    batch_size = max(1, max_coords - destination_count)
+
+    output = np.full(
+        (source_count, destination_count),
+        np.nan,
+        dtype=float,
+    )
+
+    for start in range(0, source_count, batch_size):
+        chunk = sources[start:start + batch_size]
+        all_coordinates = chunk + destinations
+
+        coordinate_string = ";".join(
+            f"{float(lon):.6f},{float(lat):.6f}"
+            for lat, lon in all_coordinates
+        )
+
+        endpoint = (
+            f"{base_url.rstrip('/')}/table/v1/driving/"
+            f"{coordinate_string}"
+        )
+
         params = {
-            "sources": ";".join(str(i) for i in range(len(chunk))),
-            "destinations": ";".join(str(i) for i in range(len(chunk), len(all_c))),
+            "sources": ";".join(
+                str(index)
+                for index in range(len(chunk))
+            ),
+            "destinations": ";".join(
+                str(index)
+                for index in range(
+                    len(chunk),
+                    len(all_coordinates),
+                )
+            ),
             "annotations": "distance",
         }
+
         try:
-            r = requests.get(url, params=params, timeout=40)
-            r.raise_for_status()
-            data = r.json()
+            response = requests.get(
+                endpoint,
+                params=params,
+                timeout=40,
+            )
+            response.raise_for_status()
+
+            data = response.json()
+
             if data.get("code") != "Ok":
-                return None, f"OSRM ตอบกลับ code={data.get('code')}"
-            out[start:start + len(chunk), :] = np.array(data["distances"], dtype=float)
-        except Exception as e:
-            return None, f"OSRM error: {e}"
-        time.sleep(0.35)                        # กัน rate-limit ของ demo server
-    return out, ''
+                return (
+                    None,
+                    f"OSRM ตอบกลับ code={data.get('code')}",
+                )
+
+            distances = data.get("distances")
+            if distances is None:
+                return None, "OSRM ไม่ส่งตารางระยะทางกลับมา"
+
+            matrix = np.asarray(distances, dtype=float)
+
+            expected_shape = (
+                len(chunk),
+                destination_count,
+            )
+
+            if matrix.shape != expected_shape:
+                return (
+                    None,
+                    "ขนาดตารางระยะทางจาก OSRM ไม่ตรงกับที่ร้องขอ "
+                    f"(ได้รับ {matrix.shape}, คาดว่า {expected_shape})",
+                )
+
+            output[
+                start:start + len(chunk),
+                :,
+            ] = matrix
+
+        except Exception as exc:
+            return None, f"OSRM error: {exc}"
+
+        # ลดความเสี่ยงต่อการติด rate limit ของ public demo server
+        time.sleep(0.35)
+
+    return output, ""
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_google_matrix(source_coords: tuple, dest_coords: tuple,
-                        api_key: str) -> Tuple[Optional[np.ndarray], str]:
-    """Google Distance Matrix — คุม elements/request ไม่เกิน 100
+def fetch_google_matrix(
+    source_coords: tuple,
+    dest_coords: tuple,
+    api_key: str,
+) -> Tuple[Optional[np.ndarray], str]:
+    """
+    ดึง Distance Matrix จาก Google
 
-    แก้บั๊ก v1: เดิม CHUNK=25 คงที่ + ส่ง dest ทั้งหมด -> รถ 5 คันขึ้นไป = 125 elements
-    เกิน limit ทันที ได้ MAX_ELEMENTS_EXCEEDED แล้ว fallback เส้นตรงเงียบๆ
-    (ผู้ใช้จ่ายค่า API แต่ไม่ได้ผลลัพธ์)
+    จำกัดไม่เกิน 100 elements ต่อ request
+    และไม่เกิน 25 origins ต่อ request
     """
     import requests
-    MAX_ELEMENTS, MAX_ORIGINS = 100, 25
-    src, dest = list(source_coords), list(dest_coords)
-    n_src, n_dst = len(src), len(dest)
-    if n_src == 0 or n_dst == 0:
-        return None, 'ไม่มีข้อมูลพิกัด'
 
-    chunk = max(1, min(MAX_ORIGINS, MAX_ELEMENTS // n_dst))
-    dist = np.full((n_src, n_dst), np.nan, dtype=float)
-    dest_str = "|".join(f"{lat:.6f},{lon:.6f}" for lat, lon in dest)
+    sources = list(source_coords)
+    destinations = list(dest_coords)
 
-    for start in range(0, n_src, chunk):
-        part = src[start:start + chunk]
-        origin_str = "|".join(f"{lat:.6f},{lon:.6f}" for lat, lon in part)
+    source_count = len(sources)
+    destination_count = len(destinations)
+
+    if source_count == 0:
+        return None, "ไม่มีพิกัดต้นทาง"
+
+    if destination_count == 0:
+        return None, "ไม่มีพิกัดปลายทาง"
+
+    if not str(api_key).strip():
+        return None, "ไม่ได้ระบุ Google API Key"
+
+    max_elements = 100
+    max_origins = 25
+
+    if destination_count > max_elements:
+        return (
+            None,
+            f"จำนวนปลายทาง {destination_count} จุด "
+            f"เกินข้อจำกัด {max_elements} elements ต่อ request",
+        )
+
+    chunk_size = max(
+        1,
+        min(
+            max_origins,
+            max_elements // destination_count,
+        ),
+    )
+
+    output = np.full(
+        (source_count, destination_count),
+        np.nan,
+        dtype=float,
+    )
+
+    destination_string = "|".join(
+        f"{float(lat):.6f},{float(lon):.6f}"
+        for lat, lon in destinations
+    )
+
+    for start in range(0, source_count, chunk_size):
+        chunk = sources[start:start + chunk_size]
+
+        origin_string = "|".join(
+            f"{float(lat):.6f},{float(lon):.6f}"
+            for lat, lon in chunk
+        )
+
         try:
-            r = requests.get(
+            response = requests.get(
                 "https://maps.googleapis.com/maps/api/distancematrix/json",
-                params={"origins": origin_str, "destinations": dest_str,
-                        "key": api_key, "mode": "driving"}, timeout=40)
-            r.raise_for_status()
-            data = r.json()
-            if data.get("status") != "OK":
-                return None, f"Google status={data.get('status')} {data.get('error_message','')}"
-            for i, row in enumerate(data["rows"]):
-                for j, el in enumerate(row["elements"]):
-                    if el.get("status") == "OK":
-                        dist[start + i, j] = el["distance"]["value"]
-        except Exception as e:
-            return None, f"Google error: {e}"
-    return dist, ''
+                params={
+                    "origins": origin_string,
+                    "destinations": destination_string,
+                    "key": api_key,
+                    "mode": "driving",
+                },
+                timeout=40,
+            )
+            response.raise_for_status()
 
+            data = response.json()
+            status = data.get("status")
 
+            if status != "OK":
+                error_message = data.get("error_message", "")
+                return (
+                    None,
+                    f"Google status={status} {error_message}".strip(),
+                )
+
+            rows = data.get("rows", [])
+            if len(rows) != len(chunk):
+                return (
+                    None,
+                    "จำนวนแถวจาก Google Distance Matrix ไม่ตรงกับที่ร้องขอ",
+                )
+
+            for local_index, row in enumerate(rows):
+                elements = row.get("elements", [])
+
+                for destination_index, element in enumerate(elements):
+                    if destination_index >= destination_count:
+                        break
+
+                    if element.get("status") == "OK":
+                        distance = element.get("distance", {}).get("value")
+
+                        if distance is not None:
+                            output[
+                                start + local_index,
+                                destination_index,
+                            ] = float(distance)
+
+        except Exception as exc:
+            return None, f"Google error: {exc}"
+
+    return output, ""# =====================================================================================
+#  SECTION 5 — CAPACITY PLANNING
 # =====================================================================================
-#  SECTION 5 — CAPACITY PLANNING (Multi-Donor)
-# =====================================================================================
-def compute_default_targets(vol_by_truck: Dict[str, float],
-                            dissolve: Sequence[str],
-                            keep: Sequence[str],
-                            new_trucks: Sequence[str],
-                            cap_units: float) -> Tuple[Dict[str, float], float]:
-    """คำนวณเป้าหมายเริ่มต้นแบบ 'ตัดยอดส่วนเกินออกจากคันที่เกินเพดาน แล้วเกลี่ยลงคันใหม่'
-
-    นี่คือหัวใจของโจทย์จริง: รถที่ยอด/วันเกินเพดานควบคุมจะถูกกดลงมาที่เพดานพอดี
-    ส่วนเกิน + ยอดของรถที่ยุบทั้งคัน = pool ที่ต้องหาบ้านใหม่
-    คืนค่า: (targets, leftover) โดย leftover > 0 แปลว่า 'รถไม่พอ ต้องเพิ่มอีก'
+def compute_default_targets(
+    vol_by_truck: Dict[str, float],
+    dissolve: Sequence[str],
+    keep: Sequence[str],
+    new_trucks: Sequence[str],
+    cap_units: float,
+) -> Tuple[Dict[str, float], float]:
     """
-    pool = float(sum(vol_by_truck.get(t, 0.0) for t in dissolve))
-    tgt: Dict[str, float] = {}
+    คำนวณเป้าหมายเริ่มต้นรายคัน
 
-    for t in keep:
-        v = float(vol_by_truck.get(t, 0.0))
-        if v > cap_units:
-            pool += v - cap_units
-            tgt[t] = cap_units
+    หลักการ:
+        1. รวมยอดของรถที่ยุบทั้งคันเข้า allocation pool
+        2. รถเดิมที่เกินเพดานจะถูกลดเป้าหมายลงมาเท่ากับ cap_units
+        3. ส่วนเกินจะถูกจัดให้รถใหม่ก่อน
+        4. ยอดที่เหลือจะถูกเกลี่ยตาม headroom ของรถทุกคัน
+        5. leftover > 0 หมายถึงความจุรถทั้งหมดไม่เพียงพอ
+    """
+    capacity_limit = max(0.0, float(cap_units))
+
+    pool = float(
+        sum(
+            float(vol_by_truck.get(truck, 0.0))
+            for truck in dissolve
+        )
+    )
+
+    targets: Dict[str, float] = {}
+
+    for truck in keep:
+        current_volume = max(
+            0.0,
+            float(vol_by_truck.get(truck, 0.0)),
+        )
+
+        if current_volume > capacity_limit:
+            pool += current_volume - capacity_limit
+            targets[truck] = capacity_limit
         else:
-            tgt[t] = v
-    for t in new_trucks:
-        tgt[t] = 0.0
+            targets[truck] = current_volume
 
-    for t in new_trucks:                        # เติมรถใหม่ก่อน (เต็มคันต่อคัน)
+    for truck in new_trucks:
+        targets[truck] = 0.0
+
+    # เติมรถใหม่ก่อน เพื่อให้ส่วนเกินจาก donor มีปลายทางชัดเจน
+    for truck in new_trucks:
         if pool <= 1e-6:
             break
-        take = min(cap_units, pool)
-        tgt[t] += take
-        pool -= take
 
-    for _ in range(60):                         # ที่เหลือเกลี่ยตาม headroom
+        available_capacity = max(
+            0.0,
+            capacity_limit - targets.get(truck, 0.0),
+        )
+
+        allocated = min(available_capacity, pool)
+        targets[truck] = targets.get(truck, 0.0) + allocated
+        pool -= allocated
+
+    # เกลี่ยยอดที่เหลือลงรถทุกคันตาม headroom
+    for _ in range(60):
         if pool <= 1e-6:
             break
-        head = {t: cap_units - tgt[t] for t in tgt if cap_units - tgt[t] > 1e-6}
-        if not head:
+
+        headroom = {
+            truck: max(
+                0.0,
+                capacity_limit - target,
+            )
+            for truck, target in targets.items()
+            if capacity_limit - target > 1e-6
+        }
+
+        if not headroom:
             break
-        total_head = sum(head.values())
-        share = min(1.0, pool / total_head)
-        for t, h in head.items():
-            add = h * share
-            tgt[t] += add
-            pool -= add
-    return tgt, max(0.0, pool)
+
+        total_headroom = float(sum(headroom.values()))
+        if total_headroom <= 1e-9:
+            break
+
+        volume_before = pool
+        distribution_ratio = min(
+            1.0,
+            pool / total_headroom,
+        )
+
+        for truck, available in headroom.items():
+            allocated = min(
+                pool,
+                available * distribution_ratio,
+            )
+
+            targets[truck] += allocated
+            pool -= allocated
+
+            if pool <= 1e-6:
+                pool = 0.0
+                break
+
+        if abs(volume_before - pool) <= 1e-9:
+            break
+
+    return targets, max(0.0, pool)
 
 
-def diagnose_fleet(df: pd.DataFrame, cfg: ZoningConfig) -> pd.DataFrame:
-    """ตารางวินิจฉัยสถานะรถปัจจุบัน: ยอด/เดือน, โหลดสูงสุด/วัน, จุดจอด/วัน, เกินเพดานไหม"""
-    rows = []
-    for t, g in df.groupby(cfg.truck_col):
-        t = str(t).strip()
-        if t.lower() in NO_TRUCK_TOKENS:
+def diagnose_fleet(
+    df: pd.DataFrame,
+    cfg: ZoningConfig,
+) -> pd.DataFrame:
+    """
+    วิเคราะห์สถานะรถปัจจุบันก่อนปรับสาย
+
+    แสดง:
+        - จำนวนลูกค้า
+        - ยอดต่อเดือน
+        - ภาระงานเทียบความจุ
+        - โหลดสูงสุดต่อวัน
+        - จำนวนจุดจอดสูงสุดต่อวัน
+        - ส่วนเกินต่อวัน
+    """
+    output_rows = []
+
+    if df.empty:
+        return pd.DataFrame()
+
+    for truck, group in df.groupby(cfg.truck_col, dropna=False):
+        truck_id = str(truck).strip()
+
+        if truck_id.lower() in NO_TRUCK_TOKENS:
             continue
-        daily = np.zeros(WORKING_DAYS)
-        stops = np.zeros(WORKING_DAYS)
-        for _, r in g.iterrows():
-            days, _ = parse_days_from_string(r[cfg.day_col])
+
+        daily_volume = np.zeros(
+            WORKING_DAYS,
+            dtype=float,
+        )
+
+        daily_stops = np.zeros(
+            WORKING_DAYS,
+            dtype=float,
+        )
+
+        for _, row in group.iterrows():
+            days, _ = parse_days_from_string(
+                row.get(cfg.day_col),
+            )
+
             if not days:
                 days = list(range(WORKING_DAYS))
-            per = float(r[cfg.vol_col]) / len(days) / WEEKS_PER_MONTH
-            for d in days:
-                daily[d] += per
-                stops[d] += 1
-        peak = float(daily.max())
-        rows.append({
-            'เบอร์รถ': t,
-            'จำนวนลูกค้า': int(len(g)),
-            'ยอด/เดือน': int(g[cfg.vol_col].sum()),
-            'ภาระงาน(%)': round(g[cfg.vol_col].sum() / cfg.monthly_capacity * 100, 1),
-            'โหลดสูงสุด/วัน': int(round(peak)),
-            'จุดจอดสูงสุด/วัน': int(stops.max()),
-            'ส่วนเกิน/วัน': int(round(max(0.0, peak - cfg.daily_control_cap))),
-            'สถานะ': ('🔴 เกินเพดาน' if peak > cfg.daily_control_cap
-                      else ('🟢 เหมาะสม' if peak >= OPTIMAL_MIN
-                            else ('🟡 ควรเลี่ยง' if peak >= AVOID_MIN else '⚪ เบาเกิน'))),
-        })
-    out = pd.DataFrame(rows)
-    return out.sort_values('โหลดสูงสุด/วัน', ascending=False).reset_index(drop=True) \
-        if not out.empty else out
+
+            monthly_volume = float(
+                pd.to_numeric(
+                    row.get(cfg.vol_col),
+                    errors="coerce",
+                )
+                or 0.0
+            )
+
+            volume_per_delivery_day = (
+                monthly_volume
+                / max(1, len(days))
+                / WEEKS_PER_MONTH
+            )
+
+            for day in days:
+                daily_volume[day] += volume_per_delivery_day
+                daily_stops[day] += 1
+
+        total_monthly_volume = float(
+            pd.to_numeric(
+                group[cfg.vol_col],
+                errors="coerce",
+            )
+            .fillna(0)
+            .sum()
+        )
+
+        peak_daily_volume = float(
+            daily_volume.max()
+        )
+
+        peak_daily_stops = int(
+            round(float(daily_stops.max()))
+        )
+
+        if peak_daily_volume > cfg.daily_control_cap:
+            status = "🔴 เกินเพดาน"
+        elif peak_daily_volume >= OPTIMAL_MIN:
+            status = "🟢 เหมาะสม"
+        elif peak_daily_volume >= AVOID_MIN:
+            status = "🟡 ควรเลี่ยง"
+        else:
+            status = "⚪ เบาเกิน"
+
+        output_rows.append(
+            {
+                "เบอร์รถ": truck_id,
+                "จำนวนลูกค้า": int(len(group)),
+                "ยอด/เดือน": int(round(total_monthly_volume)),
+                "ภาระงาน(%)": round(
+                    total_monthly_volume
+                    / max(1.0, cfg.monthly_capacity)
+                    * 100.0,
+                    1,
+                ),
+                "โหลดสูงสุด/วัน": int(
+                    round(peak_daily_volume)
+                ),
+                "จุดจอดสูงสุด/วัน": peak_daily_stops,
+                "ส่วนเกิน/วัน": int(
+                    round(
+                        max(
+                            0.0,
+                            peak_daily_volume
+                            - cfg.daily_control_cap,
+                        )
+                    )
+                ),
+                "สถานะ": status,
+            }
+        )
+
+    output = pd.DataFrame(output_rows)
+
+    if output.empty:
+        return output
+
+    return output.sort_values(
+        "โหลดสูงสุด/วัน",
+        ascending=False,
+    ).reset_index(drop=True)
 
 
 # =====================================================================================
-#  SECTION 6 — ZONING ENGINE (pure)
+#  SECTION 6 — ZONING ENGINE HELPERS
 # =====================================================================================
-def _tolerance_for(t: str, targets: Dict[str, float], cfg: ZoningConfig) -> float:
-    """ค่าเผื่อรายคัน
-
-    แก้บั๊ก v1: เดิมใช้ % ของความจุเต็มเสมอ -> รถที่ตั้งเป้า 30% ได้ค่าเผื่อกว้างถึง ±16.7%
-    ของเป้าตัวเอง ทำให้รับงานเกินได้เยอะโดยระบบยังบอกว่า 'อยู่ในค่าเผื่อ'
+def _tolerance_for(
+    truck: str,
+    targets: Dict[str, float],
+    cfg: ZoningConfig,
+) -> float:
     """
-    if cfg.tol_mode == 'target':
-        return max(40.0, (cfg.tol_pct / 100.0) * targets.get(t, 0.0))
-    return (cfg.tol_pct / 100.0) * cfg.monthly_capacity
+    คำนวณค่าเผื่อของรถแต่ละคัน
+
+    target:
+        คิดเป็นเปอร์เซ็นต์ของเป้าหมายรถคันนั้น
+
+    capacity:
+        คิดเป็นเปอร์เซ็นต์ของความจุอ้างอิงเต็ม
+    """
+    if cfg.tol_mode == "target":
+        return max(
+            40.0,
+            (cfg.tol_pct / 100.0)
+            * max(0.0, targets.get(truck, 0.0)),
+        )
+
+    return (
+        cfg.tol_pct
+        / 100.0
+        * max(0.0, cfg.monthly_capacity)
+    )
 
 
-def build_stops(df: pd.DataFrame, cfg: ZoningConfig) -> pd.DataFrame:
-    """ยุบลูกค้าที่พิกัดเดียวกันเป็น 'จุดจอด' (ก้อนที่แบ่งแยกไม่ได้)"""
-    stops = df.groupby('coord_key').agg(
-        lat=(cfg.lat_col, 'first'),
-        lon=(cfg.lon_col, 'first'),
-        x=('x', 'first'),
-        y=('y', 'first'),
-        total_vol=(cfg.vol_col, 'sum'),
-        n_cust=(cfg.id_col, 'count'),
-        orig_truck=(cfg.truck_col, 'first'),
-        has_vip_lock=('is_vip_locked', 'any'),
-    ).reset_index()
+def build_stops(
+    df: pd.DataFrame,
+    cfg: ZoningConfig,
+) -> pd.DataFrame:
+    """
+    รวมลูกค้าที่ใช้พิกัดเดียวกันเป็นหนึ่งจุดจอด
+
+    จุดจอดหนึ่งจุดถือเป็นก้อนงานที่ไม่ควรถูกแบ่งข้ามรถ
+    """
+    required_columns = {
+        "coord_key",
+        "x",
+        "y",
+        "is_vip_locked",
+        cfg.lat_col,
+        cfg.lon_col,
+        cfg.vol_col,
+        cfg.id_col,
+        cfg.truck_col,
+    }
+
+    missing_columns = [
+        column
+        for column in required_columns
+        if column not in df.columns
+    ]
+
+    if missing_columns:
+        raise ValueError(
+            "ไม่พบคอลัมน์ที่จำเป็นสำหรับสร้างจุดจอด: "
+            + ", ".join(map(str, missing_columns))
+        )
+
+    stops = (
+        df.groupby(
+            "coord_key",
+            dropna=False,
+        )
+        .agg(
+            lat=(cfg.lat_col, "first"),
+            lon=(cfg.lon_col, "first"),
+            x=("x", "first"),
+            y=("y", "first"),
+            total_vol=(cfg.vol_col, "sum"),
+            n_cust=(cfg.id_col, "count"),
+            orig_truck=(cfg.truck_col, "first"),
+            has_vip_lock=("is_vip_locked", "any"),
+        )
+        .reset_index()
+    )
+
+    stops["orig_truck"] = (
+        stops["orig_truck"]
+        .astype(str)
+        .str.strip()
+    )
+
+    stops["total_vol"] = (
+        pd.to_numeric(
+            stops["total_vol"],
+            errors="coerce",
+        )
+        .fillna(0.0)
+        .astype(float)
+    )
+
     return stops
 
 
-def compute_core_keys(stops: pd.DataFrame, ratio: float,
-                      eligible_trucks: Sequence[str],
-                      ratio_override: Optional[Dict[str, float]] = None) -> set:
-    """ล็อกลูกค้าแกนกลาง (เกาะกลุ่มใกล้ centroid ของรถเดิม) ตามสัดส่วนยอด"""
-    keys: set = set()
-    if ratio <= 0:
-        return keys
-    ratio_override = ratio_override or {}
-    for t in eligible_trucks:
-        r = min(ratio, ratio_override.get(t, 100.0))
-        if r <= 0:
-            continue
-        g = stops[stops['orig_truck'] == t]
-        if g.empty:
-            continue
-        cx, cy = g['x'].mean(), g['y'].mean()
-        d = (g['x'] - cx) ** 2 + (g['y'] - cy) ** 2
-        g = g.assign(_d=d).sort_values('_d')
-        cum = g['total_vol'].cumsum()
-        total = max(1e-6, float(g['total_vol'].sum()))
-        mask = (cum / total) <= (r / 100.0)
-        if not mask.any() and len(g):
-            mask.iloc[0] = True
-        keys.update(g.loc[mask, 'coord_key'].tolist())
-    return keys
-
-
-def _assign_capacitated(stops: pd.DataFrame, trucks: List[str],
-                        targets: Dict[str, float], tol: Dict[str, float],
-                        seeds: Dict[str, Tuple[float, float]],
-                        road: Optional[np.ndarray],
-                        max_rounds: int = 80) -> Tuple[np.ndarray, Dict[str, float]]:
-    """Capacitated Voronoi แบบ vectorized + global greedy (คู่ใกล้สุดก่อน)
-
-    ปรับจาก v1: เดิมวนลูป python n×T ทุกรอบ ตอนนี้คำนวณเป็น matrix เดียว
-    และระยะทางเป็น 'เมตร' ทั้งโหมดเส้นตรงและ road (หน่วยเดียวกัน)
+def compute_core_keys(
+    stops: pd.DataFrame,
+    ratio: float,
+    eligible_trucks: Sequence[str],
+    ratio_override: Optional[Dict[str, float]] = None,
+) -> set:
     """
-    n = len(stops)
-    xy = stops[['x', 'y']].to_numpy(dtype=float)
-    vol = stops['total_vol'].to_numpy(dtype=float)
-    tidx = {t: i for i, t in enumerate(trucks)}
+    เลือกจุดจอดแกนกลางของรถเดิมเพื่อทำ Core Lock
 
-    assigned = np.array([tidx.get(a, -1) if isinstance(a, str) else -1
-                         for a in stops['assigned_truck'].tolist()], dtype=int)
-    loads = {t: 0.0 for t in trucks}
-    for i in np.where(assigned >= 0)[0]:
-        loads[trucks[assigned[i]]] += vol[i]
+    จุดที่อยู่ใกล้ centroid จะถูกเลือกก่อน
+    จนยอดสะสมถึงสัดส่วนที่กำหนด
+    """
+    core_keys: set = set()
 
-    for _ in range(max_rounds):
-        elig = [t for t in trucks if loads[t] < targets.get(t, 0.0) - 1e-9]
-        if not elig:
-            break
-        cand = np.where(assigned < 0)[0]
-        if cand.size == 0:
-            break
+    if stops.empty or ratio <= 0:
+        return core_keys
 
-        cols = [tidx[t] for t in elig]
-        if road is not None:
-            D = road[np.ix_(cand, cols)].astype(float)
-            D = np.where(np.isnan(D), np.inf, D)
-        else:
-            cen = []
-            for t in elig:
-                m = assigned == tidx[t]
-                cen.append(xy[m].mean(axis=0) if m.any()
-                           else np.array(seeds.get(t, (xy[:, 0].mean(), xy[:, 1].mean()))))
-            cen = np.array(cen, dtype=float)
-            D = np.sqrt(((xy[cand][:, None, :] - cen[None, :, :]) ** 2).sum(axis=2))
+    ratio_override = ratio_override or {}
 
-        cap = np.array([targets.get(t, 0.0) + tol.get(t, 0.0) for t in elig])
-        cur = np.array([loads[t] for t in elig])
-        feasible = (cur[None, :] + vol[cand][:, None]) <= cap[None, :]
-        D = np.where(feasible, D, np.inf)
+    for truck in eligible_trucks:
+        truck_ratio = min(
+            float(ratio),
+            float(ratio_override.get(truck, 100.0)),
+        )
 
-        best_j = D.argmin(axis=1)
-        best_d = D[np.arange(len(cand)), best_j]
-        ok = np.isfinite(best_d)
-        if not ok.any():
-            break
-
-        order = np.argsort(best_d[ok])
-        cand_ok, j_ok = cand[ok], best_j[ok]
-        placed = False
-        for p in order:
-            i = cand_ok[p]
-            t = elig[j_ok[p]]
-            if assigned[i] >= 0:
-                continue
-            if loads[t] + vol[i] > targets.get(t, 0.0) + tol.get(t, 0.0):
-                continue
-            assigned[i] = tidx[t]
-            loads[t] += vol[i]
-            placed = True
-        if not placed:
-            break
-
-    # best-fit ผ่อนปรน ก่อนยอมให้ตกเป็น Overflow
-    for i in np.where(assigned < 0)[0]:
-        pool = [t for t in trucks if targets.get(t, 0.0) > 0]
-        if not pool:
+        if truck_ratio <= 0:
             continue
-        t = max(pool, key=lambda z: targets[z] - loads[z])
-        if targets[t] - loads[t] > -0.15 * max(1.0, targets[t]):
-            assigned[i] = tidx[t]
-            loads[t] += vol[i]
+
+        group = stops[
+            stops["orig_truck"] == truck
+        ].copy()
+
+        if group.empty:
+            continue
+
+        center_x = float(
+            np.average(
+                group["x"].to_numpy(dtype=float),
+                weights=np.maximum(
+                    group["total_vol"].to_numpy(dtype=float),
+                    1e-9,
+                ),
+            )
+        )
+
+        center_y = float(
+            np.average(
+                group["y"].to_numpy(dtype=float),
+                weights=np.maximum(
+                    group["total_vol"].to_numpy(dtype=float),
+                    1e-9,
+                ),
+            )
+        )
+
+        group["_distance_squared"] = (
+            (group["x"] - center_x) ** 2
+            + (group["y"] - center_y) ** 2
+        )
+
+        group = group.sort_values(
+            "_distance_squared",
+            ascending=True,
+        )
+
+        total_volume = max(
+            1e-6,
+            float(group["total_vol"].sum()),
+        )
+
+        cumulative_ratio = (
+            group["total_vol"].cumsum()
+            / total_volume
+        )
+
+        selected = cumulative_ratio <= (
+            truck_ratio / 100.0
+        )
+
+        # ต้องมีแกนกลางอย่างน้อยหนึ่งจุดเมื่อ ratio > 0
+        if not selected.any() and len(group):
+            selected.iloc[0] = True
+
+        core_keys.update(
+            group.loc[selected, "coord_key"].tolist()
+        )
+
+    return core_keys
+
+
+def _assign_capacitated(
+    stops: pd.DataFrame,
+    trucks: List[str],
+    targets: Dict[str, float],
+    tolerance: Dict[str, float],
+    seeds: Dict[str, Tuple[float, float]],
+    road: Optional[np.ndarray],
+    max_rounds: int = 80,
+) -> Tuple[np.ndarray, Dict[str, float]]:
+    """
+    จัดจุดจอดให้รถตามระยะทางและข้อจำกัดความจุ
+
+    ลำดับ:
+        1. โหลดจุดที่ถูกล็อกไว้ก่อน
+        2. จัดคู่ที่ใกล้และยังไม่เกิน target+tolerance
+        3. ใช้ best-fit แบบผ่อนปรนกับจุดที่ยังไม่ถูกจัด
+        4. จุดที่จัดไม่ได้จะคงค่า -1 และถูกแปลงเป็น Overflow ภายหลัง
+    """
+    number_of_stops = len(stops)
+    number_of_trucks = len(trucks)
+
+    if number_of_stops == 0:
+        return (
+            np.asarray([], dtype=int),
+            {truck: 0.0 for truck in trucks},
+        )
+
+    if number_of_trucks == 0:
+        return (
+            np.full(number_of_stops, -1, dtype=int),
+            {},
+        )
+
+    coordinates = stops[
+        ["x", "y"]
+    ].to_numpy(dtype=float)
+
+    volumes = stops[
+        "total_vol"
+    ].to_numpy(dtype=float)
+
+    truck_index = {
+        truck: index
+        for index, truck in enumerate(trucks)
+    }
+
+    assigned = np.array(
+        [
+            truck_index.get(value, -1)
+            if isinstance(value, str)
+            else -1
+            for value in stops[
+                "assigned_truck"
+            ].tolist()
+        ],
+        dtype=int,
+    )
+
+    loads = {
+        truck: 0.0
+        for truck in trucks
+    }
+
+    for stop_index in np.where(
+        assigned >= 0
+    )[0]:
+        truck = trucks[assigned[stop_index]]
+        loads[truck] += volumes[stop_index]
+
+    if road is not None:
+        road = np.asarray(road, dtype=float)
+
+        expected_shape = (
+            number_of_stops,
+            number_of_trucks,
+        )
+
+        if road.shape != expected_shape:
+            raise ValueError(
+                "ขนาด Road Distance Matrix ไม่ถูกต้อง "
+                f"(ได้รับ {road.shape}, คาดว่า {expected_shape})"
+            )
+
+    for _ in range(max(1, int(max_rounds))):
+        eligible_trucks = [
+            truck
+            for truck in trucks
+            if loads[truck]
+            < targets.get(truck, 0.0) - 1e-9
+        ]
+
+        if not eligible_trucks:
+            break
+
+        candidate_indices = np.where(
+            assigned < 0
+        )[0]
+
+        if candidate_indices.size == 0:
+            break
+
+        eligible_columns = [
+            truck_index[truck]
+            for truck in eligible_trucks
+        ]
+
+        if road is not None:
+            distances = road[
+                np.ix_(
+                    candidate_indices,
+                    eligible_columns,
+                )
+            ].astype(float)
+
+            distances = np.where(
+                np.isfinite(distances),
+                distances,
+                np.inf,
+            )
+
+        else:
+            centers = []
+
+            for truck in eligible_trucks:
+                mask = (
+                    assigned
+                    == truck_index[truck]
+                )
+
+                if mask.any():
+                    center = np.average(
+                        coordinates[mask],
+                        axis=0,
+                        weights=np.maximum(
+                            volumes[mask],
+                            1e-9,
+                        ),
+                    )
+                else:
+                    fallback_center = (
+                        float(coordinates[:, 0].mean()),
+                        float(coordinates[:, 1].mean()),
+                    )
+
+                    center = np.asarray(
+                        seeds.get(
+                            truck,
+                            fallback_center,
+                        ),
+                        dtype=float,
+                    )
+
+                centers.append(center)
+
+            centers_array = np.asarray(
+                centers,
+                dtype=float,
+            )
+
+            distances = np.sqrt(
+                (
+                    (
+                        coordinates[
+                            candidate_indices
+                        ][:, None, :]
+                        - centers_array[
+                            None, :, :
+                        ]
+                    )
+                    ** 2
+                ).sum(axis=2)
+            )
+
+        capacity_limits = np.asarray(
+            [
+                targets.get(truck, 0.0)
+                + tolerance.get(truck, 0.0)
+                for truck in eligible_trucks
+            ],
+            dtype=float,
+        )
+
+        current_loads = np.asarray(
+            [
+                loads[truck]
+                for truck in eligible_trucks
+            ],
+            dtype=float,
+        )
+
+        feasible = (
+            current_loads[None, :]
+            + volumes[candidate_indices][:, None]
+            <= capacity_limits[None, :]
+        )
+
+        distances = np.where(
+            feasible,
+            distances,
+            np.inf,
+        )
+
+        best_local_truck = distances.argmin(
+            axis=1
+        )
+
+        best_distance = distances[
+            np.arange(len(candidate_indices)),
+            best_local_truck,
+        ]
+
+        feasible_rows = np.isfinite(
+            best_distance
+        )
+
+        if not feasible_rows.any():
+            break
+
+        feasible_candidates = candidate_indices[
+            feasible_rows
+        ]
+
+        feasible_truck_indices = best_local_truck[
+            feasible_rows
+        ]
+
+        order = np.argsort(
+            best_distance[feasible_rows]
+        )
+
+        placed_any = False
+
+        for position in order:
+            stop_index = feasible_candidates[position]
+
+            if assigned[stop_index] >= 0:
+                continue
+
+            truck = eligible_trucks[
+                feasible_truck_indices[position]
+            ]
+
+            upper_limit = (
+                targets.get(truck, 0.0)
+                + tolerance.get(truck, 0.0)
+            )
+
+            if (
+                loads[truck]
+                + volumes[stop_index]
+                > upper_limit
+            ):
+                continue
+
+            assigned[stop_index] = truck_index[truck]
+            loads[truck] += volumes[stop_index]
+            placed_any = True
+
+        if not placed_any:
+            break
+
+    # Best-fit แบบผ่อนปรน
+    for stop_index in np.where(
+        assigned < 0
+    )[0]:
+        candidate_trucks = [
+            truck
+            for truck in trucks
+            if targets.get(truck, 0.0) > 0
+        ]
+
+        if not candidate_trucks:
+            continue
+
+        # เลือกรถที่เหลือ headroom มากที่สุด
+        best_truck = max(
+            candidate_trucks,
+            key=lambda truck: (
+                targets.get(truck, 0.0)
+                - loads.get(truck, 0.0)
+            ),
+        )
+
+        target = targets.get(
+            best_truck,
+            0.0,
+        )
+
+        projected_load = (
+            loads.get(best_truck, 0.0)
+            + volumes[stop_index]
+        )
+
+        # ยอมเกินเป้าได้ไม่เกิน 15% ในรอบผ่อนปรน
+        relaxed_limit = (
+            target
+            + max(
+                tolerance.get(best_truck, 0.0),
+                target * 0.15,
+            )
+        )
+
+        if projected_load <= relaxed_limit:
+            assigned[stop_index] = truck_index[
+                best_truck
+            ]
+            loads[best_truck] = projected_load
+
     return assigned, loads
 
 
-def cleanup_stray_points(stops: pd.DataFrame, trucks: List[str],
-                         targets: Dict[str, float], loads: Dict[str, float],
-                         tol: Dict[str, float], mult: float,
-                         rounds: int = 3) -> Tuple[pd.DataFrame, Dict[str, float]]:
-    """ย้าย 'เกาะเดี่ยว' ที่หลุดไกลจากกลุ่มก้อนตัวเอง ไปอยู่กับคันที่ใกล้กว่าจริง"""
-    stops = stops.copy()
-    for _ in range(rounds):
-        changed = False
-        cent = {}
-        for t in trucks:
-            g = stops[stops['assigned_truck'] == t]
-            if not g.empty:
-                cent[t] = (g['x'].mean(), g['y'].mean())
-        for t in trucks:
-            m = (stops['assigned_truck'] == t) & (~stops['is_locked'])
-            g = stops[m]
-            if len(g) < 3 or t not in cent:
-                continue
-            cx, cy = cent[t]
-            d = np.sqrt((g['x'] - cx) ** 2 + (g['y'] - cy) ** 2)
-            radius = float(d.median()) * 3.0 + 1.0
-            for idx in g.index[d > radius]:
-                s = stops.loc[idx]
-                own = (s['x'] - cx) ** 2 + (s['y'] - cy) ** 2
-                best_t, best_d = None, float('inf')
-                for ot, (ox, oy) in cent.items():
-                    if ot == t:
-                        continue
-                    dd = (s['x'] - ox) ** 2 + (s['y'] - oy) ** 2
-                    if dd < best_d:
-                        best_d, best_t = dd, ot
-                if best_t is None:
-                    continue
-                room = loads.get(best_t, 0.0) + s['total_vol'] <= \
-                    targets.get(best_t, 0.0) + tol.get(best_t, 0.0) * mult
-                if best_d < own * 0.6 and room:
-                    stops.at[idx, 'assigned_truck'] = best_t
-                    loads[t] -= s['total_vol']
-                    loads[best_t] = loads.get(best_t, 0.0) + s['total_vol']
-                    changed = True
-        if not changed:
-            break
-    return stops, loads
-
-
-def majority_vote_smoothing(stops: pd.DataFrame, trucks: List[str],
-                            targets: Dict[str, float], loads: Dict[str, float],
-                            tol: Dict[str, float], cfg: ZoningConfig
-                            ) -> Tuple[pd.DataFrame, Dict[str, float]]:
-    """ขัดผิวรอยต่อโซน (แก้ checkerboard) ด้วย k-NN majority filter — ตอนนี้ใช้ KDTree"""
-    stops = stops.reset_index(drop=True)
-    n = len(stops)
-    if n < cfg.knn_k + 2:
-        return stops, loads
-
-    xy = stops[['x', 'y']].to_numpy(dtype=float)
-    nb = knn_indices(xy, cfg.knn_k)
-    locked = stops['is_locked'].to_numpy()
-    vol = stops['total_vol'].to_numpy(dtype=float)
-
-    for _ in range(cfg.knn_rounds):
-        changed = False
-        assigned = stops['assigned_truck'].to_numpy(dtype=object).copy()
-        for i in range(n):
-            if locked[i]:
-                continue                        # VIP/Core lock สำคัญกว่าความสวยของโซน
-            cur = assigned[i]
-            vals, counts = np.unique(assigned[nb[i]], return_counts=True)
-            maj = vals[np.argmax(counts)]
-            if maj == cur or maj == OVERFLOW_LABEL or maj is None:
-                continue
-            if counts.max() < cfg.knn_k * cfg.knn_majority:
-                continue
-            if loads.get(maj, 0.0) + vol[i] <= targets.get(maj, 0.0) + \
-                    tol.get(maj, 0.0) * cfg.polish_tol_multiplier:
-                loads[cur] = loads.get(cur, 0.0) - vol[i]
-                loads[maj] = loads.get(maj, 0.0) + vol[i]
-                assigned[i] = maj
-                changed = True
-        stops['assigned_truck'] = assigned
-        if not changed:
-            break
-    return stops, loads
-
-
-def swap_improve(stops: pd.DataFrame, trucks: List[str],
-                 targets: Dict[str, float], loads: Dict[str, float],
-                 tol: Dict[str, float], rounds: int = 3,
-                 max_pairs_per_combo: int = 60) -> Tuple[pd.DataFrame, Dict[str, float]]:
-    """Local search แบบสลับคู่ข้ามคัน (2-opt exchange)
-
-    ของใหม่ใน v2: แก้เคสที่ 2 คันต่างมีจุดที่ 'ควรอยู่กับอีกคัน' พร้อมกัน
-    ซึ่ง cleanup ย้ายเดี่ยวไม่ได้เพราะติดเพดานความจุ — ต้องสลับพร้อมกันถึงจะผ่าน
+def cleanup_stray_points(
+    stops: pd.DataFrame,
+    trucks: List[str],
+    targets: Dict[str, float],
+    loads: Dict[str, float],
+    tolerance: Dict[str, float],
+    multiplier: float,
+    rounds: int = 3,
+) -> Tuple[pd.DataFrame, Dict[str, float]]:
+    """
+    ย้ายจุดที่หลุดออกจากกลุ่มของรถตัวเองอย่างชัดเจน
+    ไปยังรถที่มีศูนย์กลางใกล้กว่าและยังมีความจุ
     """
     stops = stops.copy()
-    for _ in range(rounds):
+    loads = dict(loads)
+
+    for _ in range(max(1, int(rounds))):
         changed = False
-        cent = {}
-        for t in trucks:
-            g = stops[stops['assigned_truck'] == t]
-            if not g.empty:
-                cent[t] = np.array([g['x'].mean(), g['y'].mean()])
-        for a, b in combinations([t for t in trucks if t in cent], 2):
-            ca, cb = cent[a], cent[b]
-            A = stops[(stops['assigned_truck'] == a) & (~stops['is_locked'])]
-            B = stops[(stops['assigned_truck'] == b) & (~stops['is_locked'])]
-            if A.empty or B.empty:
+        centers: Dict[str, Tuple[float, float]] = {}
+
+        for truck in trucks:
+            group = stops[
+                stops["assigned_truck"] == truck
+            ]
+
+            if group.empty:
                 continue
-            gainA = (np.sqrt(((A[['x', 'y']].to_numpy() - ca) ** 2).sum(1)) -
-                     np.sqrt(((A[['x', 'y']].to_numpy() - cb) ** 2).sum(1)))
-            gainB = (np.sqrt(((B[['x', 'y']].to_numpy() - cb) ** 2).sum(1)) -
-                     np.sqrt(((B[['x', 'y']].to_numpy() - ca) ** 2).sum(1)))
-            ia = A.index[np.argsort(-gainA)][:max_pairs_per_combo]
-            ib = B.index[np.argsort(-gainB)][:max_pairs_per_combo]
-            ga = dict(zip(A.index, gainA))
-            gb = dict(zip(B.index, gainB))
-            used_b: set = set()
-            for i in ia:
-                if ga[i] <= 0:
-                    break
-                for j in ib:
-                    if j in used_b or gb[j] <= 0:
+
+            weights = np.maximum(
+                group["total_vol"].to_numpy(dtype=float),
+                1e-9,
+            )
+
+            centers[truck] = (
+                float(
+                    np.average(
+                        group["x"],
+                        weights=weights,
+                    )
+                ),
+                float(
+                    np.average(
+                        group["y"],
+                        weights=weights,
+                    )
+                ),
+            )
+
+        for truck in trucks:
+            mask = (
+                (stops["assigned_truck"] == truck)
+                & (~stops["is_locked"].astype(bool))
+            )
+
+            group = stops[mask]
+
+            if len(group) < 3 or truck not in centers:
+                continue
+
+            center_x, center_y = centers[truck]
+
+            distances = np.sqrt(
+                (group["x"] - center_x) ** 2
+                + (group["y"] - center_y) ** 2
+            )
+
+            median_distance = float(
+                distances.median()
+            )
+
+            radius = (
+                median_distance * 3.0
+                + 1.0
+            )
+
+            stray_indices = group.index[
+                distances > radius
+            ]
+
+            for stop_index in stray_indices:
+                stop = stops.loc[stop_index]
+
+                own_distance_squared = (
+                    (stop["x"] - center_x) ** 2
+                    + (stop["y"] - center_y) ** 2
+                )
+
+                best_truck = None
+                best_distance_squared = float("inf")
+
+                for other_truck, (
+                    other_x,
+                    other_y,
+                ) in centers.items():
+                    if other_truck == truck:
                         continue
-                    if ga[i] + gb[j] <= 0:
-                        continue
-                    va = stops.at[i, 'total_vol']
-                    vb = stops.at[j, 'total_vol']
-                    la = loads[a] - va + vb
-                    lb = loads[b] - vb + va
-                    if la > targets.get(a, 0.0) + tol.get(a, 0.0):
-                        continue
-                    if lb > targets.get(b, 0.0) + tol.get(b, 0.0):
-                        continue
-                    stops.at[i, 'assigned_truck'] = b
-                    stops.at[j, 'assigned_truck'] = a
-                    loads[a], loads[b] = la, lb
-                    used_b.add(j)
+
+                    distance_squared = (
+                        (stop["x"] - other_x) ** 2
+                        + (stop["y"] - other_y) ** 2
+                    )
+
+                    if (
+                        distance_squared
+                        < best_distance_squared
+                    ):
+                        best_distance_squared = (
+                            distance_squared
+                        )
+                        best_truck = other_truck
+
+                if best_truck is None:
+                    continue
+
+                projected_load = (
+                    loads.get(best_truck, 0.0)
+                    + float(stop["total_vol"])
+                )
+
+                allowed_load = (
+                    targets.get(best_truck, 0.0)
+                    + tolerance.get(best_truck, 0.0)
+                    * multiplier
+                )
+
+                is_materially_closer = (
+                    best_distance_squared
+                    < own_distance_squared * 0.6
+                )
+
+                if (
+                    is_materially_closer
+                    and projected_load <= allowed_load
+                ):
+                    volume = float(
+                        stop["total_vol"]
+                    )
+
+                    stops.at[
+                        stop_index,
+                        "assigned_truck",
+                    ] = best_truck
+
+                    loads[truck] = (
+                        loads.get(truck, 0.0)
+                        - volume
+                    )
+
+                    loads[best_truck] = (
+                        loads.get(best_truck, 0.0)
+                        + volume
+                    )
+
                     changed = True
-                    break
+
         if not changed:
             break
+
     return stops, loads
 
 
-def smooth_daily_loads(opt: pd.DataFrame, cfg: ZoningConfig, trucks: List[str]
-                       ) -> Tuple[pd.DataFrame, np.ndarray, np.ndarray, Dict[str, np.ndarray]]:
-    """PRIORITY 3 — เกลี่ยวันจัดส่งภายในคันเดียวกัน (คุมทั้งปริมาตรและจำนวนจุดจอด)"""
-    idx_list = opt.index.tolist()
-    pos = {ix: p for p, ix in enumerate(idx_list)}
-    vols = opt[cfg.vol_col].to_numpy(dtype=float)
+def majority_vote_smoothing(
+    stops: pd.DataFrame,
+    trucks: List[str],
+    targets: Dict[str, float],
+    loads: Dict[str, float],
+    tolerance: Dict[str, float],
+    cfg: ZoningConfig,
+) -> Tuple[pd.DataFrame, Dict[str, float]]:
+    """
+    ขัดผิวรอยต่อของโซนด้วย k-nearest-neighbor majority vote
+    โดยไม่ย้ายจุดที่ถูกล็อก
+    """
+    stops = stops.copy().reset_index(drop=True)
+    loads = dict(loads)
 
-    day_map: Dict[int, List[int]] = {}
-    for ix in idx_list:
-        d, status = parse_days_from_string(opt.at[ix, cfg.day_col])
-        if not d:
-            d = list(range(WORKING_DAYS))
-        day_map[ix] = d
-        opt.at[ix, '_day_status'] = status
+    number_of_stops = len(stops)
 
-    def recompute():
-        vol_d = {t: np.zeros(WORKING_DAYS) for t in trucks}
-        cnt_d = {t: np.zeros(WORKING_DAYS) for t in trucks}
-        for ix in idx_list:
-            t = opt.at[ix, 'เบอร์รถใหม่']
-            if t not in vol_d:
-                continue
-            dl = day_map[ix]
-            per = vols[pos[ix]] / max(1, len(dl)) / WEEKS_PER_MONTH
-            for d in dl:
-                vol_d[t][d] += per
-                cnt_d[t][d] += 1
-        return vol_d, cnt_d
+    if number_of_stops < cfg.knn_k + 2:
+        return stops, loads
 
-    cap = cfg.daily_control_cap
-    for _ in range(cfg.daily_passes):
-        vol_d, cnt_d = recompute()
+    coordinates = stops[
+        ["x", "y"]
+    ].to_numpy(dtype=float)
+
+    neighbor_indices = knn_indices(
+        coordinates,
+        cfg.knn_k,
+    )
+
+    locked = stops[
+        "is_locked"
+    ].astype(bool).to_numpy()
+
+    volumes = stops[
+        "total_vol"
+    ].to_numpy(dtype=float)
+
+    valid_trucks = set(trucks)
+
+    for _ in range(
+        max(1, int(cfg.knn_rounds))
+    ):
         changed = False
-        for t in trucks:
-            order = np.argsort(-vol_d[t])
-            for d in order:
-                over_vol = vol_d[t][d] > cap
-                over_cnt = cnt_d[t][d] > cfg.max_stops_per_day
-                if not (over_vol or over_cnt):
-                    continue
-                score = vol_d[t] / max(1.0, cap) + cnt_d[t] / max(1, cfg.max_stops_per_day)
-                target_d = int(np.argmin(score))
-                if target_d == d:
-                    continue
-                if vol_d[t][target_d] >= cap - 5 and cnt_d[t][target_d] >= cfg.max_stops_per_day - 2:
-                    continue
 
-                movable = [ix for ix in idx_list
-                           if opt.at[ix, 'เบอร์รถใหม่'] == t
-                           and (cfg.allow_vip_day_move or not opt.at[ix, 'is_vip_locked'])
-                           and d in day_map[ix] and len(day_map[ix]) <= 3
-                           and target_d not in day_map[ix]]
-                if not movable:
-                    continue
-                movable.sort(key=lambda ix: -vols[pos[ix]] / max(1, len(day_map[ix])))
+        assigned = stops[
+            "assigned_truck"
+        ].astype(object).to_numpy().copy()
 
-                excess = max(0.0, vol_d[t][d] - TARGET_DAY_CAP)
-                shifted = 0.0
-                for ix in movable:
-                    if shifted >= excess and not over_cnt:
-                        break
-                    dl = day_map[ix]
-                    v = vols[pos[ix]] / max(1, len(dl)) / WEEKS_PER_MONTH
-                    if vol_d[t][target_d] + v > cap:
-                        continue
-                    if cnt_d[t][target_d] + 1 > cfg.max_stops_per_day:
-                        break
-                    day_map[ix] = [target_d if z == d else z for z in dl]
-                    note = f"{DAY_SHORT[d]}→{DAY_SHORT[target_d]}"
-                    prev = str(opt.at[ix, 'สถานะการย้ายวัน'])
-                    # แก้บั๊ก v1: เดิมเขียนทับ ทำให้เห็นแค่การย้ายครั้งสุดท้าย
-                    opt.at[ix, 'สถานะการย้ายวัน'] = note if prev in ('-', 'nan') else f"{prev}, {note}"
-                    vol_d[t][d] -= v
-                    vol_d[t][target_d] += v
-                    cnt_d[t][d] -= 1
-                    cnt_d[t][target_d] += 1
-                    shifted += v
-                    changed = True
-                    over_cnt = cnt_d[t][d] > cfg.max_stops_per_day
+        for stop_index in range(number_of_stops):
+            if locked[stop_index]:
+                continue
+
+            current_truck = assigned[stop_index]
+
+            neighbor_assignments = [
+                value
+                for value in assigned[
+                    neighbor_indices[stop_index]
+                ].tolist()
+                if value in valid_trucks
+            ]
+
+            if not neighbor_assignments:
+                continue
+
+            values, counts = np.unique(
+                np.asarray(
+                    neighbor_assignments,
+                    dtype=str,
+                ),
+                return_counts=True,
+            )
+
+            majority_truck = str(
+                values[np.argmax(counts)]
+            )
+
+            majority_count = int(
+                counts.max()
+            )
+
+            if majority_truck == current_truck:
+                continue
+
+            if (
+                majority_count
+                < cfg.knn_k
+                * cfg.knn_majority
+            ):
+                continue
+
+            projected_load = (
+                loads.get(majority_truck, 0.0)
+                + volumes[stop_index]
+            )
+
+            allowed_load = (
+                targets.get(majority_truck, 0.0)
+                + tolerance.get(
+                    majority_truck,
+                    0.0,
+                )
+                * cfg.polish_tol_multiplier
+            )
+
+            if projected_load > allowed_load:
+                continue
+
+            if current_truck in valid_trucks:
+                loads[current_truck] = (
+                    loads.get(current_truck, 0.0)
+                    - volumes[stop_index]
+                )
+
+            loads[majority_truck] = projected_load
+            assigned[stop_index] = majority_truck
+            changed = True
+
+        stops["assigned_truck"] = assigned
+
         if not changed:
             break
 
-    for ix in idx_list:
-        opt.at[ix, 'วันจัดส่ง(ใหม่)'] = format_days_to_string(day_map[ix])
-        opt.at[ix, 'วันจัดส่ง(ย่อ)'] = format_days_short(day_map[ix])
-
-    n = len(opt)
-    dm = np.zeros((n, WORKING_DAYS))
-    ds = np.zeros((n, WORKING_DAYS))
-    for ix in idx_list:
-        dl = day_map[ix]
-        per = vols[pos[ix]] / max(1, len(dl)) / WEEKS_PER_MONTH
-        for d in dl:
-            dm[pos[ix], d] = per
-            ds[pos[ix], d] = 1
-    final_daily, _ = recompute()
-    return opt, dm, ds, final_daily
+    return stops, loads
 
 
-def compute_compactness(g: pd.DataFrame) -> float:
-    """ระยะเฉลี่ยจากจุดจอดถึงศูนย์กลางโซนตัวเอง (เมตร) — ยิ่งต่ำยิ่งเกาะกลุ่ม"""
-    if g.empty:
-        return 0.0
-    cx, cy = g['x'].mean(), g['y'].mean()
-    return float(np.sqrt((g['x'] - cx) ** 2 + (g['y'] - cy) ** 2).mean())
+def swap_improve(
+    stops: pd.DataFrame,
+    trucks: List[str],
+    targets: Dict[str, float],
+    loads: Dict[str, float],
+    tolerance: Dict[str, float],
+    rounds: int = 3,
+    max_pairs_per_combo: int = 60,
+) -> Tuple[pd.DataFrame, Dict[str, float]]:
+    """
+    สลับคู่จุดจอดข้ามรถแบบ 2-opt exchange
 
+    ใช้แก้กรณีที่การย้ายจุดเดี่ยวทำไม่ได้เพราะติดเพดาน
+    แต่การสลับสองจุดพร้อมกันช่วยให้ทั้งสองโซนกระชับขึ้น
+    """
+    stops = stops.copy()
+    loads = dict(loads)
 
-# ---------------------------------------------------------------------------------
-#  MAIN ENGINE
-# ---------------------------------------------------------------------------------
-def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig,
-                           target_pcts: Dict[str, float],
-                           dissolve_trucks: Sequence[str],
-                           relieve_trucks: Sequence[str],
-                           new_trucks: Sequence[str],
-                           manual_locks: Sequence[str],
-                           road_matrix_getter=None) -> ZoningResult:
-    warns: List[str] = []
-    infos: List[str] = []
-    opt = df.copy()
+    for _ in range(max(1, int(rounds))):
+        changed = False
+        centers: Dict[str, np.ndarray] = {}
 
-    all_orig = clean_truck_ids(opt[cfg.truck_col].unique())
-    dissolve = [t for t in dissolve_trucks if t in all_orig]
-    kept = [t for t in all_orig if t not in dissolve]
-    active = kept + [t for t in new_trucks if t not in kept]
+        for truck in trucks:
+            group = stops[
+                stops["assigned_truck"] == truck
+            ]
 
-    targets = {t: cfg.monthly_capacity * (float(target_pcts.get(t, 0.0)) / 100.0) for t in active}
-    tol = {t: _tolerance_for(t, targets, cfg) for t in active}
+            if group.empty:
+                continue
 
-    # ---- เตรียมข้อมูลระดับลูกค้า ----
-    locked_ids = {str(x).strip() for x in manual_locks}
-    opt['is_vip_locked'] = (
-        opt['VIP_Status'].astype(str).str.upper().str.strip().eq('VIP') |
-        opt[cfg.id_col].astype(str).str.strip().isin(locked_ids)
-    )
-    opt['สถานะการย้ายวัน'] = '-'
-    opt['coord_key'] = (opt[cfg.lat_col].round(5).astype(str) + "," +
-                        opt[cfg.lon_col].round(5).astype(str))
-    x, y, _ = project_xy(opt[cfg.lat_col].to_numpy(), opt[cfg.lon_col].to_numpy())
-    opt['x'], opt['y'] = x, y
+            weights = np.maximum(
+                group["total_vol"].to_numpy(dtype=float),
+                1e-9,
+            )
 
-    stops = build_stops(opt, cfg)
+            centers[truck] = np.asarray(
+                [
+                    np.average(
+                        group["x"],
+                        weights=weights,
+                    ),
+                    np.average(
+                        group["y"],
+                        weights=weights,
+                    ),
+                ],
+                dtype=float,
+            )
 
-    if not stops.empty:
-        biggest = float(stops['total_vol'].max())
-        max_tgt = max(targets.values()) if targets else 0.0
-        if max_tgt > 0 and biggest > max_tgt:
-            warns.append(f"พบจุดพิกัดเดียวที่มียอดรวม {biggest:,.0f} ถัง/เดือน "
-                         f"(ลูกค้าหลายรายพิกัดชนกัน) มากกว่าเป้าสูงสุดต่อคัน ({max_tgt:,.0f}) "
-                         f"— จุดนี้จะตกเป็น '{OVERFLOW_LABEL}' เสมอ ควรตรวจสอบพิกัด GPS")
+        eligible_center_trucks = [
+            truck
+            for truck in trucks
+            if truck in centers
+        ]
 
-    # ---- Core ratio รายคัน: รถที่ถูกดึงงานออก ต้องคลายล็อกให้พอดีกับเป้าใหม่ ----
-    vol_by_truck = stops.groupby('orig_truck')['total_vol'].sum().to_dict()
-    ratio_override: Dict[str, float] = {}
-    for t in relieve_trucks:
-        cur = float(vol_by_truck.get(t, 0.0))
-        if cur > 0 and t in targets:
-            ratio_override[t] = max(0.0, targets[t] / cur * 100.0 * 0.92)
-    core_eligible = [t for t in kept if t not in dissolve]
+        for truck_a, truck_b in combinations(
+            eligible_center_trucks,
+            2,
+        ):
+            center_a = centers[truck_a]
+            center_b = centers[truck_b]
 
-    # ---- Seeds ----
-    seeds: Dict[str, Tuple[float, float]] = {}
-    for t in kept:
-        g = stops[stops['orig_truck'] == t]
-        if not g.empty:
-            seeds[t] = (float(g['x'].mean()), float(g['y'].mean()))
-    bx, by = float(stops['x'].mean()), float(stops['y'].mean())
+            group_a = stops[
+                (stops["assigned_truck"] == truck_a)
+                & (~stops["is_locked"].astype(bool))
+            ]
 
-    if new_trucks:
-        ck = compute_core_keys(stops, cfg.core_ratio, core_eligible, ratio_override)
-        pool = stops[~stops['coord_key'].isin(ck)]
-        if pool.empty:
-            pool = stops
-        C = kmeans_seeds(pool[['x', 'y']].to_numpy(dtype=float),
-                         pool['total_vol'].to_numpy(dtype=float), len(new_trucks))
-        for i, t in enumerate(new_trucks):
-            seeds[t] = (float(C[i][0]), float(C[i][1]))
+            group_b = stops[
+                (stops["assigned_truck"] == truck_b)
+                & (~stops["is_locked"].astype(bool))
+            ]
 
-    # ---- Road distance matrix (เรียกครั้งเดียว) ----
-    road = None
-    if cfg.use_road and road_matrix_getter is not None and active and not stops.empty:
-        dest_ll = []
-        for t in active:
-            sx, sy = seeds.get(t, (bx, by))
-            lat0 = float(opt[cfg.lat_col].mean())
-            k = math.cos(math.radians(lat0))
-            dest_ll.append((math.degrees(sy / EARTH_RADIUS_M),
-                            math.degrees(sx / (EARTH_RADIUS_M * k))))
-        src_ll = list(zip(stops['lat'].tolist(), stops['lon'].tolist()))
-        road, err = road_matrix_getter(tuple(src_ll), tuple(dest_ll))
-        if road is None:
-            warns.append(f"เรียก API ระยะทางถนนจริงไม่สำเร็จ ({err}) — รอบนี้ใช้ระยะทางเส้นตรงแทน")
+            if group_a.empty or group_b.empty:
+                continue
 
-    # ---- Zoning pass + auto core-ratio decay ----
-    def one_pass(ratio: float):
-        s = stops.copy()
-        ck = compute_core_keys(s, ratio, core_eligible, ratio_override)
-        s['is_core_locked'] = s['coord_key'].isin(ck)
-        s['is_locked'] = s['has_vip_lock'] | s['is_core_locked']
-        s['assigned_truck'] = None
+            coordinates_a = group_a[
+                ["x", "y"]
+            ].to_numpy(dtype=float)
 
-        for i, r in s.iterrows():               # pin เฉพาะที่ล็อกและรถเดิมยังอยู่
-            if r['is_locked'] and r['orig_truck'] in active:
-                s.at[i, 'assigned_truck'] = r['orig_truck']
+            coordinates_b = group_b[
+                ["x", "y"]
+            ].to_numpy(dtype=float)
 
-        a, ld = _assign_capacitated(s, active, targets, tol, seeds, road)
-        s['assigned_truck'] = [active[k] if k >= 0 else OVERFLOW_LABEL for k in a]
-        # จุดที่ล็อกแต่รถเดิมถูกยุบ ให้ปลดล็อกเพื่อให้ขั้นขัดผิวจัดต่อได้
-        s.loc[s['is_locked'] & ~s['orig_truck'].isin(active), 'is_locked'] = False
-        return s, ld
+            gain_a = (
+                np.sqrt(
+                    (
+                        (
+                            coordinates_a
+                            - center_a
+                        )
+                        ** 2
+                    ).sum(axis=1)
+                )
+                - np.sqrt(
+                    (
+                        (
+                            coordinates_a
+                            - center_b
+                        )
+                        ** 2
+                    ).sum(axis=1)
+                )
+            )
 
-    ratio = cfg.core_ratio
-    best = None
-    while True:
-        s_try, l_try = one_pass(ratio)
-        viol = sum(max(0.0, abs(l_try.get(t, 0.0) - targets[t]) - tol[t])
-                   for t in active if targets.get(t, 0.0) > 0)
-        if best is None or viol < best[3]:
-            best = (s_try, l_try, ratio, viol)
-        if viol <= 1e-6 or ratio <= cfg.core_floor:
+            gain_b = (
+                np.sqrt(
+                    (
+                        (
+                            coordinates_b
+                            - center_b
+                        )
+                        ** 2
+                    ).sum(axis=1)
+                )
+                - np.sqrt(
+                    (
+                        (
+                            coordinates_b
+                            - center_a
+                        )
+                        ** 2
+                    ).sum(axis=1)
+                )
+            )
+
+            candidate_a = group_a.index[
+                np.argsort(-gain_a)
+            ][:max_pairs_per_combo]
+
+            candidate_b = group_b.index[
+                np.argsort(-gain_b)
+            ][:max_pairs_per_combo]
+
+            gain_lookup_a = dict(
+                zip(group_a.index, gain_a)
+            )
+
+            gain_lookup_b = dict(
+                zip(group_b.index, gain_b)
+            )
+
+            used_b: set = set()
+
+            for index_a in candidate_a:
+                if gain_lookup_a[index_a] <= 0:
+                    break
+
+                for index_b in candidate_b:
+                    if index_b in used_b:
+                        continue
+
+                    if gain_lookup_b[index_b] <= 0:
+                        continue
+
+                    if (
+                        gain_lookup_a[index_a]
+                        + gain_lookup_b[index_b]
+                        <= 0
+                    ):
+                        continue
+
+                    volume_a = float(
+                        stops.at[
+                            index_a,
+                            "total_vol",
+                        ]
+                    )
+
+                    volume_b = float(
+                        stops.at[
+                            index_b,
+                            "total_vol",
+                        ]
+                    )
+
+                    new_load_a = (
+                        loads.get(truck_a, 0.0)
+                        - volume_a
+                        + volume_b
+                    )
+
+                    new_load_b = (
+                        loads.get(truck_b, 0.0)
+                        - volume_b
+                        + volume_a
+                    )
+
+                    limit_a = (
+                        targets.get(truck_a, 0.0)
+                        + tolerance.get(
+                            truck_a,
+                            0.0,
+                        )
+                    )
+
+                    limit_b = (
+                        targets.get(truck_b, 0.0)
+                        + tolerance.get(
+                            truck_b,
+                            0.0,
+                        )
+                    )
+
+                    if new_load_a > limit_a:
+                        continue
+
+                    if new_load_b > limit_b:
+                        continue
+
+                    stops.at[
+                        index_a,
+                        "assigned_truck",
+                    ] = truck_b
+
+                    stops.at[
+                        index_b,
+                        "assigned_truck",
+                    ] = truck_a
+
+                    loads[truck_a] = new_load_a
+                    loads[truck_b] = new_load_b
+
+                    used_b.add(index_b)
+                    changed = True
+                    break
+
+        if not changed:
             break
-        ratio = max(cfg.core_floor, ratio - cfg.core_step)
 
-    stops_a, loads, ratio_used, _ = best
-    if ratio_used < cfg.core_ratio:
-        infos.append(f"ระบบลดสัดส่วนแกนกลางที่ล็อก (Core %) จาก {cfg.core_ratio:.0f}% "
-                     f"เหลือ {ratio_used:.0f}% อัตโนมัติ เพื่อให้ยอดจริงเข้าใกล้เป้าหมายมากขึ้น")
+    return stops, loads# =====================================================================================
+#  SECTION 7 — DAILY LOAD SMOOTHING & KPI HELPERS
+# =====================================================================================
+def smooth_daily_loads(
+    opt: pd.DataFrame,
+    cfg: ZoningConfig,
+    trucks: List[str],
+) -> Tuple[
+    pd.DataFrame,
+    np.ndarray,
+    np.ndarray,
+    Dict[str, np.ndarray],
+]:
+    """
+    เกลี่ยวันจัดส่งภายในรถคันเดียวกัน
 
-    # ---- ขัดผิวโซน 3 ชั้น ----
-    if cfg.enable_stray_cleanup:
-        stops_a, loads = cleanup_stray_points(stops_a, active, targets, loads, tol,
-                                              cfg.polish_tol_multiplier)
-    if cfg.enable_majority_vote:
-        stops_a, loads = majority_vote_smoothing(stops_a, active, targets, loads, tol, cfg)
-    if cfg.enable_swap:
-        stops_a, loads = swap_improve(stops_a, active, targets, loads, tol, cfg.swap_rounds)
+    เงื่อนไขหลัก:
+        - ควบคุมทั้งยอดส่งต่อวันและจำนวนจุดจอดต่อวัน
+        - ไม่ย้ายวันของ VIP หากไม่ได้เปิด allow_vip_day_move
+        - ไม่ย้ายงานข้ามรถในขั้นตอนนี้
+        - ลูกค้าที่มีวันส่งมากกว่า 3 วันจะไม่ถูกย้าย
+        - สะสมประวัติการย้ายวันโดยไม่เขียนทับรายการเดิม
+    """
+    opt = opt.copy().reset_index(drop=True)
+    trucks = list(dict.fromkeys(str(t).strip() for t in trucks))
 
-    # ---- แมปกลับสู่ระดับลูกค้า ----
-    m_truck = dict(zip(stops_a['coord_key'], stops_a['assigned_truck']))
-    m_core = dict(zip(stops_a['coord_key'], stops_a['is_core_locked']))
-    opt['เบอร์รถใหม่'] = opt['coord_key'].map(m_truck).fillna(OVERFLOW_LABEL)
-    opt['is_core_locked'] = opt['coord_key'].map(m_core).fillna(False)
-    opt['is_locked'] = opt['is_vip_locked'] | opt['is_core_locked']
+    number_of_rows = len(opt)
 
-    opt['สถานะ'] = np.where(opt[cfg.truck_col] == opt['เบอร์รถใหม่'],
-                            'คงเดิม', 'ย้ายไปสาย ' + opt['เบอร์รถใหม่'].astype(str))
-    opt.loc[opt['is_locked'] & (opt[cfg.truck_col] == opt['เบอร์รถใหม่']), 'สถานะ'] = 'คงเดิม 🔒'
+    if number_of_rows == 0:
+        empty_matrix = np.zeros(
+            (0, WORKING_DAYS),
+            dtype=float,
+        )
 
-    # ---- PRIORITY 3: เกลี่ยวัน ----
-    opt, dm, ds, final_daily = smooth_daily_loads(opt, cfg, active)
+        return (
+            opt,
+            empty_matrix,
+            empty_matrix.copy(),
+            {
+                truck: np.zeros(
+                    WORKING_DAYS,
+                    dtype=float,
+                )
+                for truck in trucks
+            },
+        )
 
-    # ---- KPI ----
-    before = opt.groupby(cfg.truck_col)
-    after = opt.groupby('เบอร์รถใหม่')
-    comp_before = np.mean([compute_compactness(g) for _, g in before]) if len(before) else 0.0
-    comp_after = np.mean([compute_compactness(g) for t, g in after if t != OVERFLOW_LABEL]) \
-        if len(after) else 0.0
+    if "สถานะการย้ายวัน" not in opt.columns:
+        opt["สถานะการย้ายวัน"] = "-"
 
-    peak_before = {}
-    for t, g in before:
-        d = np.zeros(WORKING_DAYS)
-        for _, r in g.iterrows():
-            dl, _ = parse_days_from_string(r[cfg.day_col])
-            dl = dl or list(range(WORKING_DAYS))
-            per = float(r[cfg.vol_col]) / len(dl) / WEEKS_PER_MONTH
-            for k in dl:
-                d[k] += per
-        peak_before[str(t).strip()] = float(d.max())
-    peak_after = {t: float(v.max()) for t, v in final_daily.items()}
+    if "is_vip_locked" not in opt.columns:
+        opt["is_vip_locked"] = False
 
-    moved = int((opt[cfg.truck_col] != opt['เบอร์รถใหม่']).sum())
-    metrics = {
-        'compact_before_km': comp_before / 1000.0,
-        'compact_after_km': comp_after / 1000.0,
-        'over_before': sum(1 for v in peak_before.values() if v > cfg.daily_control_cap),
-        'over_after': sum(1 for v in peak_after.values() if v > cfg.daily_control_cap),
-        'peak_before': max(peak_before.values()) if peak_before else 0.0,
-        'peak_after': max(peak_after.values()) if peak_after else 0.0,
-        'moved_cust': moved,
-        'moved_pct': moved / max(1, len(opt)) * 100.0,
-        'moved_vol': float(opt.loc[opt[cfg.truck_col] != opt['เบอร์รถใหม่'], cfg.vol_col].sum()),
-        'std_before': float(np.std(list(peak_before.values()))) if peak_before else 0.0,
-        'std_after': float(np.std(list(peak_after.values()))) if peak_after else 0.0,
-    }
+    monthly_volumes = (
+        pd.to_numeric(
+            opt[cfg.vol_col],
+            errors="coerce",
+        )
+        .fillna(0.0)
+        .to_numpy(dtype=float)
+    )
 
-    bad_days = int((opt['_day_status'] != 'ok').sum()) if '_day_status' in opt.columns else 0
-    if bad_days:
-        warns.append(f"อ่านค่า 'วันจัดส่ง' ไม่ออก {bad_days} รายการ — ระบบถือว่าเป็น 'จ-ส' "
-                     f"ซึ่งจะทำให้โหลดรายวันดูสูงเกินจริง กรุณาตรวจสอบข้อมูลต้นทาง")
+    day_map: Dict[int, List[int]] = {}
 
-    return ZoningResult(result_df=opt, stops_df=stops_a, daily_matrix=dm, daily_stops=ds,
-                        final_daily=final_daily, targets=targets, loads=loads,
-                        core_ratio_used=ratio_used, metrics=metrics,
-                        warnings=warns, infos=infos)
+    for row_index in opt.index:
+        days, status = parse_days_from_string(
+            opt.at[row_index, cfg.day_col]
+        )
+
+        # ใช้ทุกวันเฉพาะตอนคำนวณ เพื่อไม่ให้ระบบหยุดทำงาน
+        # แต่เก็บสถานะ unparsed/empty ไว้สำหรับแจ้งเตือนผู้ใช้
+        if not days:
+            days = list(range(WORKING_DAYS))
+
+        day_map[row_index] = list(
+            sorted(set(days))
+        )
+
+        opt.at[
+            row_index,
+            "_day_status",
+        ] = status
+
+    def recompute_daily() -> Tuple[
+        Dict[str, np.ndarray],
+        Dict[str, np.ndarray],
+    ]:
+        daily_volume = {
+            truck: np.zeros(
+                WORKING_DAYS,
+                dtype=float,
+            )
+            for truck in trucks
+        }
+
+        daily_stop_count = {
+            truck: np.zeros(
+                WORKING_DAYS,
+                dtype=float,
+            )
+            for truck in trucks
+        }
+
+        for row_index in opt.index:
+            truck = str(
+                opt.at[row_index, "เบอร์รถใหม่"]
+            ).strip()
+
+            if truck not in daily_volume:
+                continue
+
+            days = day_map[row_index]
+
+            if not days:
+                continue
+
+            volume_per_day = (
+                monthly_volumes[row_index]
+                / len(days)
+                / WEEKS_PER_MONTH
+            )
+
+            for day in days:
+                if not 0 <= day < WORKING_DAYS:
+                    continue
+
+                daily_volume[truck][day] += (
+                    volume_per_day
+                )
+
+                daily_stop_count[truck][day] += 1
+
+        return daily_volume, daily_stop_count
+
+    daily_capacity = max(
+        1.0,
+        float(cfg.daily_control_cap),
+    )
+
+    maximum_stops = max(
+        1,
+        int(cfg.max_stops_per_day),
+    )
+
+    for _ in range(
+        max(1, int(cfg.daily_passes))
+    ):
+        daily_volume, daily_stop_count = (
+            recompute_daily()
+        )
+
+        changed = False
+
+        for truck in trucks:
+            if truck not in daily_volume:
+                continue
+
+            # เริ่มแก้จากวันที่มีคะแนนความหนาแน่นสูงที่สุด
+            density_score = (
+                daily_volume[truck]
+                / daily_capacity
+                + daily_stop_count[truck]
+                / maximum_stops
+            )
+
+            source_day_order = np.argsort(
+                -density_score
+            )
+
+            for source_day in source_day_order:
+                source_day = int(source_day)
+
+                volume_overloaded = (
+                    daily_volume[truck][source_day]
+                    > daily_capacity
+                )
+
+                stops_overloaded = (
+                    daily_stop_count[truck][source_day]
+                    > maximum_stops
+                )
+
+                if not (
+                    volume_overloaded
+                    or stops_overloaded
+                ):
+                    continue
+
+                destination_score = (
+                    daily_volume[truck]
+                    / daily_capacity
+                    + daily_stop_count[truck]
+                    / maximum_stops
+                )
+
+                # ห้ามเลือกวันต้นทางเป็นวันปลายทาง
+                destination_score = (
+                    destination_score.copy()
+                )
+
+                destination_score[source_day] = (
+                    np.inf
+                )
+
+                destination_days = np.argsort(
+                    destination_score
+                )
+
+                destination_day = None
+
+                for candidate_day in destination_days:
+                    candidate_day = int(
+                        candidate_day
+                    )
+
+                    if not np.isfinite(
+                        destination_score[
+                            candidate_day
+                        ]
+                    ):
+                        continue
+
+                    if (
+                        daily_volume[truck][
+                            candidate_day
+                        ]
+                        >= daily_capacity
+                    ):
+                        continue
+
+                    if (
+                        daily_stop_count[truck][
+                            candidate_day
+                        ]
+                        >= maximum_stops
+                    ):
+                        continue
+
+                    destination_day = (
+                        candidate_day
+                    )
+                    break
+
+                if destination_day is None:
+                    continue
+
+                movable_rows = []
+
+                for row_index in opt.index:
+                    assigned_truck = str(
+                        opt.at[
+                            row_index,
+                            "เบอร์รถใหม่",
+                        ]
+                    ).strip()
+
+                    if assigned_truck != truck:
+                        continue
+
+                    if (
+                        not cfg.allow_vip_day_move
+                        and bool(
+                            opt.at[
+                                row_index,
+                                "is_vip_locked",
+                            ]
+                        )
+                    ):
+                        continue
+
+                    current_days = day_map[
+                        row_index
+                    ]
+
+                    if source_day not in current_days:
+                        continue
+
+                    if destination_day in current_days:
+                        continue
+
+                    if len(current_days) > 3:
+                        continue
+
+                    movable_rows.append(
+                        row_index
+                    )
+
+                if not movable_rows:
+                    continue
+
+                # ย้ายก้อนใหญ่ก่อน เพื่อลดจำนวนครั้งในการโยกวัน
+                movable_rows.sort(
+                    key=lambda row_index: (
+                        -monthly_volumes[
+                            row_index
+                        ]
+                        / max(
+                            1,
+                            len(
+                                day_map[
+                                    row_index
+                                ]
+                            ),
+                        )
+                    )
+                )
+
+                excess_volume = max(
+                    0.0,
+                    daily_volume[truck][
+                        source_day
+                    ]
+                    - TARGET_DAY_CAP,
+                )
+
+                shifted_volume = 0.0
+
+                for row_index in movable_rows:
+                    current_days = day_map[
+                        row_index
+                    ]
+
+                    volume_per_day = (
+                        monthly_volumes[row_index]
+                        / max(
+                            1,
+                            len(current_days),
+                        )
+                        / WEEKS_PER_MONTH
+                    )
+
+                    destination_projected_volume = (
+                        daily_volume[truck][
+                            destination_day
+                        ]
+                        + volume_per_day
+                    )
+
+                    destination_projected_stops = (
+                        daily_stop_count[truck][
+                            destination_day
+                        ]
+                        + 1
+                    )
+
+                    if (
+                        destination_projected_volume
+                        > daily_capacity
+                    ):
+                        continue
+
+                    if (
+                        destination_projected_stops
+                        > maximum_stops
+                    ):
+                        continue
+
+                    new_days = [
+                        destination_day
+                        if day == source_day
+                        else day
+                        for day in current_days
+                    ]
+
+                    new_days = sorted(
+                        set(new_days)
+                    )
+
+                    if len(new_days) != len(
+                        current_days
+                    ):
+                        continue
+
+                    day_map[row_index] = new_days
+
+                    movement_note = (
+                        f"{DAY_SHORT[source_day]}"
+                        f"→{DAY_SHORT[destination_day]}"
+                    )
+
+                    previous_note = str(
+                        opt.at[
+                            row_index,
+                            "สถานะการย้ายวัน",
+                        ]
+                    ).strip()
+
+                    if (
+                        not previous_note
+                        or previous_note.lower()
+                        in NO_TRUCK_TOKENS
+                    ):
+                        opt.at[
+                            row_index,
+                            "สถานะการย้ายวัน",
+                        ] = movement_note
+                    else:
+                        existing_notes = [
+                            note.strip()
+                            for note in previous_note.split(
+                                ","
+                            )
+                            if note.strip()
+                        ]
+
+                        if (
+                            movement_note
+                            not in existing_notes
+                        ):
+                            existing_notes.append(
+                                movement_note
+                            )
+
+                        opt.at[
+                            row_index,
+                            "สถานะการย้ายวัน",
+                        ] = ", ".join(
+                            existing_notes
+                        )
+
+                    daily_volume[truck][
+                        source_day
+                    ] -= volume_per_day
+
+                    daily_volume[truck][
+                        destination_day
+                    ] += volume_per_day
+
+                    daily_stop_count[truck][
+                        source_day
+                    ] -= 1
+
+                    daily_stop_count[truck][
+                        destination_day
+                    ] += 1
+
+                    shifted_volume += (
+                        volume_per_day
+                    )
+
+                    changed = True
+
+                    volume_overloaded = (
+                        daily_volume[truck][
+                            source_day
+                        ]
+                        > daily_capacity
+                    )
+
+                    stops_overloaded = (
+                        daily_stop_count[truck][
+                            source_day
+                        ]
+                        > maximum_stops
+                    )
+
+                    enough_volume_shifted = (
+                        shifted_volume
+                        >= excess_volume
+                    )
+
+                    if (
+                        not volume_overloaded
+                        and not stops_overloaded
+                        and enough_volume_shifted
+                    ):
+                        break
+
+        if not changed:
+            break
+
+    for row_index in opt.index:
+        opt.at[
+            row_index,
+            "วันจัดส่ง(ใหม่)",
+        ] = format_days_to_string(
+            day_map[row_index]
+        )
+
+        opt.at[
+            row_index,
+            "วันจัดส่ง(ย่อ)",
+        ] = format_days_short(
+            day_map[row_index]
+        )
+
+    daily_matrix = np.zeros(
+        (number_of_rows, WORKING_DAYS),
+        dtype=float,
+    )
+
+    daily_stops_matrix = np.zeros(
+        (number_of_rows, WORKING_DAYS),
+        dtype=float,
+    )
+
+    for row_index in opt.index:
+        days = day_map[row_index]
+
+        if not days:
+            continue
+
+        volume_per_day = (
+            monthly_volumes[row_index]
+            / len(days)
+            / WEEKS_PER_MONTH
+        )
+
+        for day in days:
+            daily_matrix[
+                row_index,
+                day,
+            ] = volume_per_day
+
+            daily_stops_matrix[
+                row_index,
+                day,
+            ] = 1.0
+
+    final_daily, _ = recompute_daily()
+
+    return (
+        opt,
+        daily_matrix,
+        daily_stops_matrix,
+        final_daily,
+    )
+
+
+def compute_compactness(
+    group: pd.DataFrame,
+) -> float:
+    """
+    คำนวณระยะเฉลี่ยจากจุดลูกค้าถึงศูนย์กลางโซน หน่วยเมตร
+
+    ยิ่งค่าต่ำ หมายถึงพื้นที่ของรถคันนั้นยิ่งเกาะกลุ่ม
+    """
+    if group.empty:
+        return 0.0
+
+    coordinates = group[
+        ["x", "y"]
+    ].to_numpy(dtype=float)
+
+    weights = np.ones(
+        len(group),
+        dtype=float,
+    )
+
+    if "total_vol" in group.columns:
+        weights = np.maximum(
+            pd.to_numeric(
+                group["total_vol"],
+                errors="coerce",
+            )
+            .fillna(0.0)
+            .to_numpy(dtype=float),
+            1e-9,
+        )
+
+    elif len(group.columns):
+        possible_volume_columns = [
+            column
+            for column in group.columns
+            if "ยอด" in str(column)
+            or "volume" in str(column).lower()
+        ]
+
+        if possible_volume_columns:
+            weights = np.maximum(
+                pd.to_numeric(
+                    group[
+                        possible_volume_columns[0]
+                    ],
+                    errors="coerce",
+                )
+                .fillna(0.0)
+                .to_numpy(dtype=float),
+                1e-9,
+            )
+
+    center = np.average(
+        coordinates,
+        axis=0,
+        weights=weights,
+    )
+
+    distances = np.sqrt(
+        (
+            (
+                coordinates
+                - center
+            )
+            ** 2
+        ).sum(axis=1)
+    )
+
+    return float(
+        np.average(
+            distances,
+            weights=weights,
+        )
+    )
+
+
+def calculate_peak_daily_loads(
+    data: pd.DataFrame,
+    truck_column: str,
+    volume_column: str,
+    day_column: str,
+) -> Dict[str, float]:
+    """
+    คำนวณโหลดสูงสุดต่อวันของรถแต่ละคัน
+    ใช้สำหรับ KPI ก่อนปรับสาย
+    """
+    output: Dict[str, float] = {}
+
+    if data.empty:
+        return output
+
+    for truck, group in data.groupby(
+        truck_column,
+        dropna=False,
+    ):
+        truck_id = str(truck).strip()
+
+        if (
+            truck_id.lower()
+            in NO_TRUCK_TOKENS
+        ):
+            continue
+
+        daily = np.zeros(
+            WORKING_DAYS,
+            dtype=float,
+        )
+
+        for _, row in group.iterrows():
+            days, _ = parse_days_from_string(
+                row.get(day_column)
+            )
+
+            if not days:
+                days = list(
+                    range(WORKING_DAYS)
+                )
+
+            monthly_volume = pd.to_numeric(
+                row.get(volume_column),
+                errors="coerce",
+            )
+
+            if pd.isna(monthly_volume):
+                monthly_volume = 0.0
+
+            volume_per_day = (
+                float(monthly_volume)
+                / len(days)
+                / WEEKS_PER_MONTH
+            )
+
+            for day in days:
+                daily[day] += volume_per_day
+
+        output[truck_id] = float(
+            daily.max()
+        )
+
+    return output
 
 
 # =====================================================================================
-#  SECTION 7 — UI THEME
+#  SECTION 8 — MAIN MULTI-DONOR ZONING ENGINE
+# =====================================================================================
+def run_multi_donor_zoning(
+    df: pd.DataFrame,
+    cfg: ZoningConfig,
+    target_pcts: Dict[str, float],
+    dissolve_trucks: Sequence[str],
+    relieve_trucks: Sequence[str],
+    new_trucks: Sequence[str],
+    manual_locks: Sequence[str],
+    road_matrix_getter=None,
+) -> ZoningResult:
+    """
+    ประมวลผลจัดสายส่งใหม่แบบ Multi-Donor
+
+    ขั้นตอน:
+        1. ตรวจสอบและเตรียมข้อมูล
+        2. สร้างจุดจอดจากพิกัด
+        3. ล็อก VIP และ Core
+        4. สร้าง seed ของรถเดิมและรถใหม่
+        5. จัดสรรตามระยะทางและความจุ
+        6. ลด Core Ratio อัตโนมัติเมื่อเข้าเป้าไม่ได้
+        7. ขัดผิวโซนและสลับคู่
+        8. แมปผลกลับระดับลูกค้า
+        9. เกลี่ยวันจัดส่ง
+        10. คำนวณ KPI ก่อนและหลัง
+    """
+    warnings: List[str] = []
+    infos: List[str] = []
+
+    if df is None or df.empty:
+        raise ValueError(
+            "ไม่มีข้อมูลสำหรับประมวลผล"
+        )
+
+    opt = df.copy().reset_index(drop=True)
+
+    required_columns = [
+        cfg.lat_col,
+        cfg.lon_col,
+        cfg.vol_col,
+        cfg.truck_col,
+        cfg.id_col,
+        cfg.day_col,
+    ]
+
+    missing_columns = [
+        column
+        for column in required_columns
+        if column not in opt.columns
+    ]
+
+    if missing_columns:
+        raise ValueError(
+            "ไม่พบคอลัมน์ที่จำเป็น: "
+            + ", ".join(
+                map(str, missing_columns)
+            )
+        )
+
+    opt[cfg.lat_col] = pd.to_numeric(
+        opt[cfg.lat_col],
+        errors="coerce",
+    )
+
+    opt[cfg.lon_col] = pd.to_numeric(
+        opt[cfg.lon_col],
+        errors="coerce",
+    )
+
+    opt[cfg.vol_col] = (
+        pd.to_numeric(
+            opt[cfg.vol_col],
+            errors="coerce",
+        )
+        .fillna(0.0)
+        .clip(lower=0.0)
+        .astype(float)
+    )
+
+    opt[cfg.truck_col] = (
+        opt[cfg.truck_col]
+        .astype(str)
+        .str.strip()
+    )
+
+    opt[cfg.id_col] = (
+        opt[cfg.id_col]
+        .astype(str)
+        .str.strip()
+    )
+
+    valid_coordinate_mask = (
+        opt[cfg.lat_col].notna()
+        & opt[cfg.lon_col].notna()
+        & opt[cfg.lat_col].between(
+            -90.0,
+            90.0,
+        )
+        & opt[cfg.lon_col].between(
+            -180.0,
+            180.0,
+        )
+    )
+
+    invalid_coordinate_count = int(
+        (~valid_coordinate_mask).sum()
+    )
+
+    if invalid_coordinate_count:
+        warnings.append(
+            f"ตัดข้อมูลพิกัดไม่ถูกต้องออก "
+            f"{invalid_coordinate_count:,} รายการ"
+        )
+
+        opt = opt[
+            valid_coordinate_mask
+        ].reset_index(drop=True)
+
+    valid_truck_mask = ~(
+        opt[cfg.truck_col]
+        .str.lower()
+        .isin(NO_TRUCK_TOKENS)
+    )
+
+    invalid_truck_count = int(
+        (~valid_truck_mask).sum()
+    )
+
+    if invalid_truck_count:
+        warnings.append(
+            f"ตัดข้อมูลเบอร์รถว่างหรือไม่ถูกต้องออก "
+            f"{invalid_truck_count:,} รายการ"
+        )
+
+        opt = opt[
+            valid_truck_mask
+        ].reset_index(drop=True)
+
+    if opt.empty:
+        raise ValueError(
+            "ไม่เหลือข้อมูลที่มีพิกัดและเบอร์รถถูกต้อง"
+        )
+
+    all_original_trucks = clean_truck_ids(
+        opt[cfg.truck_col].unique()
+    )
+
+    dissolve_set = {
+        str(truck).strip()
+        for truck in dissolve_trucks
+        if str(truck).strip()
+        in all_original_trucks
+    }
+
+    dissolve = [
+        truck
+        for truck in all_original_trucks
+        if truck in dissolve_set
+    ]
+
+    kept = [
+        truck
+        for truck in all_original_trucks
+        if truck not in dissolve_set
+    ]
+
+    normalized_new_trucks = []
+
+    for truck in new_trucks:
+        truck_id = str(truck).strip()
+
+        if (
+            not truck_id
+            or truck_id.lower()
+            in NO_TRUCK_TOKENS
+        ):
+            continue
+
+        if truck_id in kept:
+            continue
+
+        if (
+            truck_id
+            not in normalized_new_trucks
+        ):
+            normalized_new_trucks.append(
+                truck_id
+            )
+
+    active = (
+        kept
+        + normalized_new_trucks
+    )
+
+    if not active:
+        raise ValueError(
+            "ไม่เหลือรถที่สามารถรับการจัดสรรงานได้"
+        )
+
+    targets = {
+        truck: max(
+            0.0,
+            cfg.monthly_capacity
+            * float(
+                target_pcts.get(
+                    truck,
+                    0.0,
+                )
+            )
+            / 100.0,
+        )
+        for truck in active
+    }
+
+    tolerance = {
+        truck: _tolerance_for(
+            truck,
+            targets,
+            cfg,
+        )
+        for truck in active
+    }
+
+    target_total = float(
+        sum(targets.values())
+    )
+
+    actual_total = float(
+        opt[cfg.vol_col].sum()
+    )
+
+    if target_total <= 0:
+        raise ValueError(
+            "ผลรวมเป้าหมายของรถทุกคันเป็นศูนย์"
+        )
+
+    if (
+        actual_total
+        > target_total
+        + sum(tolerance.values())
+    ):
+        warnings.append(
+            f"ยอดรวมจริง {actual_total:,.0f} ถัง/เดือน "
+            f"สูงกว่าผลรวมเป้าหมายและค่าเผื่อ "
+            f"มีโอกาสเกิด '{OVERFLOW_LABEL}'"
+        )
+
+    locked_ids = {
+        str(value).strip()
+        for value in manual_locks
+        if str(value).strip()
+    }
+
+    if "VIP_Status" not in opt.columns:
+        opt["VIP_Status"] = "ปกติ"
+
+    vip_status = (
+        opt["VIP_Status"]
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    opt["is_vip_locked"] = (
+        vip_status.eq("VIP")
+        | opt[cfg.id_col]
+        .astype(str)
+        .str.strip()
+        .isin(locked_ids)
+    )
+
+    opt["สถานะการย้ายวัน"] = "-"
+
+    opt["coord_key"] = (
+        opt[cfg.lat_col]
+        .round(5)
+        .astype(str)
+        + ","
+        + opt[cfg.lon_col]
+        .round(5)
+        .astype(str)
+    )
+
+    projected_x, projected_y, latitude_reference = (
+        project_xy(
+            opt[cfg.lat_col].to_numpy(
+                dtype=float
+            ),
+            opt[cfg.lon_col].to_numpy(
+                dtype=float
+            ),
+        )
+    )
+
+    opt["x"] = projected_x
+    opt["y"] = projected_y
+
+    stops = build_stops(
+        opt,
+        cfg,
+    )
+
+    if stops.empty:
+        raise ValueError(
+            "ไม่สามารถสร้างจุดจอดจากข้อมูลได้"
+        )
+
+    biggest_stop_volume = float(
+        stops["total_vol"].max()
+    )
+
+    maximum_target = (
+        max(targets.values())
+        if targets
+        else 0.0
+    )
+
+    maximum_single_stop_limit = max(
+        (
+            targets.get(truck, 0.0)
+            + tolerance.get(truck, 0.0)
+            for truck in active
+        ),
+        default=0.0,
+    )
+
+    if (
+        maximum_target > 0
+        and biggest_stop_volume
+        > maximum_single_stop_limit
+    ):
+        warnings.append(
+            f"พบจุดพิกัดเดียวที่มียอดรวม "
+            f"{biggest_stop_volume:,.0f} ถัง/เดือน "
+            f"มากกว่าความจุสูงสุดที่รถหนึ่งคันรับได้ "
+            f"จุดดังกล่าวอาจตกเป็น '{OVERFLOW_LABEL}' "
+            f"กรุณาตรวจสอบพิกัด GPS ที่ซ้ำกัน"
+        )
+
+    volume_by_original_truck = (
+        stops.groupby(
+            "orig_truck"
+        )["total_vol"]
+        .sum()
+        .to_dict()
+    )
+
+    relieve_set = {
+        str(truck).strip()
+        for truck in relieve_trucks
+    }
+
+    ratio_override: Dict[str, float] = {}
+
+    for truck in relieve_set:
+        current_volume = float(
+            volume_by_original_truck.get(
+                truck,
+                0.0,
+            )
+        )
+
+        if (
+            current_volume > 0
+            and truck in targets
+        ):
+            ratio_override[truck] = max(
+                0.0,
+                min(
+                    100.0,
+                    targets[truck]
+                    / current_volume
+                    * 100.0
+                    * 0.92,
+                ),
+            )
+
+    core_eligible = [
+        truck
+        for truck in kept
+        if truck not in dissolve_set
+    ]
+
+    seeds: Dict[
+        str,
+        Tuple[float, float],
+    ] = {}
+
+    for truck in kept:
+        group = stops[
+            stops["orig_truck"] == truck
+        ]
+
+        if group.empty:
+            continue
+
+        weights = np.maximum(
+            group["total_vol"]
+            .to_numpy(dtype=float),
+            1e-9,
+        )
+
+        seeds[truck] = (
+            float(
+                np.average(
+                    group["x"],
+                    weights=weights,
+                )
+            ),
+            float(
+                np.average(
+                    group["y"],
+                    weights=weights,
+                )
+            ),
+        )
+
+    global_weights = np.maximum(
+        stops["total_vol"]
+        .to_numpy(dtype=float),
+        1e-9,
+    )
+
+    global_x = float(
+        np.average(
+            stops["x"],
+            weights=global_weights,
+        )
+    )
+
+    global_y = float(
+        np.average(
+            stops["y"],
+            weights=global_weights,
+        )
+    )
+
+    if normalized_new_trucks:
+        initial_core_keys = compute_core_keys(
+            stops,
+            cfg.core_ratio,
+            core_eligible,
+            ratio_override,
+        )
+
+        seed_pool = stops[
+            ~stops["coord_key"].isin(
+                initial_core_keys
+            )
+        ]
+
+        if seed_pool.empty:
+            seed_pool = stops
+
+        new_centers = kmeans_seeds(
+            seed_pool[
+                ["x", "y"]
+            ].to_numpy(dtype=float),
+            seed_pool[
+                "total_vol"
+            ].to_numpy(dtype=float),
+            len(normalized_new_trucks),
+        )
+
+        if len(new_centers) == 0:
+            new_centers = np.asarray(
+                [[global_x, global_y]],
+                dtype=float,
+            )
+
+        for index, truck in enumerate(
+            normalized_new_trucks
+        ):
+            center_index = min(
+                index,
+                len(new_centers) - 1,
+            )
+
+            seeds[truck] = (
+                float(
+                    new_centers[
+                        center_index,
+                        0,
+                    ]
+                ),
+                float(
+                    new_centers[
+                        center_index,
+                        1,
+                    ]
+                ),
+            )
+
+    road_matrix = None
+
+    if (
+        cfg.use_road
+        and road_matrix_getter is not None
+        and active
+    ):
+        destination_coordinates = []
+
+        cosine_scale = math.cos(
+            math.radians(
+                latitude_reference
+            )
+        )
+
+        for truck in active:
+            seed_x, seed_y = seeds.get(
+                truck,
+                (global_x, global_y),
+            )
+
+            destination_latitude = (
+                math.degrees(
+                    seed_y
+                    / EARTH_RADIUS_M
+                )
+            )
+
+            if abs(cosine_scale) <= 1e-12:
+                destination_longitude = (
+                    float(
+                        opt[cfg.lon_col].mean()
+                    )
+                )
+            else:
+                destination_longitude = (
+                    math.degrees(
+                        seed_x
+                        / (
+                            EARTH_RADIUS_M
+                            * cosine_scale
+                        )
+                    )
+                )
+
+            destination_coordinates.append(
+                (
+                    destination_latitude,
+                    destination_longitude,
+                )
+            )
+
+        source_coordinates = list(
+            zip(
+                stops["lat"].astype(
+                    float
+                ).tolist(),
+                stops["lon"].astype(
+                    float
+                ).tolist(),
+            )
+        )
+
+        road_matrix, road_error = (
+            road_matrix_getter(
+                tuple(source_coordinates),
+                tuple(
+                    destination_coordinates
+                ),
+            )
+        )
+
+        if road_matrix is None:
+            warnings.append(
+                "เรียก API ระยะทางถนนจริงไม่สำเร็จ "
+                f"({road_error}) "
+                "ระบบใช้ระยะทางเส้นตรงแทนในรอบนี้"
+            )
+
+        else:
+            road_matrix = np.asarray(
+                road_matrix,
+                dtype=float,
+            )
+
+            expected_shape = (
+                len(stops),
+                len(active),
+            )
+
+            if (
+                road_matrix.shape
+                != expected_shape
+            ):
+                warnings.append(
+                    "Road Distance Matrix มีขนาดไม่ถูกต้อง "
+                    f"(ได้รับ {road_matrix.shape}, "
+                    f"คาดว่า {expected_shape}) "
+                    "ระบบใช้ระยะทางเส้นตรงแทน"
+                )
+
+                road_matrix = None
+
+    def run_single_pass(
+        core_ratio: float,
+    ) -> Tuple[
+        pd.DataFrame,
+        Dict[str, float],
+    ]:
+        candidate_stops = stops.copy()
+
+        core_keys = compute_core_keys(
+            candidate_stops,
+            core_ratio,
+            core_eligible,
+            ratio_override,
+        )
+
+        candidate_stops[
+            "is_core_locked"
+        ] = candidate_stops[
+            "coord_key"
+        ].isin(core_keys)
+
+        candidate_stops[
+            "is_locked"
+        ] = (
+            candidate_stops[
+                "has_vip_lock"
+            ].astype(bool)
+            | candidate_stops[
+                "is_core_locked"
+            ].astype(bool)
+        )
+
+        candidate_stops[
+            "assigned_truck"
+        ] = None
+
+        for stop_index, row in (
+            candidate_stops.iterrows()
+        ):
+            original_truck = str(
+                row["orig_truck"]
+            ).strip()
+
+            if (
+                bool(row["is_locked"])
+                and original_truck in active
+            ):
+                candidate_stops.at[
+                    stop_index,
+                    "assigned_truck",
+                ] = original_truck
+
+        assignment, pass_loads = (
+            _assign_capacitated(
+                candidate_stops,
+                active,
+                targets,
+                tolerance,
+                seeds,
+                road_matrix,
+            )
+        )
+
+        candidate_stops[
+            "assigned_truck"
+        ] = [
+            active[truck_index]
+            if truck_index >= 0
+            else OVERFLOW_LABEL
+            for truck_index in assignment
+        ]
+
+        # หากรถเดิมถูกยุบ จุด VIP/Core ของรถนั้นต้องถูกปลดล็อก
+        # เพราะไม่สามารถคงอยู่กับรถเดิมได้
+        inactive_original_mask = ~(
+            candidate_stops[
+                "orig_truck"
+            ].isin(active)
+        )
+
+        candidate_stops.loc[
+            candidate_stops[
+                "is_locked"
+            ]
+            & inactive_original_mask,
+            "is_locked",
+        ] = False
+
+        return (
+            candidate_stops,
+            pass_loads,
+        )
+
+    current_ratio = max(
+        0.0,
+        min(
+            100.0,
+            float(cfg.core_ratio),
+        ),
+    )
+
+    minimum_ratio = max(
+        0.0,
+        min(
+            current_ratio,
+            float(cfg.core_floor),
+        ),
+    )
+
+    core_step = max(
+        1.0,
+        float(cfg.core_step),
+    )
+
+    best_result = None
+
+    while True:
+        candidate_stops, candidate_loads = (
+            run_single_pass(
+                current_ratio
+            )
+        )
+
+        total_violation = 0.0
+
+        for truck in active:
+            target = targets.get(
+                truck,
+                0.0,
+            )
+
+            if target <= 0:
+                continue
+
+            actual = candidate_loads.get(
+                truck,
+                0.0,
+            )
+
+            violation = max(
+                0.0,
+                abs(actual - target)
+                - tolerance.get(
+                    truck,
+                    0.0,
+                ),
+            )
+
+            total_violation += violation
+
+        overflow_volume = float(
+            candidate_stops.loc[
+                candidate_stops[
+                    "assigned_truck"
+                ]
+                == OVERFLOW_LABEL,
+                "total_vol",
+            ].sum()
+        )
+
+        objective_score = (
+            total_violation
+            + overflow_volume * 2.0
+        )
+
+        if (
+            best_result is None
+            or objective_score
+            < best_result[3]
+        ):
+            best_result = (
+                candidate_stops,
+                candidate_loads,
+                current_ratio,
+                objective_score,
+            )
+
+        if (
+            objective_score <= 1e-6
+            or current_ratio
+            <= minimum_ratio
+        ):
+            break
+
+        next_ratio = max(
+            minimum_ratio,
+            current_ratio - core_step,
+        )
+
+        if abs(
+            next_ratio
+            - current_ratio
+        ) <= 1e-9:
+            break
+
+        current_ratio = next_ratio
+
+    if best_result is None:
+        raise RuntimeError(
+            "ระบบไม่สามารถสร้างผลการจัดสรรได้"
+        )
+
+    (
+        assigned_stops,
+        loads,
+        ratio_used,
+        _,
+    ) = best_result
+
+    if ratio_used < cfg.core_ratio:
+        infos.append(
+            "ระบบลดสัดส่วนแกนกลางที่ล็อก "
+            f"จาก {cfg.core_ratio:.0f}% "
+            f"เหลือ {ratio_used:.0f}% อัตโนมัติ "
+            "เพื่อให้ยอดจริงเข้าใกล้เป้าหมาย"
+        )
+
+    if cfg.enable_stray_cleanup:
+        assigned_stops, loads = (
+            cleanup_stray_points(
+                assigned_stops,
+                active,
+                targets,
+                loads,
+                tolerance,
+                cfg.polish_tol_multiplier,
+            )
+        )
+
+    if cfg.enable_majority_vote:
+        assigned_stops, loads = (
+            majority_vote_smoothing(
+                assigned_stops,
+                active,
+                targets,
+                loads,
+                tolerance,
+                cfg,
+            )
+        )
+
+    if cfg.enable_swap:
+        assigned_stops, loads = (
+            swap_improve(
+                assigned_stops,
+                active,
+                targets,
+                loads,
+                tolerance,
+                cfg.swap_rounds,
+            )
+        )
+
+    truck_mapping = dict(
+        zip(
+            assigned_stops[
+                "coord_key"
+            ],
+            assigned_stops[
+                "assigned_truck"
+            ],
+        )
+    )
+
+    core_mapping = dict(
+        zip(
+            assigned_stops[
+                "coord_key"
+            ],
+            assigned_stops[
+                "is_core_locked"
+            ],
+        )
+    )
+
+    opt["เบอร์รถใหม่"] = (
+        opt["coord_key"]
+        .map(truck_mapping)
+        .fillna(OVERFLOW_LABEL)
+        .astype(str)
+    )
+
+    opt["is_core_locked"] = (
+        opt["coord_key"]
+        .map(core_mapping)
+        .fillna(False)
+        .astype(bool)
+    )
+
+    opt["is_locked"] = (
+        opt["is_vip_locked"].astype(bool)
+        | opt["is_core_locked"].astype(bool)
+    )
+
+    original_truck_series = (
+        opt[cfg.truck_col]
+        .astype(str)
+        .str.strip()
+    )
+
+    new_truck_series = (
+        opt["เบอร์รถใหม่"]
+        .astype(str)
+        .str.strip()
+    )
+
+    same_truck_mask = (
+        original_truck_series
+        == new_truck_series
+    )
+
+    opt["สถานะ"] = np.where(
+        same_truck_mask,
+        "คงเดิม",
+        "ย้ายไปสาย "
+        + new_truck_series,
+    )
+
+    opt.loc[
+        opt["is_locked"]
+        & same_truck_mask,
+        "สถานะ",
+    ] = "คงเดิม 🔒"
+
+    (
+        opt,
+        daily_matrix,
+        daily_stops_matrix,
+        final_daily,
+    ) = smooth_daily_loads(
+        opt,
+        cfg,
+        active,
+    )
+
+    # -------------------------------------------------------------------------
+    # KPI: ความกระชับของโซนก่อนและหลัง
+    # -------------------------------------------------------------------------
+    compactness_before_values = []
+
+    for _, group in opt.groupby(
+        cfg.truck_col
+    ):
+        compactness_before_values.append(
+            compute_compactness(group)
+        )
+
+    compactness_after_values = []
+
+    for truck, group in opt.groupby(
+        "เบอร์รถใหม่"
+    ):
+        if truck == OVERFLOW_LABEL:
+            continue
+
+        compactness_after_values.append(
+            compute_compactness(group)
+        )
+
+    compactness_before = (
+        float(
+            np.mean(
+                compactness_before_values
+            )
+        )
+        if compactness_before_values
+        else 0.0
+    )
+
+    compactness_after = (
+        float(
+            np.mean(
+                compactness_after_values
+            )
+        )
+        if compactness_after_values
+        else 0.0
+    )
+
+    peak_before = calculate_peak_daily_loads(
+        opt,
+        cfg.truck_col,
+        cfg.vol_col,
+        cfg.day_col,
+    )
+
+    peak_after = {
+        truck: float(
+            daily_values.max()
+        )
+        for truck, daily_values
+        in final_daily.items()
+    }
+
+    moved_mask = (
+        original_truck_series
+        != new_truck_series
+    )
+
+    moved_customer_count = int(
+        moved_mask.sum()
+    )
+
+    moved_volume = float(
+        opt.loc[
+            moved_mask,
+            cfg.vol_col,
+        ].sum()
+    )
+
+    metrics = {
+        "compact_before_km": (
+            compactness_before / 1000.0
+        ),
+        "compact_after_km": (
+            compactness_after / 1000.0
+        ),
+        "over_before": int(
+            sum(
+                1
+                for value in peak_before.values()
+                if value
+                > cfg.daily_control_cap
+            )
+        ),
+        "over_after": int(
+            sum(
+                1
+                for value in peak_after.values()
+                if value
+                > cfg.daily_control_cap
+            )
+        ),
+        "peak_before": (
+            max(peak_before.values())
+            if peak_before
+            else 0.0
+        ),
+        "peak_after": (
+            max(peak_after.values())
+            if peak_after
+            else 0.0
+        ),
+        "moved_cust": moved_customer_count,
+        "moved_pct": (
+            moved_customer_count
+            / max(1, len(opt))
+            * 100.0
+        ),
+        "moved_vol": moved_volume,
+        "std_before": (
+            float(
+                np.std(
+                    list(
+                        peak_before.values()
+                    )
+                )
+            )
+            if peak_before
+            else 0.0
+        ),
+        "std_after": (
+            float(
+                np.std(
+                    list(
+                        peak_after.values()
+                    )
+                )
+            )
+            if peak_after
+            else 0.0
+        ),
+    }
+
+    unreadable_day_count = int(
+        (
+            opt["_day_status"]
+            != "ok"
+        ).sum()
+    )
+
+    if unreadable_day_count:
+        warnings.append(
+            f"อ่านค่าวันจัดส่งไม่ได้หรือเป็นค่าว่าง "
+            f"{unreadable_day_count:,} รายการ "
+            "ระบบใช้ จ-ส สำหรับการคำนวณรายการเหล่านี้ "
+            "กรุณาตรวจสอบข้อมูลต้นทาง"
+        )
+
+    overflow_stop_count = int(
+        (
+            assigned_stops[
+                "assigned_truck"
+            ]
+            == OVERFLOW_LABEL
+        ).sum()
+    )
+
+    if overflow_stop_count:
+        overflow_stop_volume = float(
+            assigned_stops.loc[
+                assigned_stops[
+                    "assigned_truck"
+                ]
+                == OVERFLOW_LABEL,
+                "total_vol",
+            ].sum()
+        )
+
+        warnings.append(
+            f"มีจุดจอดที่ยังจัดสรรไม่ได้ "
+            f"{overflow_stop_count:,} จุด "
+            f"รวม {overflow_stop_volume:,.0f} ถัง/เดือน"
+        )
+
+    return ZoningResult(
+        result_df=opt,
+        stops_df=assigned_stops,
+        daily_matrix=daily_matrix,
+        daily_stops=daily_stops_matrix,
+        final_daily=final_daily,
+        targets=targets,
+        loads=loads,
+        core_ratio_used=float(
+            ratio_used
+        ),
+        metrics=metrics,
+        warnings=warnings,
+        infos=infos,
+    )# =====================================================================================
+#  SECTION 7 (UI) — UI THEME
 # =====================================================================================
 st.markdown('''
 <style>
@@ -1159,8 +3897,8 @@ def show_loader(placeholder, msg: str):
 st.title("🚛 Smart Route Rebalancer — Production v2.0")
 st.markdown("**ระบบปรับสมดุลสายส่งหลายคันพร้อมกัน (Multi-Donor Fleet Rebalancing)**")
 if not HAS_SCIPY:
-    st.warning("⚠️ ไม่พบไลบรารี `scipy` — ระบบจะใช้โหมดคำนวณสำรองซึ่งช้ากว่ามากเมื่อข้อมูลเกิน "
-               "5,000 จุด แนะนำติดตั้งด้วย `pip install scipy`")
+    st.warning("⚠️ ไม่พบไลบรารี `scipy` — ระบบจะใช้โหมดคำนวณสำรองซึ่งช้ากว่ามาก แนะนำติดตั้งด้วย `pip install scipy`")
+
 
 # =====================================================================================
 #  SECTION 8 — DATA LOADING
@@ -1275,9 +4013,7 @@ st.sidebar.caption(f"เพดาน {daily_cap:,.0f} ถัง/วัน × {DA
 base_cfg = ZoningConfig(lat_col=lat_col, lon_col=lon_col, vol_col=vol_col, truck_col=truck_col,
                         id_col=id_col, day_col=day_col, name_col=name_col,
                         monthly_capacity=monthly_cap, daily_control_cap=daily_cap,
-                        max_stops_per_day=int(max_stops_day))
-
-# =====================================================================================
+                        max_stops_per_day=int(max_stops_day))# =====================================================================================
 #  SECTION 11 — FLEET DIAGNOSTIC & DONOR SELECTION
 # =====================================================================================
 diag = diagnose_fleet(df, base_cfg)
@@ -1296,7 +4032,7 @@ st.dataframe(diag, use_container_width=True, hide_index=True)
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🚚 4. เลือกรถต้นทาง (Donors)")
-st.sidebar.caption("รองรับหลายคันพร้อมกัน — ระบบเลือกคันที่เกินเพดานให้อัตโนมัติ")
+st.sidebar.caption("เลือกรถที่ต้องการยุบหรือดึงงานออก")
 
 dissolve_trucks = st.sidebar.multiselect(
     "🗑️ ยุบทั้งคัน (กระจายงานออกทั้งหมด)", options=available_trucks, default=[],
@@ -1319,407 +4055,89 @@ _, leftover_probe = compute_default_targets(vol_by_truck_all, dissolve_trucks,
                                             kept_trucks, new_trucks, cap_units)
 if leftover_probe > 1e-6:
     need = math.ceil(leftover_probe / cap_units)
-    st.sidebar.error(f"🚨 ความจุไม่พอ ขาดอีก {leftover_probe:,.0f} ถัง/เดือน "
-                     f"— ควรเพิ่มรถใหม่อีกอย่างน้อย **{need} คัน**")
+    st.sidebar.error(f"🚨 ความจุไม่พอ ขาดอีก {leftover_probe:,.0f} ถัง/เดือน — เพิ่มรถใหม่อีก **{need} คัน**")
 else:
     if new_trucks:
         st.sidebar.success(f"✅ ความจุเพียงพอ (รถใหม่ {len(new_trucks)} คัน)")
 
 active_trucks = kept_trucks + new_trucks
 if not active_trucks:
-    st.error("❌ ไม่เหลือรถสำหรับจัดสรรงาน กรุณาตรวจสอบการเลือกรถที่ยุบ")
+    st.error("❌ ไม่เหลือรถสำหรับจัดสรรงาน")
     st.stop()
 
 # =====================================================================================
-#  SECTION 12 — TARGET SLIDERS (zero-sum + lock)
+#  SECTION 12 — TARGET SLIDERS
 # =====================================================================================
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🎛️ 5. เป้าหมายรายคัน (%)")
+fingerprint = "|".join([sheet_url, sheet_gid, vol_col, truck_col, day_col, str(sorted(dissolve_trucks)), str(sorted(relieve_trucks)), str(new_trucks), f"{monthly_cap}", f"{daily_cap}"])
 
-fingerprint = "|".join([sheet_url, sheet_gid, vol_col, truck_col, day_col,
-                        str(sorted(dissolve_trucks)), str(sorted(relieve_trucks)),
-                        str(new_trucks), f"{monthly_cap}", f"{daily_cap}"])
-
-if st.sidebar.button("🔄 คำนวณเป้าหมายอัตโนมัติจากเพดานควบคุม"):
+if st.sidebar.button("🔄 คำนวณเป้าหมายอัตโนมัติ"):
     st.session_state.pop('slider_fp', None)
     reset_results()
 
 if st.session_state.get('slider_fp') != fingerprint:
-    for k in [k for k in list(st.session_state.keys())
-              if k.startswith('slider_') or k.startswith('lock_')]:
-        del st.session_state[k]                 # กัน state ค้างจากชุดข้อมูลเดิม
-    tgt_units, _ = compute_default_targets(vol_by_truck_all, dissolve_trucks,
-                                           kept_trucks, new_trucks, cap_units)
-    st.session_state.truck_pcts = {
-        t: float(round(max(0.0, min(200.0, tgt_units.get(t, 0.0) / monthly_cap * 100)), 1))
-        for t in active_trucks}
-    for t in active_trucks:
-        st.session_state[f"slider_{t}"] = st.session_state.truck_pcts[t]
+    for k in [k for k in list(st.session_state.keys()) if k.startswith('slider_') or k.startswith('lock_')]: del st.session_state[k]
+    tgt_units, _ = compute_default_targets(vol_by_truck_all, dissolve_trucks, kept_trucks, new_trucks, cap_units)
+    st.session_state.truck_pcts = {t: float(round(max(0.0, min(200.0, tgt_units.get(t, 0.0) / monthly_cap * 100)), 1)) for t in active_trucks}
+    for t in active_trucks: st.session_state[f"slider_{t}"] = st.session_state.truck_pcts[t]
     st.session_state['slider_fp'] = fingerprint
-
 
 def on_slider_change(changed: str):
     new_val = max(0.0, min(200.0, st.session_state.get(f"slider_{changed}", 0.0)))
     old = st.session_state.truck_pcts.get(changed, new_val)
     diff = new_val - old
-    if abs(diff) < 0.01:
-        return
-    free = [t for t in active_trucks
-            if t != changed and not st.session_state.get(f"lock_{t}", False)]
+    if abs(diff) < 0.01: return
+    free = [t for t in active_trucks if t != changed and not st.session_state.get(f"lock_{t}", False)]
     if free:
         share = diff / len(free)
-        ok = all(0.0 <= st.session_state.truck_pcts.get(t, 0.0) - share <= 200.0 for t in free)
         for t in free:
-            v = (st.session_state.truck_pcts[t] - share) if ok else (0.0 if share > 0 else 200.0)
-            v = round(max(0.0, min(200.0, v)), 1)
+            v = round(max(0.0, min(200.0, st.session_state.truck_pcts.get(t, 0.0) - share)), 1)
             st.session_state.truck_pcts[t] = v
             st.session_state[f"slider_{t}"] = v
     st.session_state.truck_pcts[changed] = round(new_val, 1)
     reset_results()
 
-
 target_pcts: Dict[str, float] = {}
 for t in active_trucks:
     c1, c2 = st.sidebar.columns([3, 1.2])
-    with c2:
-        st.markdown("<div style='margin-top:32px'></div>", unsafe_allow_html=True)
-        st.checkbox("🔒", key=f"lock_{t}", on_change=reset_results)
+    with c2: st.checkbox("🔒", key=f"lock_{t}", on_change=reset_results)
     with c1:
-        tag = "🆕 " if t in new_trucks else ("✂️ " if t in relieve_trucks else "")
-        st.session_state.setdefault(f"slider_{t}", st.session_state.truck_pcts.get(t, 0.0))
-        v = st.slider(f"{tag}รถ {t} (%)", 0.0, 200.0, step=0.1,
-                      key=f"slider_{t}", on_change=on_slider_change, args=(t,))
-        target_pcts[t] = max(0.0, min(200.0, v))
-        st.session_state.truck_pcts[t] = target_pcts[t]
-
-total_vol = float(df[vol_col].sum())
-sys_pct = total_vol / monthly_cap * 100
-tot_pct = sum(target_pcts.values())
-st.sidebar.info(f"💧 ต้องจัดสรรจริง {sys_pct:,.1f}% | ตั้งเป้าไว้รวม {tot_pct:,.1f}%")
-if sys_pct > 0 and abs(tot_pct - sys_pct) / sys_pct > 0.05:
-    st.sidebar.warning(f"⚠️ ผลรวมเป้าหมายต่างจากยอดจริงเกิน 5% — เสี่ยงเกิด '{OVERFLOW_LABEL}'")
-
-over_cap_trucks = [t for t in active_trucks
-                   if target_pcts[t] * monthly_cap / 100 > cap_units + 1]
-if over_cap_trucks:
-    st.sidebar.warning(f"⚠️ ตั้งเป้าเกินเพดานควบคุม: {', '.join(over_cap_trucks)}")
+        v = st.slider(f"{'🆕 ' if t in new_trucks else ''}รถ {t} (%)", 0.0, 200.0, step=0.1, key=f"slider_{t}", on_change=on_slider_change, args=(t,))
+        target_pcts[t] = v
+        st.session_state.truck_pcts[t] = v
 
 # =====================================================================================
-#  SECTION 13 — RULES / ADVANCED
+#  SECTION 13 — ADVANCED RULES
 # =====================================================================================
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 🔒 6. ล็อก Key Account")
-manual_vips = st.sidebar.multiselect("รหัสสมาชิกที่ห้ามย้ายสาย",
-                                     options=df[id_col].unique().tolist(), default=[],
-                                     on_change=reset_results)
+st.sidebar.markdown("### 🔒 6. ล็อก Key Account & กฎ")
+manual_vips = st.sidebar.multiselect("รหัสลูกค้าที่ห้ามย้ายสาย", options=df[id_col].unique().tolist(), default=[], on_change=reset_results)
+core_ratio_pct = st.sidebar.slider("สัดส่วนแกนกลางที่ล็อก (Core %)", 0, 100, 65, 5, on_change=reset_results)
+tol_pct = st.sidebar.number_input("ค่าเผื่อเป้าหมาย (%)", 0.0, 50.0, 5.0, 0.5, on_change=reset_results)
+use_road = st.sidebar.checkbox("ใช้ระยะทางถนนจริง", False, on_change=reset_results)
 
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 🎯 7. กฎลำดับความสำคัญ")
-st.sidebar.caption("1) VIP Lock → 2) Core Lock → 3) Daily Threshold → 4) Target Matching")
-core_ratio_pct = st.sidebar.slider("สัดส่วนแกนกลางที่ล็อก (Core %)", 0, 100, 65, 5,
-                                   on_change=reset_results)
-tol_mode_label = st.sidebar.radio("ฐานการคิดค่าเผื่อ:",
-                                  ["% ของเป้าหมายรถคันนั้น", "% ของความจุเต็ม"], index=0,
-                                  on_change=reset_results)
-tolerance_pct = st.sidebar.number_input("ค่าเผื่อเป้าหมาย (%)", 0.0, 50.0, 5.0, 0.5,
-                                        on_change=reset_results)
-allow_vip_day = st.sidebar.checkbox("อนุญาตให้ย้ายวันของลูกค้า VIP", value=False,
-                                    on_change=reset_results)
-
-with st.sidebar.expander("⚙️ 8. ตั้งค่าขั้นสูง (Optimizer)"):
-    en_stray = st.checkbox("ล้างเกาะเดี่ยว (Stray Cleanup)", True, on_change=reset_results)
-    en_major = st.checkbox("ขัดผิวรอยต่อ (Majority Vote)", True, on_change=reset_results)
-    en_swap = st.checkbox("สลับคู่ข้ามคัน (2-opt Swap)", True, on_change=reset_results)
-    knn_k = st.slider("จำนวนเพื่อนบ้าน (k)", 4, 20, 8, on_change=reset_results)
-    swap_rounds = st.slider("รอบการสลับคู่", 1, 8, 3, on_change=reset_results)
-
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 🛣️ 9. ระยะทางถนนจริง")
-use_road = st.sidebar.checkbox("ใช้ระยะทางถนนจริง (เรียก API)", False, on_change=reset_results)
-road_provider, osrm_url, gkey = 'osrm', 'https://router.project-osrm.org', ''
-if use_road:
-    road_provider = st.sidebar.radio("ผู้ให้บริการ:", ["osrm", "google"],
-                                     format_func=lambda x: "OSRM (ฟรี)" if x == "osrm"
-                                     else "Google Distance Matrix",
-                                     on_change=reset_results)
-    n_stop_est = df.groupby([lat_col, lon_col]).ngroups
-    if road_provider == 'osrm':
-        osrm_url = st.sidebar.text_input("OSRM Server URL", "https://router.project-osrm.org",
-                                         on_change=reset_results)
-        st.sidebar.caption(f"⚠️ demo server จำกัดโควตา — ข้อมูลนี้ ~{n_stop_est:,} จุด "
-                           f"จะแบ่งเป็นหลาย request แนะนำ self-host หากใช้งานประจำ")
-    else:
-        gkey = st.sidebar.text_input("Google Maps API Key", "", type="password",
-                                     on_change=reset_results)
-        el = n_stop_est * len(active_trucks)
-        st.sidebar.caption(f"💰 ประมาณ {el:,} elements ≈ ${el/1000*5:,.2f} (เรต $5/1k)")
-        if not gkey:
-            st.sidebar.warning("⚠️ ยังไม่ใส่ API Key — ระบบจะใช้ระยะทางเส้นตรงแทน")
-
-cfg = ZoningConfig(
-    lat_col=lat_col, lon_col=lon_col, vol_col=vol_col, truck_col=truck_col, id_col=id_col,
-    day_col=day_col, name_col=name_col, monthly_capacity=monthly_cap,
-    daily_control_cap=daily_cap, max_stops_per_day=int(max_stops_day),
-    core_ratio=float(core_ratio_pct), tol_pct=float(tolerance_pct),
-    tol_mode='target' if tol_mode_label.startswith('%ของเป้า') or
-    tol_mode_label.startswith('% ของเป้า') else 'capacity',
-    knn_k=int(knn_k), enable_stray_cleanup=en_stray, enable_majority_vote=en_major,
-    enable_swap=en_swap, swap_rounds=int(swap_rounds), allow_vip_day_move=allow_vip_day,
-    use_road=use_road, road_provider=road_provider, osrm_url=osrm_url, gmaps_key=gkey)
-
-# ---- Scenario save / load ----
-with st.sidebar.expander("💾 10. บันทึก / เรียกคืนสถานการณ์"):
-    scen = {'pcts': st.session_state.get('truck_pcts', {}), 'dissolve': dissolve_trucks,
-            'relieve': relieve_trucks, 'new': new_trucks, 'core': core_ratio_pct,
-            'tol': tolerance_pct, 'daily_cap': daily_cap, 'vips': manual_vips}
-    st.download_button("⬇️ ดาวน์โหลด scenario.json",
-                       json.dumps(scen, ensure_ascii=False, indent=2).encode('utf-8'),
-                       "scenario.json", "application/json", use_container_width=True)
-    up = st.file_uploader("⬆️ อัปโหลด scenario.json", type=['json'])
-    if up is not None:
-        try:
-            s = json.load(up)
-            for t, v in s.get('pcts', {}).items():
-                if t in active_trucks:
-                    st.session_state[f"slider_{t}"] = float(v)
-                    st.session_state.truck_pcts[t] = float(v)
-            st.success("โหลดสถานการณ์สำเร็จ")
-        except Exception as e:
-            st.error(f"ไฟล์ไม่ถูกต้อง: {e}")
+cfg = ZoningConfig(lat_col=lat_col, lon_col=lon_col, vol_col=vol_col, truck_col=truck_col, id_col=id_col, day_col=day_col, name_col=name_col, monthly_capacity=monthly_cap, daily_control_cap=daily_cap, max_stops_per_day=int(max_stops_day), core_ratio=float(core_ratio_pct), tol_pct=float(tol_pct), use_road=use_road)
 
 # =====================================================================================
-#  SECTION 14 — RUN
+#  SECTION 14 — EXECUTE
 # =====================================================================================
-st.sidebar.markdown("---")
 if st.sidebar.button("🚀 ประมวลผลจัดสายส่งใหม่", use_container_width=True):
-    if not new_trucks and not dissolve_trucks and not relieve_trucks:
-        st.sidebar.error("❌ กรุณาเลือกรถต้นทาง หรือระบุเบอร์รถคันใหม่อย่างน้อย 1 คัน")
-        st.stop()
-
     ph = st.empty()
-    msg = "กำลังจัดสรรเส้นทาง (Multi-Donor Zoning)... 💧"
-    if use_road:
-        msg += " กำลังเรียก API ระยะทางถนนจริง อาจใช้เวลาสักครู่"
-    show_loader(ph, msg)
-
-    def getter(src, dst):
-        if cfg.road_provider == 'osrm':
-            return fetch_osrm_matrix(src, dst, cfg.osrm_url)
-        if cfg.gmaps_key:
-            return fetch_google_matrix(src, dst, cfg.gmaps_key)
-        return None, 'ไม่ได้ระบุ Google API Key'
-
-    try:
-        res = run_multi_donor_zoning(df, cfg, target_pcts, dissolve_trucks, relieve_trucks,
-                                     new_trucks, manual_vips,
-                                     road_matrix_getter=getter if use_road else None)
-        st.session_state['result'] = res
-        st.session_state['zoning_cfg_used'] = cfg
-    except Exception as e:
-        ph.empty()
-        st.exception(e)
-        st.stop()
+    show_loader(ph, "กำลังคำนวณ... 💧")
+    res = run_multi_donor_zoning(df, cfg, target_pcts, dissolve_trucks, relieve_trucks, new_trucks, manual_vips)
+    st.session_state['result'] = res
+    st.session_state['zoning_cfg_used'] = cfg
     ph.empty()
 
-if 'result' not in st.session_state:
-    st.info("👈 ตรวจผลวินิจฉัยด้านบน เลือกรถต้นทาง/รถใหม่ แล้วกด 'ประมวลผลจัดสายส่งใหม่'")
-    st.stop()
-
-res: ZoningResult = st.session_state['result']
-ucfg: ZoningConfig = st.session_state['zoning_cfg_used']
-rdf = res.result_df
-
-for w in res.warnings:
-    st.warning(f"⚠️ {w}")
-for i in res.infos:
-    st.info(f"ℹ️ {i}")
-
-ov = rdf[rdf['เบอร์รถใหม่'] == OVERFLOW_LABEL]
-if not ov.empty:
-    need = math.ceil(ov[ucfg.vol_col].sum() / max(1.0, ucfg.daily_control_cap * DAYS_PER_MONTH))
-    st.error(f"🚨 ลูกค้า {len(ov):,} ราย ({ov[ucfg.vol_col].sum():,.0f} ถัง/เดือน) จัดสรรไม่ได้ "
-             f"— ควรเพิ่มรถอีกประมาณ {need} คัน หรือเพิ่ม % เป้าหมาย")
-
-# =====================================================================================
-#  SECTION 15 — KPI
-# =====================================================================================
-m = res.metrics
-st.markdown("## 📈 ตัวชี้วัดผลลัพธ์ (ก่อน → หลัง)")
-k1, k2, k3, k4 = st.columns(4)
-k1.metric("รถที่เกินเพดาน", f"{int(m['over_after'])} คัน",
-          delta=f"{int(m['over_after']-m['over_before']):+d} คัน", delta_color="inverse")
-k2.metric("โหลดสูงสุดในฝูง", f"{m['peak_after']:,.0f} ถัง/วัน",
-          delta=f"{m['peak_after']-m['peak_before']:+,.0f}", delta_color="inverse")
-k3.metric("ความกระชับโซนเฉลี่ย", f"{m['compact_after_km']:.2f} กม.",
-          delta=f"{m['compact_after_km']-m['compact_before_km']:+.2f} กม.", delta_color="inverse")
-k4.metric("ลูกค้าที่ต้องย้ายสาย", f"{int(m['moved_cust']):,} ราย",
-          delta=f"{m['moved_pct']:.1f}% ของทั้งหมด", delta_color="off")
-st.caption(f"ส่วนเบี่ยงเบนโหลดระหว่างคัน: {m['std_before']:.1f} → **{m['std_after']:.1f}** "
-           f"(ยิ่งต่ำยิ่งสมดุล) | ยอดที่ย้าย {m['moved_vol']:,.0f} ถัง/เดือน "
-           f"| Core % ที่ใช้จริง {res.core_ratio_used:.0f}%")
-
-# =====================================================================================
-#  SECTION 16 — TARGET vs ACTUAL
-# =====================================================================================
-rows = []
-for t, tg in res.targets.items():
-    if tg <= 0:
-        continue
-    act = float(rdf.loc[rdf['เบอร์รถใหม่'] == t, ucfg.vol_col].sum())
-    tp, ap = tg / ucfg.monthly_capacity * 100, act / ucfg.monthly_capacity * 100
-    tolu = _tolerance_for(t, res.targets, ucfg)
-    rows.append({'เบอร์รถ': t, 'ประเภท': '🆕 ใหม่' if t in new_trucks else
-                 ('✂️ ดึงงานออก' if t in relieve_trucks else 'คงเดิม'),
-                 'เป้าหมาย(%)': round(tp, 1), 'ทำได้จริง(%)': round(ap, 1),
-                 'ส่วนต่าง(ถัง)': int(round(act - tg)),
-                 'ค่าเผื่อ(±ถัง)': int(round(tolu)),
-                 'สถานะ': '✅ ในเกณฑ์' if abs(act - tg) <= tolu else '⚠️ เกินค่าเผื่อ'})
-if rows:
-    st.markdown("### 🎯 เทียบเป้าหมาย vs ผลจริง")
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-
-c1, c2 = st.columns(2)
-with c1:
-    st.markdown("**ก่อนปรับ**")
-    sb = df.groupby(truck_col).agg(จำนวนสมาชิก=(truck_col, 'count'),
-                                   **{'ยอด(ถัง/เดือน)': (vol_col, 'sum')}).reset_index()
-    st.dataframe(sb, use_container_width=True, hide_index=True)
-with c2:
-    st.markdown("**หลังปรับ**")
-    sa = rdf.groupby('เบอร์รถใหม่').agg(จำนวนสมาชิก=('เบอร์รถใหม่', 'count'),
-                                        **{'ยอด(ถัง/เดือน)': (vol_col, 'sum')}).reset_index()
-    sa['ภาระงาน(%)'] = np.where(sa['เบอร์รถใหม่'] == OVERFLOW_LABEL, '-',
-                                (sa['ยอด(ถัง/เดือน)'] / ucfg.monthly_capacity * 100)
-                                .round(1).astype(str) + '%')
-    st.dataframe(sa, use_container_width=True, hide_index=True)
-
-# =====================================================================================
-#  SECTION 17 — MAPS
-# =====================================================================================
-st.markdown("### 🗺️ แผนที่เปรียบเทียบการกระจายตัว")
-truck_list = [t for t in sorted(rdf['เบอร์รถใหม่'].dropna().unique()) if t != OVERFLOW_LABEL]
-view = st.selectbox("🔍 รูปแบบการแสดงผล:",
-                    ["แสดงทั้งหมด (แยกสีตามเบอร์รถ)"] + truck_list)
-
-palette = ['#3388FF', '#2ECC71', '#FF8C00', '#9B59B6', '#1ABC9C',
-           '#E74C3C', '#F1C40F', '#16A085', '#8E44AD', '#D35400']
-color_map = {t: ('#FF0000' if t in new_trucks else palette[i % len(palette)])
-             for i, t in enumerate(truck_list)}
-
-if view.startswith("แสดงทั้งหมด"):
-    mb, ma, mode = df, rdf[rdf['เบอร์รถใหม่'] != OVERFLOW_LABEL], 'truck'
-else:
-    mb = df[df[truck_col] == view] if view in available_trucks else df.iloc[0:0]
-    ma, mode = rdf[rdf['เบอร์รถใหม่'] == view], 'day'
-
-cy_ = ma[lat_col].mean() if not ma.empty else df[lat_col].mean()
-cx_ = ma[lon_col].mean() if not ma.empty else df[lon_col].mean()
-
-
-def day_color(day_text: str) -> str:
-    d, _ = parse_days_from_string(day_text)
-    return DAY_COLORS.get(d[0], '#95A5A6') if d else '#95A5A6'
-
-
-def draw(container, data, title, truck_field, day_field):
-    with container:
-        st.markdown(f"<div style='text-align:center;color:#FFD700;font-weight:bold;"
-                    f"margin-bottom:8px'>{title}</div>", unsafe_allow_html=True)
-        fm = folium.Map(location=[cy_, cx_], zoom_start=12 if mode == 'truck' else 14,
-                        prefer_canvas=True)
-        plugins.Fullscreen(position='topright').add_to(fm)
-        layer = plugins.MarkerCluster().add_to(fm) if len(data) > 1500 else fm
-        for _, r in data.iterrows():
-            tid = str(r[truck_field])
-            vip = (str(r.get('VIP_Status', '')).upper() == 'VIP'
-                   or str(r[id_col]) in manual_vips)
-            col = color_map.get(tid, '#95A5A6') if mode == 'truck' \
-                else day_color(str(r.get(day_field, '')))
-            nm = str(r[name_col]) if name_col else 'ไม่ระบุ'
-            pop = (f"<b>รหัส:</b> {r[id_col]}<br><b>ชื่อ:</b> {nm}<br>"
-                   f"<b>ยอด:</b> {int(r[vol_col])} ถัง<br><b>รถ:</b> {tid}<br>"
-                   f"<b>วัน:</b> {r.get(day_field,'-')}")
-            folium.CircleMarker([r[lat_col], r[lon_col]], radius=8 if vip else 5,
-                                color='#FFD700' if vip else col, weight=2 if vip else 1,
-                                fill=True, fill_color=col, fill_opacity=.9,
-                                popup=folium.Popup(pop, max_width=300)).add_to(layer)
-        components.html(fm.get_root().render(), height=460)
-
-
-mc1, mc2 = st.columns(2)
-draw(mc1, mb, "โซนเดิม (Before)", truck_col, day_col)
-# แก้บั๊ก v1: แผนที่ After เดิมยังโชว์ 'วันเดิม' ทำให้ไม่เห็นผลของการเกลี่ยวัน
-draw(mc2, ma, "โซนใหม่ (After — วันจัดส่งที่ปรับแล้ว)", 'เบอร์รถใหม่', 'วันจัดส่ง(ใหม่)')
-
-# =====================================================================================
-#  SECTION 18 — DAILY LOAD TABLE
-# =====================================================================================
-st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน")
-st.caption(f"🟢 {OPTIMAL_MIN}-{OPTIMAL_MAX} | 🟡 {AVOID_MIN}-{AVOID_MAX} | ⚪ <{AVOID_MIN} | "
-           f"🔴 >{ucfg.daily_control_cap:.0f} (เกินเพดาน) | 🚚 รอบ3 {ESCALATE_TARGET_MIN}-"
-           f"{ESCALATE_TARGET_MAX} | 🆘 >{ESCALATE_TARGET_MAX}")
-
-
-def day_status(v: float, cap: float) -> str:
-    if v > ESCALATE_TARGET_MAX:
-        return "🆘 เกินรอบ3"
-    if v > ESCALATE_THRESHOLD:
-        return "🚚 รอบ3"
-    if v > cap:
-        return "🔴 เกินเพดาน"
-    if OPTIMAL_MIN <= v <= OPTIMAL_MAX:
-        return "🟢 เหมาะสม"
-    if AVOID_MIN <= v <= AVOID_MAX:
-        return "🟡 เลี่ยง"
-    return "⚪ เบาเกิน"
-
-
-ds_rows = []
-for t in truck_list:
-    mask = (rdf['เบอร์รถใหม่'] == t).to_numpy()
-    dv = res.daily_matrix[mask].sum(axis=0) if mask.any() else np.zeros(WORKING_DAYS)
-    dc = res.daily_stops[mask].sum(axis=0) if mask.any() else np.zeros(WORKING_DAYS)
-    row = {'เบอร์รถ': t}
-    row.update({DAY_NAMES[d]: int(round(dv[d])) for d in range(WORKING_DAYS)})
-    row['จุดจอดสูงสุด/วัน'] = int(dc.max())
-    row['โหลดสูงสุด/วัน'] = int(round(dv.max()))
-    row['สถานะ'] = day_status(float(dv.max()), ucfg.daily_control_cap)
-    ds_rows.append(row)
-st.dataframe(pd.DataFrame(ds_rows), use_container_width=True, hide_index=True)
-
-# =====================================================================================
-#  SECTION 19 — DETAIL & EXPORT
-# =====================================================================================
-st.markdown("### 📋 รายละเอียดการโยกย้ายสมาชิก")
-detail = rdf.copy()
-detail['เบอร์รถเดิม'] = detail[truck_col]
-detail['วันจัดส่ง(เดิม)'] = detail[day_col]
-want = [id_col] + ([name_col] if name_col else []) + \
-    ['วันจัดส่ง(เดิม)', 'วันจัดส่ง(ใหม่)', 'สถานะการย้ายวัน', vol_col,
-     'เบอร์รถเดิม', 'เบอร์รถใหม่', 'สถานะ']
-want = list(dict.fromkeys([c for c in want if c in detail.columns]))   # กันคอลัมน์ซ้ำ
-detail = detail[want]
-
-f1, f2 = st.columns([1, 1])
-only_moved = f1.checkbox("แสดงเฉพาะรายที่ย้ายสาย", False)
-truck_filter = f2.multiselect("กรองตามเบอร์รถใหม่", truck_list, [])
-view_df = detail
-if only_moved:
-    view_df = view_df[view_df['สถานะ'].str.startswith('ย้าย')]
-if truck_filter:
-    view_df = view_df[view_df['เบอร์รถใหม่'].isin(truck_filter)]
-st.dataframe(view_df, use_container_width=True, hide_index=True)
-
-st.markdown("---")
-
-
-@st.cache_data
-def to_csv(d: pd.DataFrame) -> bytes:
-    return d.to_csv(index=False).encode('utf-8-sig')
-
-
-b1, b2, b3 = st.columns([1, 2, 1])
-with b2:
-    st.download_button("📥 ดาวน์โหลดผลลัพธ์ทั้งหมด (CSV เปิดใน Excel ได้ทันที)",
-                       to_csv(detail), 'route_rebalance_result.csv', 'text/csv',
-                       use_container_width=True)
+if 'result' in st.session_state:
+    res = st.session_state['result']
+    rdf = res.result_df
+    st.markdown("## 📈 ตัวชี้วัดผลลัพธ์")
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("รถเกินเพดาน", f"{int(res.metrics['over_after'])} คัน", delta=f"{int(res.metrics['over_after']-res.metrics['over_before']):+d}")
+    k2.metric("โหลดสูงสุด", f"{res.metrics['peak_after']:,.0f} ถัง/วัน")
+    k3.metric("ความกระชับ", f"{res.metrics['compact_after_km']:.2f} กม.")
+    k4.metric("ลูกค้าที่ย้าย", f"{int(res.metrics['moved_cust']):,}")
+    st.dataframe(rdf, use_container_width=True)
+    st.download_button("📥 ดาวน์โหลดผลลัพธ์", rdf.to_csv(index=False), 'result.csv', 'text/csv', use_container_width=True)
