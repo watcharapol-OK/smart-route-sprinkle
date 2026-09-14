@@ -1,6 +1,6 @@
 # =====================================================================================
-#  SMART ROUTE REBALANCER — PRODUCTION BUILD v3.1
-#  Multi-Donor Fleet Rebalancing + Clean Metric Cards & Render Fix
+#  SMART ROUTE REBALANCER — PRODUCTION BUILD v3.2
+#  Multi-Donor Fleet Rebalancing + Fully Rendered HTML Metric Cards
 #  ---------------------------------------------------------------------------------
 #  requirements.txt:
 #      streamlit>=1.31
@@ -35,7 +35,7 @@ except Exception:
     HAS_SCIPY = False
 
 st.set_page_config(
-    page_title="Smart Route Rebalancer v3.1",
+    page_title="Smart Route Rebalancer v3.2",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -853,14 +853,15 @@ def smooth_daily_loads(opt: pd.DataFrame, cfg: ZoningConfig, trucks: List[str]) 
                     if len(new_days) != len(c_days):
                         continue
                     day_map[idx] = new_days
-                    note = f"{DAY_SHORT[src]}→{DAY_SHORT[dest]}"
+                    note = f"{DAY_SHORT[src]}→{DAY_SHORT[destination_day] if 'destination_day' in locals() else DAY_SHORT[src]}"
                     prev = str(opt.at[idx, "สถานะการย้ายวัน"]).strip()
                     if not prev or prev.lower() in NO_TRUCK_TOKENS:
-                        opt.at[idx, "สถานะการย้ายวัน"] = note
+                        opt.at[idx, "สถานะการย้ายวัน"] = f"{DAY_SHORT[src]}→{DAY_SHORT[dest]}"
                     else:
                         notes = [n.strip() for n in prev.split(",") if n.strip()]
-                        if note not in notes:
-                            notes.append(note)
+                        curr_note = f"{DAY_SHORT[src]}→{DAY_SHORT[dest]}"
+                        if curr_note not in notes:
+                            notes.append(curr_note)
                         opt.at[idx, "สถานะการย้ายวัน"] = ", ".join(notes)
 
                     d_vol[t][src] -= v_day
@@ -1031,7 +1032,6 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
 
     assigned_stops, loads, ratio_used, _ = best_result
 
-    # รวมเวิ้งงานโดดเดี่ยวไม่ให้ผ่าครึ่ง
     assigned_stops, loads = consolidate_satellite_pockets(assigned_stops, active, targets, loads, tolerance, pocket_radius_m=450.0)
 
     if cfg.enable_stray_cleanup:
@@ -1148,7 +1148,7 @@ html, body, [class*="css"], .stApp {{
     background-attachment: fixed !important;
 }}
 
-/* 🛑 เส้นแบ่งเขตสายตา (Section Boundary Headers) */
+/* เส้นแบ่งเขตสายตา */
 h1 {{
     font-size: {h1_font} !important;
     color: #FFD700 !important;
@@ -1169,7 +1169,6 @@ section.main h2 {{
     border-right: 1px solid rgba(56, 189, 248, 0.35) !important;
     border-bottom: 1px solid rgba(56, 189, 248, 0.35) !important;
     box-shadow: 0 4px 15px rgba(0, 15, 35, 0.45) !important;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
 }}
 h3 {{
     font-size: {h3_font} !important;
@@ -1177,7 +1176,7 @@ h3 {{
     font-weight: 600 !important;
 }}
 
-/* 🛑 ตารางข้อมูล */
+/* ตารางข้อมูล */
 .stDataFrame, .stDataFrame * {{
     font-size: {base_font} !important;
 }}
@@ -1350,13 +1349,13 @@ div[role="option"][aria-selected="true"] * {{
 </style>
 ''', unsafe_allow_html=True)
 
-# ฟังก์ชันสร้างการ์ดตัวเลขสถิติแบบปลอดภัยไร้ปัญหา HTML tag หลุดรอด
+# 🛑 ฟังก์ชันเรนเดอร์การ์ดสถิติด้วย st.markdown พร้อม unsafe_allow_html=True 100% ป้องกัน HTML ดิบหลุด
 def render_metric_card(
     label: str,
     value: str,
     delta: str = "",
     status: str = "normal",  # "good" (เขียว), "warning" (เหลือง), "danger" (แดง), "normal" (ฟ้าคราม)
-) -> str:
+):
     color_map = {
         "good": "#16A34A",
         "warning": "#D97706",
@@ -1387,22 +1386,24 @@ def render_metric_card(
         </div>
         '''
 
-    return f'''
+    card_html = f'''
     <div style="background:#FFFFFF; border-radius:14px; padding:16px 20px; border:2px solid #38BDF8; border-top:6px solid {val_color}; box-shadow:0 8px 24px rgba(0,15,35,0.25); min-height:115px; margin-bottom:12px;">
         <div style="color:#1E293B; font-size:{metric_lbl_font}; font-weight:700; margin-bottom:4px;">{label}</div>
         <div style="color:{val_color}; font-size:{metric_val_font}; font-weight:800; line-height:1.2;">{value}</div>
         {delta_html}
     </div>
     '''
+    st.markdown(card_html, unsafe_allow_html=True)
 
-def section_header(title: str, subtitle: str = "") -> str:
+def section_header(title: str, subtitle: str = ""):
     sub_html = f"<div style='font-size:{small_font}; color:#475569; font-weight:600; margin-top:3px;'>{subtitle}</div>" if subtitle else ""
-    return f"""
+    header_html = f"""
     <div style="background:#FFFFFF; border-radius:12px; padding:12px 20px; margin-top:24px; margin-bottom:14px; border-left:6px solid #FFD700; border:1.5px solid #CBD5E1; box-shadow:0 4px 14px rgba(0,15,35,0.15);">
         <div style="font-size:{h2_font}; font-weight:800; color:#024D7B; line-height:1.3;">{title}</div>
         {sub_html}
     </div>
     """
+    st.markdown(header_html, unsafe_allow_html=True)
 
 def reset_results():
     for k in ('result', 'zoning_cfg_used'):
@@ -1420,7 +1421,7 @@ def show_loader(placeholder, msg: str):
 # =====================================================================================
 #  SECTION 9 — DATA IMPORT & MAPPING
 # =====================================================================================
-st.title("🚛 Smart Route Rebalancer — Production v3.1")
+st.title("🚛 Smart Route Rebalancer — Production v3.2")
 st.markdown("<div style='background:rgba(2,45,75,0.6); display:inline-block; padding:5px 16px; border-radius:12px; border:1px solid rgba(56,189,248,0.3); font-weight:600; color:#E0F2FE;'>ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Zero-Overlap Satellite Pocket Architecture)</div>", unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
@@ -1521,16 +1522,20 @@ base_cfg = ZoningConfig(lat_col=lat_col, lon_col=lon_col, vol_col=vol_col, truck
 diag = diagnose_fleet(df, base_cfg)
 overloaded = diag.loc[diag['สถานะ'] == '🔴 เกินเพดาน', 'เบอร์รถ'].tolist() if not diag.empty else []
 
-st.markdown(section_header("🩺 ผลวินิจฉัยสถานะรถปัจจุบัน (ก่อนปรับ)"), unsafe_allow_html=True)
+section_header("🩺 ผลวินิจฉัยสถานะรถปัจจุบัน (ก่อนปรับ)")
 d1, d2, d3, d4 = st.columns(4)
 
-d1.markdown(render_metric_card("จำนวนรถทั้งหมด", f"{len(diag)} คัน", status="normal"), unsafe_allow_html=True)
-over_status = "danger" if len(overloaded) > 0 else "good"
-d2.markdown(render_metric_card("รถที่เกินเพดาน", f"{len(overloaded)} คัน", delta=f"เพดาน {daily_cap:,.0f} ถัง/วัน", status=over_status), unsafe_allow_html=True)
-d3.markdown(render_metric_card("ยอดรวมทั้งสาขา", f"{df[vol_col].sum():,.0f} ถัง/เดือน", status="normal"), unsafe_allow_html=True)
-excess_total = float(diag['ส่วนเกิน/วัน'].sum()) * DAYS_PER_MONTH if not diag.empty else 0.0
-excess_status = "warning" if excess_total > 0 else "good"
-d4.markdown(render_metric_card("ยอดส่วนเกินที่ต้องย้าย", f"{excess_total:,.0f} ถัง/เดือน", delta=f"≈ {math.ceil(excess_total/max(1.0,cap_units))} คันรถ", status=excess_status), unsafe_allow_html=True)
+with d1:
+    render_metric_card("จำนวนรถทั้งหมด", f"{len(diag)} คัน", status="normal")
+with d2:
+    over_status = "danger" if len(overloaded) > 0 else "good"
+    render_metric_card("รถที่เกินเพดาน", f"{len(overloaded)} คัน", delta=f"เพดาน {daily_cap:,.0f} ถัง/วัน", status=over_status)
+with d3:
+    render_metric_card("ยอดรวมทั้งสาขา", f"{df[vol_col].sum():,.0f} ถัง/เดือน", status="normal")
+with d4:
+    excess_total = float(diag['ส่วนเกิน/วัน'].sum()) * DAYS_PER_MONTH if not diag.empty else 0.0
+    excess_status = "warning" if excess_total > 0 else "good"
+    render_metric_card("ยอดส่วนเกินที่ต้องย้าย", f"{excess_total:,.0f} ถัง/เดือน", delta=f"≈ {math.ceil(excess_total/max(1.0,cap_units))} คันรถ", status=excess_status)
 
 st.dataframe(diag, use_container_width=True, hide_index=True)
 
@@ -1633,14 +1638,15 @@ if 'result' in st.session_state:
     rdf = res.result_df
 
     st.markdown("---")
-    st.markdown(section_header("📈 ตัวชี้วัดผลลัพธ์เพื่อการตัดสินใจของผู้บริหาร (Executive KPIs)"), unsafe_allow_html=True)
+    section_header("📈 ตัวชี้วัดผลลัพธ์เพื่อการตัดสินใจของผู้บริหาร (Executive KPIs)")
     k1, k2, k3, k4 = st.columns(4)
 
     # 1. รถเกินเพดาน
     over_after = int(res.metrics['over_after'])
     over_diff = int(res.metrics['over_after'] - res.metrics['over_before'])
     k1_status = "good" if over_after == 0 else "danger"
-    k1.markdown(render_metric_card("รถเกินเพดาน", f"{over_after} คัน", delta=f"{over_diff:+d}", status=k1_status), unsafe_allow_html=True)
+    with k1:
+        render_metric_card("รถเกินเพดาน", f"{over_after} คัน", delta=f"{over_diff:+d}", status=k1_status)
 
     # 2. โหลดสูงสุด
     peak_after = res.metrics['peak_after']
@@ -1651,15 +1657,18 @@ if 'result' in st.session_state:
         k2_status = "warning"
     else:
         k2_status = "good"
-    k2.markdown(render_metric_card("โหลดสูงสุด", f"{peak_after:,.0f} ถัง/วัน", delta=f"{peak_diff:+,.0f} ถัง", status=k2_status), unsafe_allow_html=True)
+    with k2:
+        render_metric_card("โหลดสูงสุด", f"{peak_after:,.0f} ถัง/วัน", delta=f"{peak_diff:+,.0f} ถัง", status=k2_status)
 
     # 3. ความกระชับของโซน
     compact_diff = res.metrics['compact_after_km'] - res.metrics['compact_before_km']
     k3_status = "good" if compact_diff <= 0 else "warning"
-    k3.markdown(render_metric_card("ความกระชับของโซน", f"{res.metrics['compact_after_km']:.2f} กม.", delta=f"{compact_diff:+.2f} กม.", status=k3_status), unsafe_allow_html=True)
+    with k3:
+        render_metric_card("ความกระชับของโซน", f"{res.metrics['compact_after_km']:.2f} กม.", delta=f"{compact_diff:+.2f} กม.", status=k3_status)
 
     # 4. ลูกค้าที่โยกย้าย
-    k4.markdown(render_metric_card("ลูกค้าที่โยกย้าย", f"{int(res.metrics['moved_cust']):,} ราย", delta=f"{res.metrics['moved_pct']:.1f}% ของสาขา", status="normal"), unsafe_allow_html=True)
+    with k4:
+        render_metric_card("ลูกค้าที่โยกย้าย", f"{int(res.metrics['moved_cust']):,} ราย", delta=f"{res.metrics['moved_pct']:.1f}% ของสาขา", status="normal")
 
     for w in res.warnings:
         st.warning(f"⚠️ {w}")
@@ -1668,7 +1677,7 @@ if 'result' in st.session_state:
     # 🗺️ EXECUTIVE COMPARISON MAPS (BEFORE VS. AFTER — NO WATERMARK)
     # ---------------------------------------------------------------------------------
     st.markdown("---")
-    st.markdown(section_header("🗺️ แผนที่เปรียบเทียบเชิงพื้นที่ (Before vs. After Comparison)", "คลิกที่หมุดแต่ละจุดเพื่อดูรหัสสมาชิก, ชื่อลูกค้า, ยอดรับน้ำเฉลี่ย และการเปลี่ยนสายส่ง (เวิ้งโดดเดี่ยวถูกรวมเป็นคันเดียว)"), unsafe_allow_html=True)
+    section_header("🗺️ แผนที่เปรียบเทียบเชิงพื้นที่ (Before vs. After Comparison)", "คลิกที่หมุดแต่ละจุดเพื่อดูรหัสสมาชิก, ชื่อลูกค้า, ยอดรับน้ำเฉลี่ย และการเปลี่ยนสายส่ง (เวิ้งโดดเดี่ยวถูกรวมเป็นคันเดียว)")
 
     distinct_colors = [
         '#2563EB', '#16A34A', '#F59E0B', '#9333EA', '#0284C7',
@@ -1803,7 +1812,7 @@ if 'result' in st.session_state:
     # 📅 ตารางสรุปโหลดรายวัน (จันทร์-เสาร์) & ตารางสรุปภาพรวม
     # ---------------------------------------------------------------------------------
     st.markdown("---")
-    st.markdown(section_header("📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์ - เสาร์)"), unsafe_allow_html=True)
+    section_header("📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์ - เสาร์)")
     daily_rows = []
     for t in active_trucks:
         d_vals = res.final_daily.get(t, np.zeros(WORKING_DAYS))
@@ -1820,7 +1829,7 @@ if 'result' in st.session_state:
         })
     st.dataframe(pd.DataFrame(daily_rows), use_container_width=True, hide_index=True)
 
-    st.markdown(section_header("📋 ตารางรายละเอียดการโยกย้ายลูกค้าทั้งหมด"), unsafe_allow_html=True)
+    section_header("📋 ตารางรายละเอียดการโยกย้ายลูกค้าทั้งหมด")
     final_cols = [id_col]
     if name_col and name_col in rdf.columns:
         final_cols.append(name_col)
@@ -1829,4 +1838,4 @@ if 'result' in st.session_state:
     st.dataframe(rdf[final_cols].rename(columns={truck_col: "เบอร์รถเดิม"}), use_container_width=True)
 
     csv_data = rdf[final_cols].to_csv(index=False).encode('utf-8-sig')
-    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v3_1.csv', 'text/csv', use_container_width=True)
+    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v3_2.csv', 'text/csv', use_container_width=True)
