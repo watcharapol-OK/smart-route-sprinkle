@@ -1,6 +1,6 @@
 # =====================================================================================
-#  SMART ROUTE REBALANCER — PRODUCTION BUILD v2.6
-#  Multi-Donor Fleet Rebalancing + High-Contrast Focus Cards & Visual Boundaries
+#  SMART ROUTE REBALANCER — PRODUCTION BUILD v2.7
+#  Multi-Donor Fleet Rebalancing + Restored Dark Sidebar & High-Contrast Cards
 #  ---------------------------------------------------------------------------------
 #  requirements.txt:
 #      streamlit>=1.31
@@ -35,7 +35,7 @@ except Exception:
     HAS_SCIPY = False
 
 st.set_page_config(
-    page_title="Smart Route Rebalancer v2.6",
+    page_title="Smart Route Rebalancer v2.7",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -1031,7 +1031,6 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
 
     assigned_stops, loads, ratio_used, _ = best_result
 
-    # รวมเวิ้งงานโดดเดี่ยวไม่ให้ผ่าครึ่ง
     assigned_stops, loads = consolidate_satellite_pockets(assigned_stops, active, targets, loads, tolerance, pocket_radius_m=450.0)
 
     if cfg.enable_stray_cleanup:
@@ -1087,7 +1086,7 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
     )
 
 # =====================================================================================
-#  SECTION 8 — HIGH-CONTRAST FOCUS CARDS THEME & DYNAMIC FONT SIZE
+#  SECTION 8 — RESTORED DARK SIDEBAR & HIGH-CONTRAST FOCUS THEME
 # =====================================================================================
 
 st.sidebar.markdown("### 🔤 ขนาดอักษร:")
@@ -1125,7 +1124,7 @@ html, body, [class*="css"], p, span, label, div, small, li, a {{
     font-weight: 400;
 }}
 
-/* พื้นหลังสีฟ้าครามประกายน้ำดื่มสปริงเคิล */
+/* พื้นหลังหลักของเว็บ */
 .stApp {{
     background:
         radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.28) 0%, transparent 45%),
@@ -1135,14 +1134,95 @@ html, body, [class*="css"], p, span, label, div, small, li, a {{
     background-attachment: fixed !important;
 }}
 
-/* 🛑 เส้นแบ่งเขตสายตา (Section Boundary Frames) */
+/* -------------------------------------------------------------
+   🔒 คืนค่าแถบเมนูด้านซ้าย (SIDEBAR) กลับเป็นสไตล์เดิม 100%
+   ------------------------------------------------------------- */
+[data-testid="stSidebar"] {{
+    background: rgba(0, 13, 26, 0.65) !important;
+    backdrop-filter: blur(25px);
+    border-right: 1px solid rgba(255,255,255,0.15) !important;
+}}
+[data-testid="stSidebar"] * {{
+    color: #FFFFFF !important;
+}}
+[data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown p {{
+    color: #F3E5AB !important;
+    font-weight: 600 !important;
+}}
+[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {{
+    color: #FFD700 !important;
+    border-bottom: 1px solid rgba(212,175,55,0.3) !important;
+    padding-bottom: 8px !important;
+    background: transparent !important;
+    border-left: none !important;
+    box-shadow: none !important;
+}}
+
+/* 🛑 คืนค่ากล่อง Input / Select ใน Sidebar เป็นกระจกมืด ตัวหนังสือขาวสว่าง คมชัด */
+[data-testid="stSidebar"] input,
+[data-testid="stSidebar"] textarea,
+[data-testid="stSidebar"] div[data-baseweb="select"] > div {{
+    background: rgba(0, 30, 60, 0.45) !important;
+    backdrop-filter: blur(12px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    color: #FFFFFF !important;
+    border-radius: 10px !important;
+    font-weight: 500 !important;
+    box-shadow: none !important;
+}}
+[data-testid="stSidebar"] input::placeholder,
+[data-testid="stSidebar"] textarea::placeholder {{
+    color: #CBD5E1 !important;
+    opacity: 0.8 !important;
+}}
+[data-testid="stSidebar"] div[data-baseweb="select"] * {{
+    color: #FFFFFF !important;
+}}
+[data-testid="stSidebar"] div[data-baseweb="select"] svg {{
+    fill: #FFFFFF !important;
+}}
+
+/* Segmented Control ปุ่มปรับขนาดฟอนต์ใน Sidebar */
+[data-testid="stSidebar"] div[data-testid="stRadio"] > div {{
+    flex-direction: row !important;
+    background: rgba(0, 24, 48, 0.75) !important;
+    padding: 3px 5px !important;
+    border-radius: 10px !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    gap: 3px !important;
+}}
+[data-testid="stSidebar"] div[data-testid="stRadio"] label {{
+    background: transparent !important;
+    border-radius: 6px !important;
+    padding: 4px 8px !important;
+    margin: 0 !important;
+    cursor: pointer !important;
+}}
+[data-testid="stSidebar"] div[data-testid="stRadio"] label:has(input:checked) {{
+    background: #0284C7 !important;
+    color: #FFFFFF !important;
+    font-weight: 700 !important;
+}}
+[data-testid="stSidebar"] div[data-testid="stRadio"] label:has(input:checked) * {{
+    color: #FFFFFF !important;
+}}
+[data-testid="stSidebar"] div[data-testid="stRadio"] label:not(:has(input:checked)) * {{
+    color: #E2E8F0 !important;
+}}
+[data-testid="stSidebar"] div[data-testid="stRadio"] input[type="radio"] {{
+    display: none !important;
+}}
+
+/* -------------------------------------------------------------
+   🎨 พื้นที่หน้าจอหลัก (MAIN CONTENT AREA)
+   ------------------------------------------------------------- */
 h1 {{
     font-size: {h1_font} !important;
     color: #FFD700 !important;
     font-weight: 700 !important;
     text-shadow: 0 2px 5px rgba(0,25,50,0.6);
 }}
-h2 {{
+section.main h2 {{
     font-size: {h2_font} !important;
     color: #FFFFFF !important;
     font-weight: 700 !important;
@@ -1154,26 +1234,24 @@ h2 {{
     margin-bottom: 0.8rem !important;
     box-shadow: 0 4px 15px rgba(0, 15, 35, 0.25);
 }}
-h3 {{
-    font-size: {h3_font} !important;
-    color: #FFD700 !important;
-    font-weight: 600 !important;
-}}
 
-/* 🛑 ตัวหนังสือทั่วไป ข้อความ และคำอธิบายใต้หัวข้อ (คมชัด 100% ไม่กลืนกับพื้นหลัง) */
-.stMarkdown p, .stCaption, [data-testid="stCaptionContainer"], [data-testid="stMarkdownContainer"] p {{
+/* ตัวหนังสือบนหน้าจอหลัก คมชัด 100% */
+section.main .stMarkdown p,
+section.main .stCaption,
+section.main [data-testid="stCaptionContainer"],
+section.main [data-testid="stMarkdownContainer"] p {{
     color: #FFFFFF !important;
     opacity: 1 !important;
     font-weight: 500 !important;
     text-shadow: 0 1px 3px rgba(0, 20, 40, 0.6);
 }}
-.stCaption, [data-testid="stCaptionContainer"] {{
+section.main .stCaption, section.main [data-testid="stCaptionContainer"] {{
     color: #E0F2FE !important;
     font-size: 0.95em !important;
 }}
 
-/* 🛑 กรอบการ์ดตัวเลขสถิติเพื่อล็อกโฟกัสสายตา (Focus Metric Cards) */
-div[data-testid="stMetric"] {{
+/* การ์ดสถิติ Metric บนหน้าจอหลัก */
+section.main div[data-testid="stMetric"] {{
     background: rgba(2, 45, 75, 0.72) !important;
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
@@ -1184,77 +1262,45 @@ div[data-testid="stMetric"] {{
     box-shadow: 0 8px 24px rgba(0, 20, 45, 0.4) !important;
     transition: all 0.25s ease;
 }}
-div[data-testid="stMetric"]:hover {{
+section.main div[data-testid="stMetric"]:hover {{
     border-color: #FFD700 !important;
     border-top-color: #FFD700 !important;
     box-shadow: 0 10px 28px rgba(0, 20, 45, 0.55) !important;
     transform: translateY(-2px);
 }}
-
-/* ตัวหนังสือในกล่อง Metric (คมชัด ไม่กลืน) */
-[data-testid="stMetricLabel"] * {{
+section.main [data-testid="stMetricLabel"] * {{
     color: #F8FAFC !important;
     font-weight: 700 !important;
     font-size: 1.05em !important;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }}
-[data-testid="stMetricValue"] {{
+section.main [data-testid="stMetricValue"] {{
     color: #FFD700 !important;
     font-weight: 800 !important;
     font-size: 1.7em !important;
-    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6) !important;
 }}
-[data-testid="stMetricDelta"] {{
+section.main [data-testid="stMetricDelta"] {{
     color: #E0F2FE !important;
     font-weight: 600 !important;
     background: rgba(56, 189, 248, 0.2);
     padding: 2px 8px;
     border-radius: 6px;
-    display: inline-block;
-    margin-top: 4px;
 }}
-[data-testid="stMetricDelta"] svg {{
+section.main [data-testid="stMetricDelta"] svg {{
     fill: #38BDF8 !important;
 }}
 
-/* แถบด้านข้าง Sidebar (คงเดิมตามที่พอใจ) */
-[data-testid="stSidebar"] {{
-    background: rgba(0, 13, 26, 0.55) !important;
-    backdrop-filter: blur(25px);
-    border-right: 1px solid rgba(255,255,255,0.15);
-}}
-[data-testid="stSidebar"] * {{ color: #FFF !important; }}
-[data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown p {{
-    color: #F3E5AB !important;
-    font-weight: 600 !important;
-}}
-[data-testid="stSidebar"] h1,[data-testid="stSidebar"] h2,[data-testid="stSidebar"] h3 {{
-    color: #FFD700 !important;
-    border-bottom: 1px solid rgba(212,175,55,0.3);
-    padding-bottom: 8px;
-}}
-
-/* กรอบข้อมูลและช่องพิมพ์ */
-input, textarea, div[data-baseweb="select"] > div {{
+/* เฉพาะกล่องเลือกสายรถบนหน้าจอหลัก (เหนือแผนที่) */
+section.main div[data-baseweb="select"] > div {{
     background: #FFFFFF !important;
-    border: 1.5px solid #94A3B8 !important;
-    color: #0F172A !important;
+    border: 1.5px solid #0284C7 !important;
     border-radius: 10px !important;
-    font-weight: 600 !important;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.08) !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12) !important;
 }}
-input::placeholder, textarea::placeholder {{
-    color: #64748B !important;
-    opacity: 1 !important;
-}}
-div[data-baseweb="select"] * {{
+section.main div[data-baseweb="select"] * {{
     color: #0F172A !important;
     font-weight: 600 !important;
 }}
-div[data-baseweb="select"] [class*="placeholder"] {{
-    color: #64748B !important;
-}}
-div[data-baseweb="select"] svg {{
+section.main div[data-baseweb="select"] svg {{
     fill: #0F172A !important;
 }}
 
@@ -1285,39 +1331,7 @@ div[role="option"][aria-selected="true"] * {{
     font-weight: 700 !important;
 }}
 
-/* Segmented Control ปุ่มปรับขนาดฟอนต์ */
-div[data-testid="stRadio"] > div {{
-    flex-direction: row !important;
-    background: rgba(255,255,255,0.92) !important;
-    padding: 4px 6px !important;
-    border-radius: 12px !important;
-    border: 1px solid #0284C7 !important;
-    gap: 4px !important;
-}}
-div[data-testid="stRadio"] label {{
-    background: transparent !important;
-    border-radius: 8px !important;
-    padding: 4px 12px !important;
-    margin: 0 !important;
-    cursor: pointer !important;
-    color: #0F172A !important;
-}}
-div[data-testid="stRadio"] label:has(input:checked) {{
-    background: #0284C7 !important;
-    color: #FFFFFF !important;
-    font-weight: 700 !important;
-}}
-div[data-testid="stRadio"] label:has(input:checked) * {{
-    color: #FFFFFF !important;
-}}
-div[data-testid="stRadio"] label:not(:has(input:checked)) * {{
-    color: #0F172A !important;
-}}
-div[data-testid="stRadio"] input[type="radio"] {{
-    display: none !important;
-}}
-
-/* ตารางข้อมูล Frosted Glass พร้อมกรอบชัดเจน */
+/* ตารางข้อมูล Frosted Glass */
 .stDataFrame {{
     background: rgba(2, 45, 75, 0.65) !important;
     backdrop-filter: blur(20px);
@@ -1372,7 +1386,7 @@ def show_loader(placeholder, msg: str):
         html = f'<div style="text-align:center; padding:2rem; color:#FFD700; font-weight:bold; border-radius:16px; background:rgba(2,54,88,0.85);">{msg}</div>'
     placeholder.markdown(html, unsafe_allow_html=True)
 
-st.title("🚛 Smart Route Rebalancer — Production v2.6")
+st.title("🚛 Smart Route Rebalancer — Production v2.7")
 st.markdown("<div style='background:rgba(2,45,75,0.6); display:inline-block; padding:4px 14px; border-radius:12px; border:1px solid rgba(56,189,248,0.3); font-weight:600; color:#E0F2FE;'>ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Zero-Overlap Satellite Pocket Architecture)</div>", unsafe_allow_html=True)
 
 # =====================================================================================
@@ -1755,4 +1769,4 @@ if 'result' in st.session_state:
     st.dataframe(rdf[final_cols].rename(columns={truck_col: "เบอร์รถเดิม"}), use_container_width=True)
 
     csv_data = rdf[final_cols].to_csv(index=False).encode('utf-8-sig')
-    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v2_6.csv', 'text/csv', use_container_width=True)
+    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v2_7.csv', 'text/csv', use_container_width=True)
