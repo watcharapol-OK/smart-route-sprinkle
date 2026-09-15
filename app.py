@@ -1,6 +1,6 @@
 # =====================================================================================
-#  SMART ROUTE REBALANCER — PRODUCTION BUILD v3.3
-#  Multi-Donor Fleet Rebalancing + Native Streamlit Metric Cards Fix
+#  SMART ROUTE REBALANCER — PRODUCTION BUILD v3.4
+#  Multi-Donor Fleet Rebalancing + Flattened HTML Metric Cards Fix
 #  ---------------------------------------------------------------------------------
 #  requirements.txt:
 #      streamlit>=1.31
@@ -35,7 +35,7 @@ except Exception:
     HAS_SCIPY = False
 
 st.set_page_config(
-    page_title="Smart Route Rebalancer v3.3",
+    page_title="Smart Route Rebalancer v3.4",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -1137,7 +1137,7 @@ html, body, [class*="css"], .stApp {{
     font-family: 'Sarabun', sans-serif !important;
 }}
 
-/* พื้นหลังหลักสีฟ้าครามสดชื่นของสปริงเคิล */
+/* พื้นหลังหลักสีฟ้าครามประกายน้ำดื่มสปริงเคิล */
 .stApp {{
     background:
         radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.28) 0%, transparent 45%),
@@ -1349,12 +1349,12 @@ div[role="option"][aria-selected="true"] * {{
 </style>
 ''', unsafe_allow_html=True)
 
-# 🛑 ฟังก์ชันเรนเดอร์การ์ดสถิติด้วย st.markdown พร้อมกำหนด unsafe_allow_html=True ชัดเจน
+# 🛑 ฟังก์ชันเรนเดอร์การ์ดสถิติด้วยการตัด newline/indent ออก เพื่อไม่ให้ Markdown แปลงเป็น Code block
 def render_metric_card(
     label: str,
     value: str,
     delta: str = "",
-    status: str = "normal",  # "good" (เขียว), "warning" (เหลือง), "danger" (แดง), "normal" (ฟ้าคราม)
+    status: str = "normal",
 ):
     color_map = {
         "good": "#16A34A",
@@ -1378,31 +1378,15 @@ def render_metric_card(
         else:
             d_bg, d_color, d_border = "#E0F2FE", "#0369A1", "#BAE6FD"
 
-        delta_html = f'''
-        <div style="margin-top: 6px;">
-            <span style="background:{d_bg}; color:{d_color}; border:1px solid {d_border}; padding:3px 10px; border-radius:6px; font-weight:700; font-size:calc({base_font} * 0.88); display:inline-block;">
-                {delta}
-            </span>
-        </div>
-        '''
+        # การพิมพ์ HTML บรรทัดเดียวติดกัน ป้องกันบั๊ก Markdown code-block ของ Streamlit
+        delta_html = f'<div style="margin-top: 6px;"><span style="background:{d_bg}; color:{d_color}; border:1px solid {d_border}; padding:3px 10px; border-radius:6px; font-weight:700; font-size:calc({base_font} * 0.88); display:inline-block;">{delta}</span></div>'
 
-    card_html = f'''
-    <div style="background:#FFFFFF; border-radius:14px; padding:16px 20px; border:2px solid #38BDF8; border-top:6px solid {val_color}; box-shadow:0 8px 24px rgba(0,15,35,0.25); min-height:115px; margin-bottom:12px;">
-        <div style="color:#1E293B; font-size:{metric_lbl_font}; font-weight:700; margin-bottom:4px;">{label}</div>
-        <div style="color:{val_color}; font-size:{metric_val_font}; font-weight:800; line-height:1.2;">{value}</div>
-        {delta_html}
-    </div>
-    '''
+    card_html = f'<div style="background:#FFFFFF; border-radius:14px; padding:16px 20px; border:2px solid #38BDF8; border-top:6px solid {val_color}; box-shadow:0 8px 24px rgba(0,15,35,0.25); min-height:115px; margin-bottom:12px;"><div style="color:#1E293B; font-size:{metric_lbl_font}; font-weight:700; margin-bottom:4px;">{label}</div><div style="color:{val_color}; font-size:{metric_val_font}; font-weight:800; line-height:1.2;">{value}</div>{delta_html}</div>'
     st.markdown(card_html, unsafe_allow_html=True)
 
 def section_header(title: str, subtitle: str = ""):
     sub_html = f"<div style='font-size:{small_font}; color:#475569; font-weight:600; margin-top:3px;'>{subtitle}</div>" if subtitle else ""
-    header_html = f"""
-    <div style="background:#FFFFFF; border-radius:12px; padding:12px 20px; margin-top:24px; margin-bottom:14px; border-left:6px solid #FFD700; border:1.5px solid #CBD5E1; box-shadow:0 4px 14px rgba(0,15,35,0.15);">
-        <div style="font-size:{h2_font}; font-weight:800; color:#024D7B; line-height:1.3;">{title}</div>
-        {sub_html}
-    </div>
-    """
+    header_html = f'<div style="background:#FFFFFF; border-radius:12px; padding:12px 20px; margin-top:24px; margin-bottom:14px; border-left:6px solid #FFD700; border:1.5px solid #CBD5E1; box-shadow:0 4px 14px rgba(0,15,35,0.15);"><div style="font-size:{h2_font}; font-weight:800; color:#024D7B; line-height:1.3;">{title}</div>{sub_html}</div>'
     st.markdown(header_html, unsafe_allow_html=True)
 
 def reset_results():
@@ -1421,7 +1405,7 @@ def show_loader(placeholder, msg: str):
 # =====================================================================================
 #  SECTION 9 — DATA IMPORT & MAPPING
 # =====================================================================================
-st.title("🚛 Smart Route Rebalancer — Production v3.2")
+st.title("🚛 Smart Route Rebalancer — Production v3.3")
 st.markdown("<div style='background:rgba(2,45,75,0.6); display:inline-block; padding:5px 16px; border-radius:12px; border:1px solid rgba(56,189,248,0.3); font-weight:600; color:#E0F2FE;'>ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Zero-Overlap Satellite Pocket Architecture)</div>", unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
@@ -1707,12 +1691,8 @@ if 'result' in st.session_state:
             f"<span style='display:inline-block; background:#FFFFFF; color:{color_map.get(t, '#0284C7')}; border:2px solid {color_map.get(t, '#0284C7')}; padding:5px 12px; border-radius:8px; font-weight:800; font-size:{base_font}; margin:3px 5px; box-shadow:0 2px 6px rgba(0,0,0,0.12);'>● รถ {t}</span>"
             for t in active_trucks
         ])
-        st.markdown(f"""
-        <div style="background:#FFFFFF; border-radius:10px; padding:8px 14px; border:1.5px solid #0284C7; box-shadow:0 2px 8px rgba(0,0,0,0.1); display:flex; flex-wrap:wrap; align-items:center; margin-top:28px;">
-            <span style="font-size:{base_font}; font-weight:800; color:#0F172A; margin-right:8px;">สีสายรถ:</span>
-            {legend_badges_html}
-        </div>
-        """, unsafe_allow_html=True)
+        legend_html = f'<div style="background:#FFFFFF; border-radius:10px; padding:8px 14px; border:1.5px solid #0284C7; box-shadow:0 2px 8px rgba(0,0,0,0.1); display:flex; flex-wrap:wrap; align-items:center; margin-top:28px;"><span style="font-size:{base_font}; font-weight:800; color:#0F172A; margin-right:8px;">สีสายรถ:</span>{legend_badges_html}</div>'
+        st.markdown(legend_html, unsafe_allow_html=True)
 
     if selected_truck_view == "แสดงรถทั้งหมด (แยกสีตามเบอร์รถ)":
         display_df_before = df
@@ -1760,7 +1740,8 @@ if 'result' in st.session_state:
 
     # --- 1. แผนที่ก่อนปรับ (Before) ---
     with map_col1:
-        st.markdown(f"<div style='text-align:center; background:#FFFFFF; color:#024D7B; font-weight:800; font-size:{base_font}; padding:8px 12px; border-radius:8px; margin-bottom:10px; border:1.5px solid #38BDF8; box-shadow:0 2px 8px rgba(0,0,0,0.1);'>📍 โซนสายส่งเดิม (Before - ก่อนปรับปรุง)</div>", unsafe_allow_html=True)
+        map1_header = f"<div style='text-align:center; background:#FFFFFF; color:#024D7B; font-weight:800; font-size:{base_font}; padding:8px 12px; border-radius:8px; margin-bottom:10px; border:1.5px solid #38BDF8; box-shadow:0 2px 8px rgba(0,0,0,0.1);'>📍 โซนสายส่งเดิม (Before - ก่อนปรับปรุง)</div>"
+        st.markdown(map1_header, unsafe_allow_html=True)
         m_before = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles="OpenStreetMap")
         plugins.Fullscreen(position='topright').add_to(m_before)
 
@@ -1785,7 +1766,8 @@ if 'result' in st.session_state:
 
     # --- 2. แผนที่หลังปรับ (After) ---
     with map_col2:
-        st.markdown(f"<div style='text-align:center; background:#FFFFFF; color:#024D7B; font-weight:800; font-size:{base_font}; padding:8px 12px; border-radius:8px; margin-bottom:10px; border:1.5px solid #38BDF8; box-shadow:0 2px 8px rgba(0,0,0,0.1);'>✨ โซนสายส่งใหม่ (After - รวมเวิ้งงานโดดเดี่ยวแล้ว)</div>", unsafe_allow_html=True)
+        map2_header = f"<div style='text-align:center; background:#FFFFFF; color:#024D7B; font-weight:800; font-size:{base_font}; padding:8px 12px; border-radius:8px; margin-bottom:10px; border:1.5px solid #38BDF8; box-shadow:0 2px 8px rgba(0,0,0,0.1);'>✨ โซนสายส่งใหม่ (After - รวมเวิ้งงานโดดเดี่ยวแล้ว)</div>"
+        st.markdown(map2_header, unsafe_allow_html=True)
         m_after = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles="OpenStreetMap")
         plugins.Fullscreen(position='topright').add_to(m_after)
 
@@ -1838,4 +1820,4 @@ if 'result' in st.session_state:
     st.dataframe(rdf[final_cols].rename(columns={truck_col: "เบอร์รถเดิม"}), use_container_width=True)
 
     csv_data = rdf[final_cols].to_csv(index=False).encode('utf-8-sig')
-    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v3_2.csv', 'text/csv', use_container_width=True)
+    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v3_3.csv', 'text/csv', use_container_width=True)
