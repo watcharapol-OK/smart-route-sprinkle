@@ -1,6 +1,6 @@
 # =====================================================================================
-#  SMART ROUTE REBALANCER — PRODUCTION BUILD v3.5
-#  Multi-Donor Fleet Rebalancing + Flattened HTML Tables Fix
+#  SMART ROUTE REBALANCER — PRODUCTION BUILD v3.6
+#  Multi-Donor Fleet Rebalancing + Strict Structural Order Fix (Error-Free)
 #  ---------------------------------------------------------------------------------
 #  requirements.txt:
 #      streamlit>=1.31
@@ -35,7 +35,7 @@ except Exception:
     HAS_SCIPY = False
 
 st.set_page_config(
-    page_title="Smart Route Rebalancer v3.5",
+    page_title="Smart Route Rebalancer v3.6",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -925,168 +925,7 @@ def calculate_peak_daily_loads(data: pd.DataFrame, truck_col: str, vol_col: str,
     return output
 
 # =====================================================================================
-#  SECTION 7 — MAIN ENGINE EXECUTION
-# =====================================================================================
-def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dict[str, float], dissolve_trucks: Sequence[str], relieve_trucks: Sequence[str], new_trucks: Sequence[str], manual_locks: Sequence[str], road_matrix_getter=None) -> ZoningResult:
-    warnings, infos = [], []
-    if df is None or df.empty:
-        raise ValueError("ไม่มีข้อมูลสำหรับประมวลผล")
-
-    opt = df.copy().reset_index(drop=True)
-    opt[cfg.lat_col] = pd.to_numeric(opt[cfg.lat_col], errors="coerce")
-    opt[cfg.lon_col] = pd.to_numeric(opt[cfg.lon_col], errors="coerce")
-    opt[cfg.vol_col] = pd.to_numeric(opt[cfg.vol_col], errors="coerce").fillna(0.0).clip(lower=0.0).astype(float)
-    opt[cfg.truck_col] = opt[cfg.truck_col].astype(str).str.strip()
-    opt[cfg.id_col] = opt[cfg.id_col].astype(str).str.strip()
-
-    valid_mask = opt[cfg.lat_col].notna() & opt[cfg.lon_col].notna() & (~opt[cfg.truck_col].str.lower().isin(NO_TRUCK_TOKENS))
-    opt = opt[valid_mask].reset_index(drop=True)
-
-    all_orig_trucks = clean_truck_ids(opt[cfg.truck_col].unique())
-    dissolve = [t for t in all_orig_trucks if t in set(dissolve_trucks)]
-    kept = [t for t in all_orig_trucks if t not in set(dissolve_trucks)]
-    norm_new = [t.strip() for t in new_trucks if t.strip() and t.strip() not in kept and t.strip().lower() not in NO_TRUCK_TOKENS]
-    norm_new = list(dict.fromkeys(norm_new))
-    active = kept + norm_new
-
-    if not active:
-        raise ValueError("ไม่เหลือรถที่สามารถรับการจัดสรรงานได้")
-
-    targets = {t: max(0.0, cfg.monthly_capacity * float(target_pcts.get(t, 0.0)) / 100.0) for t in active}
-    tolerance = {t: _tolerance_for(t, targets, cfg) for t in active}
-
-    locked_ids = {str(v).strip() for v in manual_locks if str(v).strip()}
-    vip_status = opt["VIP_Status"].astype(str).str.upper().str.strip() if "VIP_Status" in opt.columns else pd.Series(["ปกติ"] * len(opt))
-    opt["is_vip_locked"] = vip_status.eq("VIP") | opt[cfg.id_col].isin(locked_ids)
-    opt["สถานะการย้ายวัน"] = "-"
-    opt["coord_key"] = opt[cfg.lat_col].round(5).astype(str) + "," + opt[cfg.lon_col].round(5).astype(str)
-
-    px, py, lat_ref = project_xy(opt[cfg.lat_col].to_numpy(dtype=float), opt[cfg.lon_col].to_numpy(dtype=float))
-    opt["x"], opt["y"] = px, py
-    stops = build_stops(opt, cfg)
-
-    vol_by_orig = stops.groupby("orig_truck")["total_vol"].sum().to_dict()
-    ratio_override = {}
-    for t in relieve_trucks:
-        c_vol = float(vol_by_orig.get(t, 0.0))
-        if c_vol > 0 and t in targets:
-            ratio_override[t] = max(0.0, min(100.0, targets[t] / c_vol * 100.0 * 0.92))
-
-    core_eligible = [t for t in kept if t not in set(dissolve)]
-    seeds: Dict[str, Tuple[float, float]] = {}
-    for t in kept:
-        grp = stops[stops["orig_truck"] == t]
-        if not grp.empty:
-            w = np.maximum(grp["total_vol"].to_numpy(dtype=float), 1e-9)
-            seeds[t] = (float(np.average(grp["x"], weights=w)), float(np.average(grp["y"], weights=w)))
-
-    gw = np.maximum(stops["total_vol"].to_numpy(dtype=float), 1e-9)
-    gx, gy = float(np.average(stops["x"], weights=gw)), float(np.average(stops["y"], weights=gw))
-
-    if norm_new:
-        init_cores = compute_core_keys(stops, cfg.core_ratio, core_eligible, ratio_override)
-        spool = stops[~stops["coord_key"].isin(init_cores)]
-        if spool.empty:
-            spool = stops
-        new_centers = kmeans_seeds(spool[["x", "y"]].to_numpy(dtype=float), spool["total_vol"].to_numpy(dtype=float), len(norm_new))
-        if len(new_centers) == 0:
-            new_centers = np.asarray([[gx, gy]], dtype=float)
-        for idx, t in enumerate(norm_new):
-            c_idx = min(idx, len(new_centers) - 1)
-            seeds[t] = (float(new_centers[c_idx, 0]), float(new_centers[c_idx, 1]))
-
-    def run_single_pass(core_ratio: float):
-        c_stops = stops.copy()
-        c_keys = compute_core_keys(c_stops, core_ratio, core_eligible, ratio_override)
-        c_stops["is_core_locked"] = c_stops["coord_key"].isin(c_keys)
-        c_stops["is_locked"] = c_stops["has_vip_lock"].astype(bool) | c_stops["is_core_locked"].astype(bool)
-        c_stops["assigned_truck"] = None
-
-        for s_idx, row in c_stops.iterrows():
-            ot = str(row["orig_truck"]).strip()
-            if bool(row["is_locked"]) and ot in active:
-                c_stops.at[s_idx, "assigned_truck"] = ot
-
-        assignment, pass_loads = _assign_capacitated(c_stops, active, targets, tolerance, seeds, None)
-        c_stops["assigned_truck"] = [active[ti] if ti >= 0 else OVERFLOW_LABEL for ti in assignment]
-        c_stops.loc[c_stops["is_locked"] & (~c_stops["orig_truck"].isin(active)), "is_locked"] = False
-        return c_stops, pass_loads
-
-    cur_ratio = max(0.0, min(100.0, float(cfg.core_ratio)))
-    min_ratio = max(0.0, min(cur_ratio, float(cfg.core_floor)))
-    c_step = max(1.0, float(cfg.core_step))
-    best_result = None
-
-    while True:
-        c_stops, c_loads = run_single_pass(cur_ratio)
-        tot_viol = sum(max(0.0, abs(c_loads.get(t, 0.0) - targets.get(t, 0.0)) - tolerance.get(t, 0.0)) for t in active if targets.get(t, 0.0) > 0)
-        over_v = float(c_stops.loc[c_stops["assigned_truck"] == OVERFLOW_LABEL, "total_vol"].sum())
-        score = tot_viol + over_v * 2.0
-
-        if best_result is None or score < best_result[3]:
-            best_result = (c_stops, c_loads, cur_ratio, score)
-        if score <= 1e-6 or cur_ratio <= min_ratio:
-            break
-        cur_ratio = max(min_ratio, cur_ratio - c_step)
-
-    assigned_stops, loads, ratio_used, _ = best_result
-
-    assigned_stops, loads = consolidate_satellite_pockets(assigned_stops, active, targets, loads, tolerance, pocket_radius_m=450.0)
-
-    if cfg.enable_stray_cleanup:
-        assigned_stops, loads = cleanup_stray_points(assigned_stops, active, targets, loads, tolerance, cfg.polish_tol_multiplier)
-    if cfg.enable_majority_vote:
-        assigned_stops, loads = majority_vote_smoothing(assigned_stops, active, targets, loads, tolerance, cfg)
-    if cfg.enable_swap:
-        assigned_stops, loads = swap_improve(assigned_stops, active, targets, loads, tolerance, cfg.swap_rounds)
-
-    assigned_stops, loads = consolidate_satellite_pockets(assigned_stops, active, targets, loads, tolerance, pocket_radius_m=450.0)
-
-    truck_mapping = dict(zip(assigned_stops["coord_key"], assigned_stops["assigned_truck"]))
-    core_mapping = dict(zip(assigned_stops["coord_key"], assigned_stops["is_core_locked"]))
-
-    opt["เบอร์รถใหม่"] = opt["coord_key"].map(truck_mapping).fillna(OVERFLOW_LABEL).astype(str)
-    opt["is_core_locked"] = opt["coord_key"].map(core_mapping).fillna(False).astype(bool)
-    opt["is_locked"] = opt["is_vip_locked"].astype(bool) | opt["is_core_locked"].astype(bool)
-
-    orig_s = opt[cfg.truck_col].astype(str).str.strip()
-    new_s = opt["เบอร์รถใหม่"].astype(str).str.strip()
-    same_m = orig_s == new_s
-
-    opt["สถานะ"] = np.where(same_m, "คงเดิม", "ย้ายไปสาย " + new_s)
-    opt.loc[opt["is_locked"] & same_m, "สถานะ"] = "คงเดิม 🔒"
-
-    opt, daily_matrix, daily_stops_matrix, final_daily = smooth_daily_loads(opt, cfg, active)
-
-    comp_before = [compute_compactness(grp) for _, grp in opt.groupby(cfg.truck_col)]
-    comp_after = [compute_compactness(grp) for t, grp in opt.groupby("เบอร์รถใหม่") if t != OVERFLOW_LABEL]
-    peak_before = calculate_peak_daily_loads(opt, cfg.truck_col, cfg.vol_col, cfg.day_col)
-    peak_after = {t: float(v.max()) for t, v in final_daily.items()}
-    moved_m = orig_s != new_s
-
-    metrics = {
-        "compact_before_km": float(np.mean(comp_before)) / 1000.0 if comp_before else 0.0,
-        "compact_after_km": float(np.mean(comp_after)) / 1000.0 if comp_after else 0.0,
-        "over_before": int(sum(1 for v in peak_before.values() if v > cfg.daily_control_cap)),
-        "over_after": int(sum(1 for v in peak_after.values() if v > cfg.daily_control_cap)),
-        "peak_before": max(peak_before.values()) if peak_before else 0.0,
-        "peak_after": max(peak_after.values()) if peak_after else 0.0,
-        "moved_cust": int(moved_m.sum()),
-        "moved_pct": float(moved_m.sum()) / max(1, len(opt)) * 100.0,
-        "moved_vol": float(opt.loc[moved_m, cfg.vol_col].sum()),
-        "std_before": float(np.std(list(peak_before.values()))) if peak_before else 0.0,
-        "std_after": float(np.std(list(peak_after.values()))) if peak_after else 0.0,
-    }
-
-    return ZoningResult(
-        result_df=opt, stops_df=assigned_stops, daily_matrix=daily_matrix,
-        daily_stops=daily_stops_matrix, final_daily=final_daily,
-        targets=targets, loads=loads, core_ratio_used=float(ratio_used),
-        metrics=metrics, warnings=warnings, infos=infos
-    )
-
-# =====================================================================================
-#  SECTION 8 — DYNAMIC FONT SCALING & HIGH-CONTRAST THEME
+#  SECTION 7 — DYNAMIC FONT SCALING, THEME & UI HELPERS (DEFINED FIRST TO AVOID NAMEERROR)
 # =====================================================================================
 
 st.sidebar.markdown("### 🔤 ขนาดอักษร:")
@@ -1137,7 +976,6 @@ html, body, [class*="css"], .stApp {{
     font-family: 'Sarabun', sans-serif !important;
 }}
 
-/* พื้นหลังหลักสีฟ้าครามสดชื่นของสปริงเคิล */
 .stApp {{
     background:
         radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.28) 0%, transparent 45%),
@@ -1147,16 +985,8 @@ html, body, [class*="css"], .stApp {{
     background-attachment: fixed !important;
 }}
 
-/* เส้นแบ่งเขตสายตา */
-h1 {{
-    font-size: {h1_font} !important;
-    color: #FFD700 !important;
-    font-weight: 700 !important;
-    text-shadow: 0 2px 5px rgba(0,25,50,0.8);
-}}
-
 /* -------------------------------------------------------------
-   🔒 คืนค่าแถบเมนูด้านซ้าย (SIDEBAR) ล็อกสไตล์เดิม 100%
+   🔒 แถบเมนูด้านซ้าย (SIDEBAR) ล็อกสไตล์กระจกมืด
    ------------------------------------------------------------- */
 [data-testid="stSidebar"] {{
     background: rgba(0, 13, 26, 0.65) !important;
@@ -1236,7 +1066,26 @@ h1 {{
     display: none !important;
 }}
 
-/* 🛑 กล่องเลือกสายรถบนหน้าจอหลัก (Selectbox / Dropdown) */
+/* -------------------------------------------------------------
+   🎨 พื้นที่หน้าจอหลัก (MAIN CONTENT)
+   ------------------------------------------------------------- */
+h1 {{
+    font-size: {h1_font} !important;
+    color: #FFD700 !important;
+    font-weight: 700 !important;
+    text-shadow: 0 2px 5px rgba(0,25,50,0.8);
+}}
+section.main p, section.main span, section.main div[data-testid="stMarkdownContainer"] p {{
+    color: #FFFFFF !important;
+    font-size: {base_font} !important;
+    font-weight: 500 !important;
+}}
+section.main .stCaption, section.main [data-testid="stCaptionContainer"] p {{
+    color: #E0F2FE !important;
+    font-size: calc({base_font} * 0.9) !important;
+}}
+
+/* กล่องเลือกสายรถบนหน้าจอหลัก */
 section.main div[data-baseweb="select"] > div {{
     background: #FFFFFF !important;
     border: 2px solid #0284C7 !important;
@@ -1282,24 +1131,7 @@ div[role="option"][aria-selected="true"] * {{
     font-weight: 700 !important;
 }}
 
-/* ตารางข้อมูล Streamlit แบบดั้งเดิม (st.dataframe) */
-.stDataFrame, .stDataFrame * {{
-    font-size: {table_font} !important;
-}}
-.stDataFrame {{
-    background: rgba(2, 45, 75, 0.65) !important;
-    backdrop-filter: blur(20px);
-    padding: 1rem;
-    border-radius: 16px;
-    border: 1.5px solid rgba(255,255,255,0.3) !important;
-    border-top: 4px solid #38BDF8 !important;
-    box-shadow: 0 8px 25px rgba(0,20,45,0.35);
-}}
-.stDataFrame td, .stDataFrame th, .stDataFrame div {{
-    color: #0F172A !important;
-    font-weight: 500 !important;
-}}
-
+/* ปุ่มกดต่างๆ */
 .stButton>button {{
     background: linear-gradient(135deg, #D4AF37 0%, #AA8C2C 100%) !important;
     color: #000B18 !important;
@@ -1327,7 +1159,25 @@ div[role="option"][aria-selected="true"] * {{
     box-shadow: 0 4px 15px rgba(2,132,199,0.4);
 }}
 
-/* 🛑 ตาราง HTML วิเคราะห์โหลดรายวันแบบ Custom (เพื่อไฮไลต์สี) */
+/* ตารางข้อมูล st.dataframe */
+.stDataFrame, .stDataFrame * {{
+    font-size: {table_font} !important;
+}}
+.stDataFrame {{
+    background: rgba(2, 45, 75, 0.65) !important;
+    backdrop-filter: blur(20px);
+    padding: 1rem;
+    border-radius: 16px;
+    border: 1.5px solid rgba(255,255,255,0.3) !important;
+    border-top: 4px solid #38BDF8 !important;
+    box-shadow: 0 8px 25px rgba(0,20,45,0.35);
+}}
+.stDataFrame td, .stDataFrame th, .stDataFrame div {{
+    color: #0F172A !important;
+    font-weight: 500 !important;
+}}
+
+/* ตาราง HTML Custom สีแดง */
 .custom-table-container {{
     overflow-x: auto;
     background: #FFFFFF;
@@ -1370,6 +1220,7 @@ div[role="option"][aria-selected="true"] * {{
 </style>
 ''', unsafe_allow_html=True)
 
+# 🛑 ฟังก์ชันเรนเดอร์การ์ดสถิติด้วยการตัด newline/indent ออก เพื่อไม่ให้ Markdown แปลงเป็น Code block
 def render_metric_card(
     label: str,
     value: str,
@@ -1404,7 +1255,7 @@ def render_metric_card(
     st.markdown(card_html, unsafe_allow_html=True)
 
 def section_header(title: str, subtitle: str = ""):
-    sub_html = f"<div style='font-size:{small_font}; color:#475569; font-weight:600; margin-top:3px;'>{subtitle}</div>" if subtitle else ""
+    sub_html = f"<div style='font-size:calc({base_font} * 0.9); color:#475569; font-weight:600; margin-top:3px;'>{subtitle}</div>" if subtitle else ""
     header_html = f'<div style="background:#FFFFFF; border-radius:12px; padding:12px 20px; margin-top:24px; margin-bottom:14px; border-left:6px solid #FFD700; border:1.5px solid #CBD5E1; box-shadow:0 4px 14px rgba(0,15,35,0.15);"><div style="font-size:{h2_font}; font-weight:800; color:#024D7B; line-height:1.3;">{title}</div>{sub_html}</div>'
     st.markdown(header_html, unsafe_allow_html=True)
 
@@ -1416,15 +1267,15 @@ def show_loader(placeholder, msg: str):
     try:
         with open("truck.jpg", "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
-        html = f'<div style="text-align:center; padding:2rem; color:#FFD700; font-weight:bold; border-radius:16px; background:rgba(2,54,88,0.85); backdrop-filter:blur(20px); border:1.5px solid rgba(56,189,248,0.4);"><img src="data:image/jpeg;base64,{b64}" style="width:140px; margin-bottom:10px;"><br>{msg}</div>'
+        html = f'<div style="text-align:center; padding:2rem; color:#FFD700; font-weight:bold; font-size:{h3_font}; border-radius:16px; background:rgba(2,54,88,0.85); backdrop-filter:blur(20px); border:1.5px solid rgba(56,189,248,0.4);"><img src="data:image/jpeg;base64,{b64}" style="width:140px; margin-bottom:10px;"><br>{msg}</div>'
     except FileNotFoundError:
-        html = f'<div style="text-align:center; padding:2rem; color:#FFD700; font-weight:bold; border-radius:16px; background:rgba(2,54,88,0.85);">{msg}</div>'
+        html = f'<div style="text-align:center; padding:2rem; color:#FFD700; font-weight:bold; font-size:{h3_font}; border-radius:16px; background:rgba(2,54,88,0.85);">{msg}</div>'
     placeholder.markdown(html, unsafe_allow_html=True)
 
 # =====================================================================================
 #  SECTION 9 — DATA IMPORT & MAPPING
 # =====================================================================================
-st.title("🚛 Smart Route Rebalancer — Production v3.5")
+st.title("🚛 Smart Route Rebalancer — Production v3.4")
 st.markdown(f"<div style='background:rgba(2,45,75,0.6); display:inline-block; padding:5px 16px; border-radius:12px; border:1px solid rgba(56,189,248,0.3); font-weight:600; color:#E0F2FE; font-size:{base_font};'>ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Zero-Overlap Satellite Pocket Architecture)</div>", unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
@@ -1540,14 +1391,14 @@ with d4:
     excess_status = "warning" if excess_total > 0 else "good"
     render_metric_card("ยอดส่วนเกินที่ต้องย้าย", f"{excess_total:,.0f} ถัง/เดือน", delta=f"≈ {math.ceil(excess_total/max(1.0,cap_units))} คันรถ", status=excess_status)
 
-# 🛑 ตารางผลวินิจฉัยก่อนปรับแบบ HTML (รองรับสีแดงตัวหนาถ้าเกินเพดาน)
-diag_html = f'<div class="custom-table-container"><table class="custom-table"><thead><tr><th>เบอร์รถ</th><th>จำนวนลูกค้า</th><th>ยอด/เดือน</th><th>ภาระงาน(%)</th><th>โหลดสูงสุด/วัน</th><th>จุดจอดสูงสุด/วัน</th><th>ส่วนเกิน/วัน</th><th>สถานะ</th></tr></thead><tbody>'
+# 🛑 ตารางผลวินิจฉัยก่อนปรับแบบ HTML บรรทัดเดียว (ป้องกัน Error ของ Streamlit Markdown)
+diag_html = '<div class="custom-table-container"><table class="custom-table"><thead><tr><th>เบอร์รถ</th><th>จำนวนลูกค้า</th><th>ยอด/เดือน</th><th>ภาระงาน(%)</th><th>โหลดสูงสุด/วัน</th><th>จุดจอดสูงสุด/วัน</th><th>ส่วนเกิน/วัน</th><th>สถานะ</th></tr></thead><tbody>'
 for _, row in diag.iterrows():
     is_over = "🔴 เกินเพดาน" in str(row['สถานะ'])
     is_warn = "🟡 ควรเลี่ยง" in str(row['สถานะ'])
     vol_cls = "text-danger" if is_over else ("text-primary" if not is_warn else "")
     status_color = "#DC2626" if is_over else ("#D97706" if is_warn else "#16A34A")
-    diag_html += f'<tr><td style="font-weight:700;">{row["เบอร์รถ"]}</td><td>{row["จำนวนลูกค้า"]:,}</td><td>{row["ยอด/เดือน"]:,}</td><td>{row["ภาระงาน(%)"]}%</td><td class="{vol_cls}">{row["โหลดสูงสุด/วัน"]:,}</td><td>{row["จุดจอดสูงสุด/วัน"]:,}</td><td style="color:{"#DC2626" if row["ส่วนเกิน/วัน"] > 0 else "#475569"}; font-weight:700;">{row["ส่วนเกิน/วัน"]:,}</td><td><span style="background:rgba(0,0,0,0.05); color:{status_color}; padding:4px 10px; border-radius:6px; font-weight:700;">{row["สถานะ"]}</span></td></tr>'
+    diag_html += f'<tr><td style="font-weight:700; color:#0F172A;">{row["เบอร์รถ"]}</td><td>{row["จำนวนลูกค้า"]:,}</td><td>{row["ยอด/เดือน"]:,}</td><td>{row["ภาระงาน(%)"]}%</td><td class="{vol_cls}">{row["โหลดสูงสุด/วัน"]:,}</td><td>{row["จุดจอดสูงสุด/วัน"]:,}</td><td style="color:{"#DC2626" if row["ส่วนเกิน/วัน"] > 0 else "#475569"}; font-weight:700;">{row["ส่วนเกิน/วัน"]:,}</td><td><span style="background:rgba(0,0,0,0.05); color:{status_color}; padding:4px 10px; border-radius:6px; font-weight:700;">{row["สถานะ"]}</span></td></tr>'
 diag_html += "</tbody></table></div>"
 st.markdown(diag_html, unsafe_allow_html=True)
 
@@ -1815,26 +1666,23 @@ if 'result' in st.session_state:
         components.html(m_after.get_root().render(), height=500)
 
     # ---------------------------------------------------------------------------------
-    # 📅 ตารางสรุปโหลดรายวัน (จันทร์-เสาร์) แบบ HTML คัสตอมสี
+    # 📅 ตารางสรุปโหลดรายวัน (จันทร์-เสาร์) แบบ HTML บรรทัดเดียวแก้บั๊ก Render
     # ---------------------------------------------------------------------------------
     st.markdown("---")
     section_header("📅 ตารางวิเคราะห์โหลดรายวัน (จันทร์ - เสาร์)")
 
-    # ฟังก์ชันช่วยจัดรูปแบบเซลล์โหลดรายวันให้เป็นสีแดงถ้าเกินเพดาน
     def format_load_cell(val: float, cap: float) -> str:
         rounded_val = int(round(val))
         if rounded_val > cap:
             return f'<td class="text-danger">{rounded_val:,}</td>'
         return f'<td class="text-primary">{rounded_val:,}</td>'
 
-    daily_html = f'<div class="custom-table-container"><table class="custom-table"><thead><tr><th>เบอร์รถ</th><th>จันทร์</th><th>อังคาร</th><th>พุธ</th><th>พฤหัสฯ</th><th>ศุกร์</th><th>เสาร์</th><th>โหลดสูงสุด (ถัง/วัน)</th><th>สถานะ</th></tr></thead><tbody>'
+    daily_html = '<div class="custom-table-container"><table class="custom-table"><thead><tr><th>เบอร์รถ</th><th>จันทร์</th><th>อังคาร</th><th>พุธ</th><th>พฤหัสฯ</th><th>ศุกร์</th><th>เสาร์</th><th>โหลดสูงสุด (ถัง/วัน)</th><th>สถานะ</th></tr></thead><tbody>'
     for t in active_trucks:
         d_vals = res.final_daily.get(t, np.zeros(WORKING_DAYS))
         peak_v = int(round(d_vals.max()))
         is_over = peak_v > cfg.daily_control_cap
-        
         status_badge = '<span style="background:rgba(0,0,0,0.05); color:#DC2626; padding:4px 10px; border-radius:6px; font-weight:700;">🔴 เกินเกณฑ์</span>' if is_over else '<span style="background:rgba(0,0,0,0.05); color:#16A34A; padding:4px 10px; border-radius:6px; font-weight:700;">🟢 ผ่านเกณฑ์</span>'
-
         daily_html += f'<tr><td style="font-weight:800; color:#0F172A;">{t}</td>{format_load_cell(d_vals[0], cfg.daily_control_cap)}{format_load_cell(d_vals[1], cfg.daily_control_cap)}{format_load_cell(d_vals[2], cfg.daily_control_cap)}{format_load_cell(d_vals[3], cfg.daily_control_cap)}{format_load_cell(d_vals[4], cfg.daily_control_cap)}{format_load_cell(d_vals[5], cfg.daily_control_cap)}<td style="font-weight:800; color:{"#DC2626" if is_over else "#0284C7"};">{peak_v:,}</td><td>{status_badge}</td></tr>'
     daily_html += "</tbody></table></div>"
     st.markdown(daily_html, unsafe_allow_html=True)
@@ -1851,4 +1699,4 @@ if 'result' in st.session_state:
     st.dataframe(rdf[final_cols].rename(columns={truck_col: "เบอร์รถเดิม"}), use_container_width=True)
 
     csv_data = rdf[final_cols].to_csv(index=False).encode('utf-8-sig')
-    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v3_5.csv', 'text/csv', use_container_width=True)
+    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v3_4.csv', 'text/csv', use_container_width=True)
