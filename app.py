@@ -1,6 +1,6 @@
 # =====================================================================================
 #  SMART ROUTE REBALANCER — PRODUCTION BUILD v3.5
-#  Multi-Donor Fleet Rebalancing + Interactive HTML Tables & Dynamic Scaled UI
+#  Multi-Donor Fleet Rebalancing + Flattened HTML Tables Fix
 #  ---------------------------------------------------------------------------------
 #  requirements.txt:
 #      streamlit>=1.31
@@ -1106,7 +1106,7 @@ if font_size_choice == "ก ใหญ่":
     h3_font = "20px"
     metric_val_font = "2.1rem"
     metric_lbl_font = "1.05rem"
-    small_font = "15px"
+    table_font = "16.5px"
 elif font_size_choice == "ก ใหญ่พิเศษ (+)":
     root_font = "20.5px"
     base_font = "20px"
@@ -1115,7 +1115,7 @@ elif font_size_choice == "ก ใหญ่พิเศษ (+)":
     h3_font = "23px"
     metric_val_font = "2.5rem"
     metric_lbl_font = "1.2rem"
-    small_font = "17.5px"
+    table_font = "19.5px"
 else:
     root_font = "15px"
     base_font = "15px"
@@ -1124,7 +1124,7 @@ else:
     h3_font = "17px"
     metric_val_font = "1.7rem"
     metric_lbl_font = "0.95rem"
-    small_font = "13.5px"
+    table_font = "14.5px"
 
 st.markdown(f'''
 <style>
@@ -1137,6 +1137,7 @@ html, body, [class*="css"], .stApp {{
     font-family: 'Sarabun', sans-serif !important;
 }}
 
+/* พื้นหลังหลักสีฟ้าครามสดชื่นของสปริงเคิล */
 .stApp {{
     background:
         radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.28) 0%, transparent 45%),
@@ -1146,6 +1147,7 @@ html, body, [class*="css"], .stApp {{
     background-attachment: fixed !important;
 }}
 
+/* เส้นแบ่งเขตสายตา */
 h1 {{
     font-size: {h1_font} !important;
     color: #FFD700 !important;
@@ -1245,11 +1247,13 @@ section.main div[data-baseweb="select"] > div {{
 section.main div[data-baseweb="select"] * {{
     color: #0F172A !important;
     font-size: {base_font} !important;
-    font-weight: 700 !important; /* หนาขึ้นเพื่อความชัดเจน */
+    font-weight: 700 !important;
 }}
 section.main div[data-baseweb="select"] svg {{
     fill: #0F172A !important;
 }}
+
+/* ดรอปดาวน์ Option */
 div[role="listbox"], ul[role="listbox"], div[data-baseweb="menu"], [data-baseweb="select-dropdown"] {{
     background: #FFFFFF !important;
     border: 1.5px solid #0284C7 !important;
@@ -1278,9 +1282,9 @@ div[role="option"][aria-selected="true"] * {{
     font-weight: 700 !important;
 }}
 
-/* ตารางข้อมูลทั่วไป (st.dataframe) */
+/* ตารางข้อมูล Streamlit แบบดั้งเดิม (st.dataframe) */
 .stDataFrame, .stDataFrame * {{
-    font-size: {base_font} !important;
+    font-size: {table_font} !important;
 }}
 .stDataFrame {{
     background: rgba(2, 45, 75, 0.65) !important;
@@ -1323,7 +1327,7 @@ div[role="option"][aria-selected="true"] * {{
     box-shadow: 0 4px 15px rgba(2,132,199,0.4);
 }}
 
-/* 🛑 ตาราง HTML วิเคราะห์โหลดรายวันที่จัดทำสีเฉพาะเซลล์ (Custom Table) */
+/* 🛑 ตาราง HTML วิเคราะห์โหลดรายวันแบบ Custom (เพื่อไฮไลต์สี) */
 .custom-table-container {{
     overflow-x: auto;
     background: #FFFFFF;
@@ -1336,7 +1340,7 @@ div[role="option"][aria-selected="true"] * {{
     width: 100%;
     border-collapse: collapse;
     font-family: 'Sarabun', sans-serif !important;
-    font-size: {base_font} !important;
+    font-size: {table_font} !important;
     text-align: center;
 }}
 .custom-table th {{
@@ -1421,7 +1425,7 @@ def show_loader(placeholder, msg: str):
 #  SECTION 9 — DATA IMPORT & MAPPING
 # =====================================================================================
 st.title("🚛 Smart Route Rebalancer — Production v3.5")
-st.markdown("<div style='background:rgba(2,45,75,0.6); display:inline-block; padding:5px 16px; border-radius:12px; border:1px solid rgba(56,189,248,0.3); font-weight:600; color:#E0F2FE; font-size:16px;'>ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Zero-Overlap Satellite Pocket Architecture)</div>", unsafe_allow_html=True)
+st.markdown(f"<div style='background:rgba(2,45,75,0.6); display:inline-block; padding:5px 16px; border-radius:12px; border:1px solid rgba(56,189,248,0.3); font-weight:600; color:#E0F2FE; font-size:{base_font};'>ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Zero-Overlap Satellite Pocket Architecture)</div>", unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล")
@@ -1536,43 +1540,14 @@ with d4:
     excess_status = "warning" if excess_total > 0 else "good"
     render_metric_card("ยอดส่วนเกินที่ต้องย้าย", f"{excess_total:,.0f} ถัง/เดือน", delta=f"≈ {math.ceil(excess_total/max(1.0,cap_units))} คันรถ", status=excess_status)
 
-# เปลี่ยนการแสดงผลตารางวินิจฉัยเดิมให้รองรับการไฮไลต์สี
-diag_html = f"""
-<div class="custom-table-container">
-    <table class="custom-table">
-        <thead>
-            <tr>
-                <th>เบอร์รถ</th>
-                <th>จำนวนลูกค้า</th>
-                <th>ยอด/เดือน</th>
-                <th>ภาระงาน(%)</th>
-                <th>โหลดสูงสุด/วัน</th>
-                <th>จุดจอดสูงสุด/วัน</th>
-                <th>ส่วนเกิน/วัน</th>
-                <th>สถานะ</th>
-            </tr>
-        </thead>
-        <tbody>
-"""
+# 🛑 ตารางผลวินิจฉัยก่อนปรับแบบ HTML (รองรับสีแดงตัวหนาถ้าเกินเพดาน)
+diag_html = f'<div class="custom-table-container"><table class="custom-table"><thead><tr><th>เบอร์รถ</th><th>จำนวนลูกค้า</th><th>ยอด/เดือน</th><th>ภาระงาน(%)</th><th>โหลดสูงสุด/วัน</th><th>จุดจอดสูงสุด/วัน</th><th>ส่วนเกิน/วัน</th><th>สถานะ</th></tr></thead><tbody>'
 for _, row in diag.iterrows():
     is_over = "🔴 เกินเพดาน" in str(row['สถานะ'])
     is_warn = "🟡 ควรเลี่ยง" in str(row['สถานะ'])
-    
     vol_cls = "text-danger" if is_over else ("text-primary" if not is_warn else "")
     status_color = "#DC2626" if is_over else ("#D97706" if is_warn else "#16A34A")
-
-    diag_html += f"""
-        <tr>
-            <td style="font-weight:700;">{row['เบอร์รถ']}</td>
-            <td>{row['จำนวนลูกค้า']:,}</td>
-            <td>{row['ยอด/เดือน']:,}</td>
-            <td>{row['ภาระงาน(%)']}%</td>
-            <td class="{vol_cls}">{row['โหลดสูงสุด/วัน']:,}</td>
-            <td>{row['จุดจอดสูงสุด/วัน']:,}</td>
-            <td style="color:{'#DC2626' if row['ส่วนเกิน/วัน'] > 0 else '#475569'}; font-weight:700;">{row['ส่วนเกิน/วัน']:,}</td>
-            <td><span style="background:rgba(0,0,0,0.05); color:{status_color}; padding:4px 10px; border-radius:6px; font-weight:700;">{row['สถานะ']}</span></td>
-        </tr>
-    """
+    diag_html += f'<tr><td style="font-weight:700;">{row["เบอร์รถ"]}</td><td>{row["จำนวนลูกค้า"]:,}</td><td>{row["ยอด/เดือน"]:,}</td><td>{row["ภาระงาน(%)"]}%</td><td class="{vol_cls}">{row["โหลดสูงสุด/วัน"]:,}</td><td>{row["จุดจอดสูงสุด/วัน"]:,}</td><td style="color:{"#DC2626" if row["ส่วนเกิน/วัน"] > 0 else "#475569"}; font-weight:700;">{row["ส่วนเกิน/วัน"]:,}</td><td><span style="background:rgba(0,0,0,0.05); color:{status_color}; padding:4px 10px; border-radius:6px; font-weight:700;">{row["สถานะ"]}</span></td></tr>'
 diag_html += "</tbody></table></div>"
 st.markdown(diag_html, unsafe_allow_html=True)
 
@@ -1852,24 +1827,7 @@ if 'result' in st.session_state:
             return f'<td class="text-danger">{rounded_val:,}</td>'
         return f'<td class="text-primary">{rounded_val:,}</td>'
 
-    daily_html = f"""
-    <div class="custom-table-container">
-        <table class="custom-table">
-            <thead>
-                <tr>
-                    <th>เบอร์รถ</th>
-                    <th>จันทร์</th>
-                    <th>อังคาร</th>
-                    <th>พุธ</th>
-                    <th>พฤหัสฯ</th>
-                    <th>ศุกร์</th>
-                    <th>เสาร์</th>
-                    <th>โหลดสูงสุด (ถัง/วัน)</th>
-                    <th>สถานะ</th>
-                </tr>
-            </thead>
-            <tbody>
-    """
+    daily_html = f'<div class="custom-table-container"><table class="custom-table"><thead><tr><th>เบอร์รถ</th><th>จันทร์</th><th>อังคาร</th><th>พุธ</th><th>พฤหัสฯ</th><th>ศุกร์</th><th>เสาร์</th><th>โหลดสูงสุด (ถัง/วัน)</th><th>สถานะ</th></tr></thead><tbody>'
     for t in active_trucks:
         d_vals = res.final_daily.get(t, np.zeros(WORKING_DAYS))
         peak_v = int(round(d_vals.max()))
@@ -1877,19 +1835,7 @@ if 'result' in st.session_state:
         
         status_badge = '<span style="background:rgba(0,0,0,0.05); color:#DC2626; padding:4px 10px; border-radius:6px; font-weight:700;">🔴 เกินเกณฑ์</span>' if is_over else '<span style="background:rgba(0,0,0,0.05); color:#16A34A; padding:4px 10px; border-radius:6px; font-weight:700;">🟢 ผ่านเกณฑ์</span>'
 
-        daily_html += f"""
-            <tr>
-                <td style="font-weight:800; color:#0F172A;">{t}</td>
-                {format_load_cell(d_vals[0], cfg.daily_control_cap)}
-                {format_load_cell(d_vals[1], cfg.daily_control_cap)}
-                {format_load_cell(d_vals[2], cfg.daily_control_cap)}
-                {format_load_cell(d_vals[3], cfg.daily_control_cap)}
-                {format_load_cell(d_vals[4], cfg.daily_control_cap)}
-                {format_load_cell(d_vals[5], cfg.daily_control_cap)}
-                <td style="font-weight:800; color:{'#DC2626' if is_over else '#0284C7'};">{peak_v:,}</td>
-                <td>{status_badge}</td>
-            </tr>
-        """
+        daily_html += f'<tr><td style="font-weight:800; color:#0F172A;">{t}</td>{format_load_cell(d_vals[0], cfg.daily_control_cap)}{format_load_cell(d_vals[1], cfg.daily_control_cap)}{format_load_cell(d_vals[2], cfg.daily_control_cap)}{format_load_cell(d_vals[3], cfg.daily_control_cap)}{format_load_cell(d_vals[4], cfg.daily_control_cap)}{format_load_cell(d_vals[5], cfg.daily_control_cap)}<td style="font-weight:800; color:{"#DC2626" if is_over else "#0284C7"};">{peak_v:,}</td><td>{status_badge}</td></tr>'
     daily_html += "</tbody></table></div>"
     st.markdown(daily_html, unsafe_allow_html=True)
 
