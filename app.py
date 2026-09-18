@@ -1,6 +1,6 @@
 # =====================================================================================
-#  SMART ROUTE REBALANCER — PRODUCTION BUILD v3.6
-#  Multi-Donor Fleet Rebalancing + Missing Variable Fix (Error-Free)
+#  SMART ROUTE REBALANCER — PRODUCTION BUILD v3.7
+#  Multi-Donor Fleet Rebalancing + Multi-Select Map Filter
 #  ---------------------------------------------------------------------------------
 #  requirements.txt:
 #      streamlit>=1.31
@@ -35,7 +35,7 @@ except Exception:
     HAS_SCIPY = False
 
 st.set_page_config(
-    page_title="Smart Route Rebalancer v3.6",
+    page_title="Smart Route Rebalancer v3.7",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -925,168 +925,7 @@ def calculate_peak_daily_loads(data: pd.DataFrame, truck_col: str, vol_col: str,
     return output
 
 # =====================================================================================
-#  SECTION 7 — MAIN ENGINE EXECUTION
-# =====================================================================================
-def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dict[str, float], dissolve_trucks: Sequence[str], relieve_trucks: Sequence[str], new_trucks: Sequence[str], manual_locks: Sequence[str], road_matrix_getter=None) -> ZoningResult:
-    warnings, infos = [], []
-    if df is None or df.empty:
-        raise ValueError("ไม่มีข้อมูลสำหรับประมวลผล")
-
-    opt = df.copy().reset_index(drop=True)
-    opt[cfg.lat_col] = pd.to_numeric(opt[cfg.lat_col], errors="coerce")
-    opt[cfg.lon_col] = pd.to_numeric(opt[cfg.lon_col], errors="coerce")
-    opt[cfg.vol_col] = pd.to_numeric(opt[cfg.vol_col], errors="coerce").fillna(0.0).clip(lower=0.0).astype(float)
-    opt[cfg.truck_col] = opt[cfg.truck_col].astype(str).str.strip()
-    opt[cfg.id_col] = opt[cfg.id_col].astype(str).str.strip()
-
-    valid_mask = opt[cfg.lat_col].notna() & opt[cfg.lon_col].notna() & (~opt[cfg.truck_col].str.lower().isin(NO_TRUCK_TOKENS))
-    opt = opt[valid_mask].reset_index(drop=True)
-
-    all_orig_trucks = clean_truck_ids(opt[cfg.truck_col].unique())
-    dissolve = [t for t in all_orig_trucks if t in set(dissolve_trucks)]
-    kept = [t for t in all_orig_trucks if t not in set(dissolve_trucks)]
-    norm_new = [t.strip() for t in new_trucks if t.strip() and t.strip() not in kept and t.strip().lower() not in NO_TRUCK_TOKENS]
-    norm_new = list(dict.fromkeys(norm_new))
-    active = kept + norm_new
-
-    if not active:
-        raise ValueError("ไม่เหลือรถที่สามารถรับการจัดสรรงานได้")
-
-    targets = {t: max(0.0, cfg.monthly_capacity * float(target_pcts.get(t, 0.0)) / 100.0) for t in active}
-    tolerance = {t: _tolerance_for(t, targets, cfg) for t in active}
-
-    locked_ids = {str(v).strip() for v in manual_locks if str(v).strip()}
-    vip_status = opt["VIP_Status"].astype(str).str.upper().str.strip() if "VIP_Status" in opt.columns else pd.Series(["ปกติ"] * len(opt))
-    opt["is_vip_locked"] = vip_status.eq("VIP") | opt[cfg.id_col].isin(locked_ids)
-    opt["สถานะการย้ายวัน"] = "-"
-    opt["coord_key"] = opt[cfg.lat_col].round(5).astype(str) + "," + opt[cfg.lon_col].round(5).astype(str)
-
-    px, py, lat_ref = project_xy(opt[cfg.lat_col].to_numpy(dtype=float), opt[cfg.lon_col].to_numpy(dtype=float))
-    opt["x"], opt["y"] = px, py
-    stops = build_stops(opt, cfg)
-
-    vol_by_orig = stops.groupby("orig_truck")["total_vol"].sum().to_dict()
-    ratio_override = {}
-    for t in relieve_trucks:
-        c_vol = float(vol_by_orig.get(t, 0.0))
-        if c_vol > 0 and t in targets:
-            ratio_override[t] = max(0.0, min(100.0, targets[t] / c_vol * 100.0 * 0.92))
-
-    core_eligible = [t for t in kept if t not in set(dissolve)]
-    seeds: Dict[str, Tuple[float, float]] = {}
-    for t in kept:
-        grp = stops[stops["orig_truck"] == t]
-        if not grp.empty:
-            w = np.maximum(grp["total_vol"].to_numpy(dtype=float), 1e-9)
-            seeds[t] = (float(np.average(grp["x"], weights=w)), float(np.average(grp["y"], weights=w)))
-
-    gw = np.maximum(stops["total_vol"].to_numpy(dtype=float), 1e-9)
-    gx, gy = float(np.average(stops["x"], weights=gw)), float(np.average(stops["y"], weights=gw))
-
-    if norm_new:
-        init_cores = compute_core_keys(stops, cfg.core_ratio, core_eligible, ratio_override)
-        spool = stops[~stops["coord_key"].isin(init_cores)]
-        if spool.empty:
-            spool = stops
-        new_centers = kmeans_seeds(spool[["x", "y"]].to_numpy(dtype=float), spool["total_vol"].to_numpy(dtype=float), len(norm_new))
-        if len(new_centers) == 0:
-            new_centers = np.asarray([[gx, gy]], dtype=float)
-        for idx, t in enumerate(norm_new):
-            c_idx = min(idx, len(new_centers) - 1)
-            seeds[t] = (float(new_centers[c_idx, 0]), float(new_centers[c_idx, 1]))
-
-    def run_single_pass(core_ratio: float):
-        c_stops = stops.copy()
-        c_keys = compute_core_keys(c_stops, core_ratio, core_eligible, ratio_override)
-        c_stops["is_core_locked"] = c_stops["coord_key"].isin(c_keys)
-        c_stops["is_locked"] = c_stops["has_vip_lock"].astype(bool) | c_stops["is_core_locked"].astype(bool)
-        c_stops["assigned_truck"] = None
-
-        for s_idx, row in c_stops.iterrows():
-            ot = str(row["orig_truck"]).strip()
-            if bool(row["is_locked"]) and ot in active:
-                c_stops.at[s_idx, "assigned_truck"] = ot
-
-        assignment, pass_loads = _assign_capacitated(c_stops, active, targets, tolerance, seeds, None)
-        c_stops["assigned_truck"] = [active[ti] if ti >= 0 else OVERFLOW_LABEL for ti in assignment]
-        c_stops.loc[c_stops["is_locked"] & (~c_stops["orig_truck"].isin(active)), "is_locked"] = False
-        return c_stops, pass_loads
-
-    cur_ratio = max(0.0, min(100.0, float(cfg.core_ratio)))
-    min_ratio = max(0.0, min(cur_ratio, float(cfg.core_floor)))
-    c_step = max(1.0, float(cfg.core_step))
-    best_result = None
-
-    while True:
-        c_stops, c_loads = run_single_pass(cur_ratio)
-        tot_viol = sum(max(0.0, abs(c_loads.get(t, 0.0) - targets.get(t, 0.0)) - tolerance.get(t, 0.0)) for t in active if targets.get(t, 0.0) > 0)
-        over_v = float(c_stops.loc[c_stops["assigned_truck"] == OVERFLOW_LABEL, "total_vol"].sum())
-        score = tot_viol + over_v * 2.0
-
-        if best_result is None or score < best_result[3]:
-            best_result = (c_stops, c_loads, cur_ratio, score)
-        if score <= 1e-6 or cur_ratio <= min_ratio:
-            break
-        cur_ratio = max(min_ratio, cur_ratio - c_step)
-
-    assigned_stops, loads, ratio_used, _ = best_result
-
-    assigned_stops, loads = consolidate_satellite_pockets(assigned_stops, active, targets, loads, tolerance, pocket_radius_m=450.0)
-
-    if cfg.enable_stray_cleanup:
-        assigned_stops, loads = cleanup_stray_points(assigned_stops, active, targets, loads, tolerance, cfg.polish_tol_multiplier)
-    if cfg.enable_majority_vote:
-        assigned_stops, loads = majority_vote_smoothing(assigned_stops, active, targets, loads, tolerance, cfg)
-    if cfg.enable_swap:
-        assigned_stops, loads = swap_improve(assigned_stops, active, targets, loads, tolerance, cfg.swap_rounds)
-
-    assigned_stops, loads = consolidate_satellite_pockets(assigned_stops, active, targets, loads, tolerance, pocket_radius_m=450.0)
-
-    truck_mapping = dict(zip(assigned_stops["coord_key"], assigned_stops["assigned_truck"]))
-    core_mapping = dict(zip(assigned_stops["coord_key"], assigned_stops["is_core_locked"]))
-
-    opt["เบอร์รถใหม่"] = opt["coord_key"].map(truck_mapping).fillna(OVERFLOW_LABEL).astype(str)
-    opt["is_core_locked"] = opt["coord_key"].map(core_mapping).fillna(False).astype(bool)
-    opt["is_locked"] = opt["is_vip_locked"].astype(bool) | opt["is_core_locked"].astype(bool)
-
-    orig_s = opt[cfg.truck_col].astype(str).str.strip()
-    new_s = opt["เบอร์รถใหม่"].astype(str).str.strip()
-    same_m = orig_s == new_s
-
-    opt["สถานะ"] = np.where(same_m, "คงเดิม", "ย้ายไปสาย " + new_s)
-    opt.loc[opt["is_locked"] & same_m, "สถานะ"] = "คงเดิม 🔒"
-
-    opt, daily_matrix, daily_stops_matrix, final_daily = smooth_daily_loads(opt, cfg, active)
-
-    comp_before = [compute_compactness(grp) for _, grp in opt.groupby(cfg.truck_col)]
-    comp_after = [compute_compactness(grp) for t, grp in opt.groupby("เบอร์รถใหม่") if t != OVERFLOW_LABEL]
-    peak_before = calculate_peak_daily_loads(opt, cfg.truck_col, cfg.vol_col, cfg.day_col)
-    peak_after = {t: float(v.max()) for t, v in final_daily.items()}
-    moved_m = orig_s != new_s
-
-    metrics = {
-        "compact_before_km": float(np.mean(comp_before)) / 1000.0 if comp_before else 0.0,
-        "compact_after_km": float(np.mean(comp_after)) / 1000.0 if comp_after else 0.0,
-        "over_before": int(sum(1 for v in peak_before.values() if v > cfg.daily_control_cap)),
-        "over_after": int(sum(1 for v in peak_after.values() if v > cfg.daily_control_cap)),
-        "peak_before": max(peak_before.values()) if peak_before else 0.0,
-        "peak_after": max(peak_after.values()) if peak_after else 0.0,
-        "moved_cust": int(moved_m.sum()),
-        "moved_pct": float(moved_m.sum()) / max(1, len(opt)) * 100.0,
-        "moved_vol": float(opt.loc[moved_m, cfg.vol_col].sum()),
-        "std_before": float(np.std(list(peak_before.values()))) if peak_before else 0.0,
-        "std_after": float(np.std(list(peak_after.values()))) if peak_after else 0.0,
-    }
-
-    return ZoningResult(
-        result_df=opt, stops_df=assigned_stops, daily_matrix=daily_matrix,
-        daily_stops=daily_stops_matrix, final_daily=final_daily,
-        targets=targets, loads=loads, core_ratio_used=float(ratio_used),
-        metrics=metrics, warnings=warnings, infos=infos
-    )
-
-# =====================================================================================
-#  SECTION 8 — DYNAMIC FONT SCALING, THEME & UI HELPERS (DEFINED FIRST TO AVOID NAMEERROR)
+#  SECTION 7 — DYNAMIC FONT SCALING, THEME & UI HELPERS (DEFINED FIRST TO AVOID NAMEERROR)
 # =====================================================================================
 
 st.sidebar.markdown("### 🔤 ขนาดอักษร:")
@@ -1249,7 +1088,7 @@ section.main .stCaption, section.main [data-testid="stCaptionContainer"] p {{
     font-size: calc({base_font} * 0.9) !important;
 }}
 
-/* กล่องเลือกสายรถบนหน้าจอหลัก */
+/* 🛑 กล่อง Multiselect บนหน้าจอหลัก */
 section.main div[data-baseweb="select"] > div {{
     background: #FFFFFF !important;
     border: 2px solid #0284C7 !important;
@@ -1264,6 +1103,18 @@ section.main div[data-baseweb="select"] * {{
 }}
 section.main div[data-baseweb="select"] svg {{
     fill: #0F172A !important;
+}}
+
+/* ป้ายกำกับ (Tag) ของ Multiselect */
+span[data-baseweb="tag"] {{
+    background-color: #E0F2FE !important;
+    color: #0284C7 !important;
+    border: 1px solid #38BDF8 !important;
+    font-weight: 700 !important;
+    border-radius: 6px !important;
+}}
+span[data-baseweb="tag"] * {{
+    color: #0284C7 !important;
 }}
 
 /* ดรอปดาวน์ Option */
@@ -1426,7 +1277,7 @@ def show_loader(placeholder, msg: str):
 # =====================================================================================
 #  SECTION 9 — DATA IMPORT & MAPPING
 # =====================================================================================
-st.title("🚛 Smart Route Rebalancer — Production v3.4")
+st.title("🚛 Smart Route Rebalancer — Production v3.7")
 st.markdown(f"<div style='background:rgba(2,45,75,0.6); display:inline-block; padding:5px 16px; border-radius:12px; border:1px solid rgba(56,189,248,0.3); font-weight:600; color:#E0F2FE; font-size:{base_font};'>ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Zero-Overlap Satellite Pocket Architecture)</div>", unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
@@ -1684,7 +1535,7 @@ if 'result' in st.session_state:
         st.warning(f"⚠️ {w}")
 
     # ---------------------------------------------------------------------------------
-    # 🗺️ EXECUTIVE COMPARISON MAPS (BEFORE VS. AFTER — NO WATERMARK)
+    # 🗺️ EXECUTIVE COMPARISON MAPS (BEFORE VS. AFTER)
     # ---------------------------------------------------------------------------------
     st.markdown("---")
     section_header("🗺️ แผนที่เปรียบเทียบเชิงพื้นที่ (Before vs. After Comparison)", "คลิกที่หมุดแต่ละจุดเพื่อดูรหัสสมาชิก, ชื่อลูกค้า, ยอดรับน้ำเฉลี่ย และการเปลี่ยนสายส่ง (เวิ้งโดดเดี่ยวถูกรวมเป็นคันเดียว)")
@@ -1709,8 +1560,13 @@ if 'result' in st.session_state:
 
     col_filter1, col_filter2 = st.columns([2, 3])
     with col_filter1:
-        map_view_opts = ["แสดงรถทั้งหมด (แยกสีตามเบอร์รถ)"] + active_trucks
-        selected_truck_view = st.selectbox("🔍 เลือกรถที่ต้องการตรวจสอบเป็นพิเศษ:", options=map_view_opts)
+        # เปลี่ยนเป็น st.multiselect เพื่อให้เลือกหลายคันพร้อมกันได้
+        selected_trucks_view = st.multiselect(
+            "🔍 เลือกรถที่ต้องการตรวจสอบ (เลือกได้หลายคัน / ปล่อยว่างเพื่อดูทั้งหมด):",
+            options=all_truck_keys,
+            default=[],
+            placeholder="แสดงรถทั้งหมด (คลิกเพื่อเลือกเบอร์รถ)"
+        )
     
     with col_filter2:
         legend_badges_html = "".join([
@@ -1720,12 +1576,13 @@ if 'result' in st.session_state:
         legend_html = f'<div style="background:#FFFFFF; border-radius:10px; padding:8px 14px; border:1.5px solid #0284C7; box-shadow:0 2px 8px rgba(0,0,0,0.1); display:flex; flex-wrap:wrap; align-items:center; margin-top:28px;"><span style="font-size:{base_font}; font-weight:800; color:#0F172A; margin-right:8px;">สีสายรถ:</span>{legend_badges_html}</div>'
         st.markdown(legend_html, unsafe_allow_html=True)
 
-    if selected_truck_view == "แสดงรถทั้งหมด (แยกสีตามเบอร์รถ)":
+    # กรองข้อมูลตามที่เลือก (ถ้าปล่อยว่างแสดงทั้งหมด)
+    if not selected_trucks_view:
         display_df_before = df
         display_df_after = rdf[rdf['เบอร์รถใหม่'] != OVERFLOW_LABEL]
     else:
-        display_df_before = df[df[truck_col] == selected_truck_view]
-        display_df_after = rdf[rdf['เบอร์รถใหม่'] == selected_truck_view]
+        display_df_before = df[df[truck_col].isin(selected_trucks_view)]
+        display_df_after = rdf[rdf['เบอร์รถใหม่'].isin(selected_trucks_view)]
 
     center_lat = float(rdf[lat_col].mean()) if not rdf.empty else 13.7563
     center_lon = float(rdf[lon_col].mean()) if not rdf.empty else 100.5018
@@ -1850,4 +1707,4 @@ if 'result' in st.session_state:
     st.dataframe(rdf[final_cols].rename(columns={truck_col: "เบอร์รถเดิม"}), use_container_width=True)
 
     csv_data = rdf[final_cols].to_csv(index=False).encode('utf-8-sig')
-    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v3_4.csv', 'text/csv', use_container_width=True)
+    st.download_button("📥 ดาวน์โหลดผลการจัดสายส่งฉบับสมบูรณ์ (CSV เพื่อเปิดใน Excel)", csv_data, 'sprinkle_rebalance_v3_7.csv', 'text/csv', use_container_width=True)
