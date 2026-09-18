@@ -1,6 +1,6 @@
 # =====================================================================================
-#  SMART ROUTE REBALANCER — PRODUCTION BUILD v3.5
-#  Multi-Donor Fleet Rebalancing + Enlarged Map View Fix
+#  SMART ROUTE REBALANCER — PRODUCTION BUILD v3.6
+#  Multi-Donor Fleet Rebalancing + Missing Variable Fix (Error-Free)
 #  ---------------------------------------------------------------------------------
 #  requirements.txt:
 #      streamlit>=1.31
@@ -35,7 +35,7 @@ except Exception:
     HAS_SCIPY = False
 
 st.set_page_config(
-    page_title="Smart Route Rebalancer v3.5",
+    page_title="Smart Route Rebalancer v3.6",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -925,330 +925,7 @@ def calculate_peak_daily_loads(data: pd.DataFrame, truck_col: str, vol_col: str,
     return output
 
 # =====================================================================================
-#  SECTION 7 — DYNAMIC FONT SCALING & HIGH-CONTRAST THEME
-# =====================================================================================
-st.sidebar.markdown("### 🔤 ขนาดอักษร:")
-font_size_choice = st.sidebar.radio(
-    "เลือกขนาดตัวอักษรของระบบ:",
-    options=["ก ปกติ", "ก ใหญ่", "ก ใหญ่พิเศษ (+)"],
-    index=0,
-    horizontal=True,
-    label_visibility="collapsed"
-)
-
-if font_size_choice == "ก ใหญ่":
-    root_font = "17.5px"
-    base_font = "17px"
-    h1_font = "30px"
-    h2_font = "24px"
-    h3_font = "20px"
-    metric_val_font = "2.1rem"
-    metric_lbl_font = "1.05rem"
-    table_font = "16.5px"
-elif font_size_choice == "ก ใหญ่พิเศษ (+)":
-    root_font = "20.5px"
-    base_font = "20px"
-    h1_font = "34px"
-    h2_font = "28px"
-    h3_font = "23px"
-    metric_val_font = "2.5rem"
-    metric_lbl_font = "1.2rem"
-    table_font = "19.5px"
-else:
-    root_font = "15px"
-    base_font = "15px"
-    h1_font = "26px"
-    h2_font = "20px"
-    h3_font = "17px"
-    metric_val_font = "1.7rem"
-    metric_lbl_font = "0.95rem"
-    table_font = "14.5px"
-
-st.markdown(f'''
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
-
-html {{
-    font-size: {root_font} !important;
-}}
-html, body, [class*="css"], .stApp {{
-    font-family: 'Sarabun', sans-serif !important;
-}}
-
-/* พื้นหลังหลักสีฟ้าครามสดชื่นของสปริงเคิล */
-.stApp {{
-    background:
-        radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.28) 0%, transparent 45%),
-        radial-gradient(circle at 85% 25%, rgba(14, 165, 233, 0.22) 0%, transparent 45%),
-        radial-gradient(circle at 50% 85%, rgba(2, 132, 199, 0.35) 0%, transparent 55%),
-        linear-gradient(135deg, #033B60 0%, #02598B 35%, #0277B5 70%, #0284C7 100%) !important;
-    background-attachment: fixed !important;
-}}
-
-/* เส้นแบ่งเขตสายตา */
-h1 {{
-    font-size: {h1_font} !important;
-    color: #FFD700 !important;
-    font-weight: 700 !important;
-    text-shadow: 0 2px 5px rgba(0,25,50,0.8);
-}}
-
-/* -------------------------------------------------------------
-   🔒 คืนค่าแถบเมนูด้านซ้าย (SIDEBAR) ล็อกสไตล์เดิม 100%
-   ------------------------------------------------------------- */
-[data-testid="stSidebar"] {{
-    background: rgba(0, 13, 26, 0.65) !important;
-    backdrop-filter: blur(25px);
-    border-right: 1px solid rgba(255,255,255,0.15) !important;
-}}
-[data-testid="stSidebar"] * {{
-    color: #FFFFFF !important;
-    text-shadow: none !important;
-    font-size: {base_font} !important;
-}}
-[data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown p {{
-    color: #F3E5AB !important;
-    font-weight: 600 !important;
-}}
-[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {{
-    color: #FFD700 !important;
-    border-bottom: 1px solid rgba(212,175,55,0.3) !important;
-    padding-bottom: 8px !important;
-    background: transparent !important;
-    border-left: none !important;
-    box-shadow: none !important;
-    border-top: none !important;
-    border-right: none !important;
-}}
-[data-testid="stSidebar"] input,
-[data-testid="stSidebar"] textarea,
-[data-testid="stSidebar"] div[data-baseweb="select"] > div {{
-    background: rgba(0, 30, 60, 0.5) !important;
-    backdrop-filter: blur(12px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.25) !important;
-    color: #FFFFFF !important;
-    border-radius: 10px !important;
-    font-weight: 500 !important;
-    box-shadow: none !important;
-}}
-[data-testid="stSidebar"] input::placeholder,
-[data-testid="stSidebar"] textarea::placeholder {{
-    color: #CBD5E1 !important;
-    opacity: 0.8 !important;
-}}
-[data-testid="stSidebar"] div[data-baseweb="select"] * {{
-    color: #FFFFFF !important;
-}}
-[data-testid="stSidebar"] div[data-baseweb="select"] svg {{
-    fill: #FFFFFF !important;
-}}
-
-/* Segmented Control ปุ่มปรับขนาดฟอนต์ใน Sidebar */
-[data-testid="stSidebar"] div[data-testid="stRadio"] > div {{
-    flex-direction: row !important;
-    background: rgba(0, 24, 48, 0.75) !important;
-    padding: 3px 5px !important;
-    border-radius: 10px !important;
-    border: 1px solid rgba(255, 255, 255, 0.2) !important;
-    gap: 3px !important;
-}}
-[data-testid="stSidebar"] div[data-testid="stRadio"] label {{
-    background: transparent !important;
-    border-radius: 6px !important;
-    padding: 4px 8px !important;
-    margin: 0 !important;
-    cursor: pointer !important;
-}}
-[data-testid="stSidebar"] div[data-testid="stRadio"] label:has(input:checked) {{
-    background: #0284C7 !important;
-    color: #FFFFFF !important;
-    font-weight: 700 !important;
-}}
-[data-testid="stSidebar"] div[data-testid="stRadio"] label:has(input:checked) * {{
-    color: #FFFFFF !important;
-}}
-[data-testid="stSidebar"] div[data-testid="stRadio"] label:not(:has(input:checked)) * {{
-    color: #E2E8F0 !important;
-}}
-[data-testid="stSidebar"] div[data-testid="stRadio"] input[type="radio"] {{
-    display: none !important;
-}}
-
-/* 🛑 กล่องเลือกสายรถบนหน้าจอหลัก (Selectbox / Dropdown) */
-section.main div[data-baseweb="select"] > div {{
-    background: #FFFFFF !important;
-    border: 2px solid #0284C7 !important;
-    border-radius: 10px !important;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
-    padding: 2px !important;
-}}
-section.main div[data-baseweb="select"] * {{
-    color: #0F172A !important;
-    font-size: {base_font} !important;
-    font-weight: 700 !important; /* หนาขึ้นเพื่อความชัดเจน */
-}}
-section.main div[data-baseweb="select"] svg {{
-    fill: #0F172A !important;
-}}
-
-/* ดรอปดาวน์ Option */
-div[role="listbox"], ul[role="listbox"], div[data-baseweb="menu"], [data-baseweb="select-dropdown"] {{
-    background: #FFFFFF !important;
-    border: 1.5px solid #0284C7 !important;
-    border-radius: 12px !important;
-    box-shadow: 0 12px 32px rgba(0,0,0,0.35) !important;
-}}
-div[role="option"], ul[role="listbox"] > li {{
-    color: #0F172A !important;
-    font-size: {base_font} !important;
-    font-weight: 600 !important;
-    padding: 10px 16px !important;
-    border-bottom: 1px solid #E2E8F0 !important;
-}}
-div[role="option"] *, ul[role="listbox"] > li * {{
-    color: #0F172A !important;
-    font-size: {base_font} !important;
-}}
-div[role="option"]:hover {{
-    background: #E0F2FE !important;
-}}
-div[role="option"][aria-selected="true"] {{
-    background: #38BDF8 !important;
-}}
-div[role="option"][aria-selected="true"] * {{
-    color: #002D62 !important;
-    font-weight: 700 !important;
-}}
-
-/* ตารางข้อมูลทั่วไป (st.dataframe) */
-.stDataFrame, .stDataFrame * {{
-    font-size: {table_font} !important;
-}}
-.stDataFrame {{
-    background: rgba(2, 45, 75, 0.65) !important;
-    backdrop-filter: blur(20px);
-    padding: 1rem;
-    border-radius: 16px;
-    border: 1.5px solid rgba(255,255,255,0.3) !important;
-    border-top: 4px solid #38BDF8 !important;
-    box-shadow: 0 8px 25px rgba(0,20,45,0.35);
-}}
-.stDataFrame td, .stDataFrame th, .stDataFrame div {{
-    color: #0F172A !important;
-    font-weight: 500 !important;
-}}
-
-.stButton>button {{
-    background: linear-gradient(135deg, #D4AF37 0%, #AA8C2C 100%) !important;
-    color: #000B18 !important;
-    border: none !important;
-    border-radius: 10px;
-    font-size: {base_font} !important;
-    font-weight: 700;
-    padding: .6rem 1.4rem;
-    width: 100%;
-    box-shadow: 0 4px 15px rgba(212,175,55,0.4);
-    transition: all .3s;
-}}
-.stButton>button:hover {{
-    background: linear-gradient(135deg, #F3E5AB 0%, #D4AF37 100%) !important;
-    box-shadow: 0 6px 20px rgba(255,215,0,0.6);
-    transform: translateY(-2px);
-}}
-[data-testid="stDownloadButton"] > button {{
-    background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%) !important;
-    color: #FFF !important;
-    font-size: {base_font} !important;
-    border-radius: 10px !important;
-    padding: .8rem 2rem;
-    font-weight: 700;
-    box-shadow: 0 4px 15px rgba(2,132,199,0.4);
-}}
-
-/* 🛑 ตาราง HTML วิเคราะห์โหลดรายวันที่จัดทำสีเฉพาะเซลล์ (Custom Table) */
-.custom-table-container {{
-    overflow-x: auto;
-    background: #FFFFFF;
-    border-radius: 12px;
-    border: 1.5px solid #0284C7;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-    margin-bottom: 20px;
-}}
-.custom-table {{
-    width: 100%;
-    border-collapse: collapse;
-    font-family: 'Sarabun', sans-serif !important;
-    font-size: {table_font} !important;
-    text-align: center;
-}}
-.custom-table th {{
-    background: #F1F5F9;
-    color: #0F172A;
-    font-weight: 700;
-    padding: 12px 10px;
-    border-bottom: 2px solid #CBD5E1;
-}}
-.custom-table td {{
-    padding: 10px;
-    border-bottom: 1px solid #E2E8F0;
-    color: #1E293B;
-    font-weight: 500;
-}}
-.custom-table tr:hover td {{
-    background: #F8FAFC;
-}}
-.text-danger {{
-    color: #DC2626 !important;
-    font-weight: 800 !important;
-}}
-.text-primary {{
-    color: #0284C7 !important;
-    font-weight: 700 !important;
-}}
-</style>
-''', unsafe_allow_html=True)
-
-# 🛑 ฟังก์ชันเรนเดอร์การ์ดสถิติด้วยการตัด newline/indent ออก เพื่อไม่ให้ Markdown แปลงเป็น Code block
-def render_metric_card(label: str, value: str, delta: str = "", status: str = "normal"):
-    color_map = {"good": "#16A34A", "warning": "#D97706", "danger": "#DC2626", "normal": "#0284C7"}
-    val_color = color_map.get(status, "#0284C7")
-    delta_html = ""
-    if delta:
-        d_str = str(delta).strip()
-        if d_str.startswith("-") or "-" in d_str:
-            d_bg, d_color, d_border = "#FEE2E2", "#DC2626", "#FCA5A5"
-        elif status == "danger":
-            d_bg, d_color, d_border = "#FEE2E2", "#DC2626", "#FCA5A5"
-        elif status == "warning":
-            d_bg, d_color, d_border = "#FEF3C7", "#D97706", "#FCD34D"
-        elif status == "good":
-            d_bg, d_color, d_border = "#DCFCE7", "#16A34A", "#86EFAC"
-        else:
-            d_bg, d_color, d_border = "#E0F2FE", "#0369A1", "#BAE6FD"
-        delta_html = f'<div style="margin-top: 6px;"><span style="background:{d_bg}; color:{d_color}; border:1px solid {d_border}; padding:3px 10px; border-radius:6px; font-weight:700; font-size:calc({base_font} * 0.88); display:inline-block;">{delta}</span></div>'
-    card_html = f'<div style="background:#FFFFFF; border-radius:14px; padding:16px 20px; border:2px solid #38BDF8; border-top:6px solid {val_color}; box-shadow:0 8px 24px rgba(0,15,35,0.25); min-height:115px; margin-bottom:12px;"><div style="color:#1E293B; font-size:{metric_lbl_font}; font-weight:700; margin-bottom:4px;">{label}</div><div style="color:{val_color}; font-size:{metric_val_font}; font-weight:800; line-height:1.2;">{value}</div>{delta_html}</div>'
-    st.markdown(card_html, unsafe_allow_html=True)
-
-def section_header(title: str, subtitle: str = ""):
-    sub_html = f"<div style='font-size:{small_font}; color:#475569; font-weight:600; margin-top:3px;'>{subtitle}</div>" if subtitle else ""
-    header_html = f'<div style="background:#FFFFFF; border-radius:12px; padding:12px 20px; margin-top:24px; margin-bottom:14px; border-left:6px solid #FFD700; border:1.5px solid #CBD5E1; box-shadow:0 4px 14px rgba(0,15,35,0.15);"><div style="font-size:{h2_font}; font-weight:800; color:#024D7B; line-height:1.3;">{title}</div>{sub_html}</div>'
-    st.markdown(header_html, unsafe_allow_html=True)
-
-def reset_results():
-    for k in ('result', 'zoning_cfg_used'):
-        st.session_state.pop(k, None)
-
-def show_loader(placeholder, msg: str):
-    try:
-        with open("truck.jpg", "rb") as f:
-            b64 = base64.b64encode(f.read()).decode()
-        html = f'<div style="text-align:center; padding:2rem; color:#FFD700; font-weight:bold; font-size:{h3_font}; border-radius:16px; background:rgba(2,54,88,0.85); backdrop-filter:blur(20px); border:1.5px solid rgba(56,189,248,0.4);"><img src="data:image/jpeg;base64,{b64}" style="width:140px; margin-bottom:10px;"><br>{msg}</div>'
-    except FileNotFoundError:
-        html = f'<div style="text-align:center; padding:2rem; color:#FFD700; font-weight:bold; font-size:{h3_font}; border-radius:16px; background:rgba(2,54,88,0.85);">{msg}</div>'
-    placeholder.markdown(html, unsafe_allow_html=True)
-
-# =====================================================================================
-#  SECTION 8 — MAIN ENGINE EXECUTION
+#  SECTION 7 — MAIN ENGINE EXECUTION
 # =====================================================================================
 def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dict[str, float], dissolve_trucks: Sequence[str], relieve_trucks: Sequence[str], new_trucks: Sequence[str], manual_locks: Sequence[str], road_matrix_getter=None) -> ZoningResult:
     warnings, infos = [], []
@@ -1409,7 +1086,345 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
     )
 
 # =====================================================================================
-#  SECTION 9 — DATA IMPORT & MAPPING UI
+#  SECTION 8 — DYNAMIC FONT SCALING, THEME & UI HELPERS (DEFINED FIRST TO AVOID NAMEERROR)
+# =====================================================================================
+
+st.sidebar.markdown("### 🔤 ขนาดอักษร:")
+font_size_choice = st.sidebar.radio(
+    "เลือกขนาดตัวอักษรของระบบ:",
+    options=["ก ปกติ", "ก ใหญ่", "ก ใหญ่พิเศษ (+)"],
+    index=0,
+    horizontal=True,
+    label_visibility="collapsed"
+)
+
+if font_size_choice == "ก ใหญ่":
+    root_font = "17.5px"
+    base_font = "17px"
+    h1_font = "30px"
+    h2_font = "24px"
+    h3_font = "20px"
+    metric_val_font = "2.1rem"
+    metric_lbl_font = "1.05rem"
+    table_font = "16.5px"
+    small_font = "15px"
+elif font_size_choice == "ก ใหญ่พิเศษ (+)":
+    root_font = "20.5px"
+    base_font = "20px"
+    h1_font = "34px"
+    h2_font = "28px"
+    h3_font = "23px"
+    metric_val_font = "2.5rem"
+    metric_lbl_font = "1.2rem"
+    table_font = "19.5px"
+    small_font = "17.5px"
+else:
+    root_font = "15px"
+    base_font = "15px"
+    h1_font = "26px"
+    h2_font = "20px"
+    h3_font = "17px"
+    metric_val_font = "1.7rem"
+    metric_lbl_font = "0.95rem"
+    table_font = "14.5px"
+    small_font = "13.5px"
+
+st.markdown(f'''
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
+
+html {{
+    font-size: {root_font} !important;
+}}
+html, body, [class*="css"], .stApp {{
+    font-family: 'Sarabun', sans-serif !important;
+}}
+
+.stApp {{
+    background:
+        radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.28) 0%, transparent 45%),
+        radial-gradient(circle at 85% 25%, rgba(14, 165, 233, 0.22) 0%, transparent 45%),
+        radial-gradient(circle at 50% 85%, rgba(2, 132, 199, 0.35) 0%, transparent 55%),
+        linear-gradient(135deg, #033B60 0%, #02598B 35%, #0277B5 70%, #0284C7 100%) !important;
+    background-attachment: fixed !important;
+}}
+
+/* -------------------------------------------------------------
+   🔒 แถบเมนูด้านซ้าย (SIDEBAR) ล็อกสไตล์กระจกมืด
+   ------------------------------------------------------------- */
+[data-testid="stSidebar"] {{
+    background: rgba(0, 13, 26, 0.65) !important;
+    backdrop-filter: blur(25px);
+    border-right: 1px solid rgba(255,255,255,0.15) !important;
+}}
+[data-testid="stSidebar"] * {{
+    color: #FFFFFF !important;
+    text-shadow: none !important;
+    font-size: {base_font} !important;
+}}
+[data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown p {{
+    color: #F3E5AB !important;
+    font-weight: 600 !important;
+}}
+[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {{
+    color: #FFD700 !important;
+    border-bottom: 1px solid rgba(212,175,55,0.3) !important;
+    padding-bottom: 8px !important;
+    background: transparent !important;
+    border-left: none !important;
+    box-shadow: none !important;
+    border-top: none !important;
+    border-right: none !important;
+}}
+[data-testid="stSidebar"] input,
+[data-testid="stSidebar"] textarea,
+[data-testid="stSidebar"] div[data-baseweb="select"] > div {{
+    background: rgba(0, 30, 60, 0.5) !important;
+    backdrop-filter: blur(12px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    color: #FFFFFF !important;
+    border-radius: 10px !important;
+    font-weight: 500 !important;
+    box-shadow: none !important;
+}}
+[data-testid="stSidebar"] input::placeholder,
+[data-testid="stSidebar"] textarea::placeholder {{
+    color: #CBD5E1 !important;
+    opacity: 0.8 !important;
+}}
+[data-testid="stSidebar"] div[data-baseweb="select"] * {{
+    color: #FFFFFF !important;
+}}
+[data-testid="stSidebar"] div[data-baseweb="select"] svg {{
+    fill: #FFFFFF !important;
+}}
+
+/* Segmented Control ปุ่มปรับขนาดฟอนต์ใน Sidebar */
+[data-testid="stSidebar"] div[data-testid="stRadio"] > div {{
+    flex-direction: row !important;
+    background: rgba(0, 24, 48, 0.75) !important;
+    padding: 3px 5px !important;
+    border-radius: 10px !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    gap: 3px !important;
+}}
+[data-testid="stSidebar"] div[data-testid="stRadio"] label {{
+    background: transparent !important;
+    border-radius: 6px !important;
+    padding: 4px 8px !important;
+    margin: 0 !important;
+    cursor: pointer !important;
+}}
+[data-testid="stSidebar"] div[data-testid="stRadio"] label:has(input:checked) {{
+    background: #0284C7 !important;
+    color: #FFFFFF !important;
+    font-weight: 700 !important;
+}}
+[data-testid="stSidebar"] div[data-testid="stRadio"] label:has(input:checked) * {{
+    color: #FFFFFF !important;
+}}
+[data-testid="stSidebar"] div[data-testid="stRadio"] label:not(:has(input:checked)) * {{
+    color: #E2E8F0 !important;
+}}
+[data-testid="stSidebar"] div[data-testid="stRadio"] input[type="radio"] {{
+    display: none !important;
+}}
+
+/* -------------------------------------------------------------
+   🎨 พื้นที่หน้าจอหลัก (MAIN CONTENT)
+   ------------------------------------------------------------- */
+h1 {{
+    font-size: {h1_font} !important;
+    color: #FFD700 !important;
+    font-weight: 700 !important;
+    text-shadow: 0 2px 5px rgba(0,25,50,0.8);
+}}
+section.main p, section.main span, section.main div[data-testid="stMarkdownContainer"] p {{
+    color: #FFFFFF !important;
+    font-size: {base_font} !important;
+    font-weight: 500 !important;
+}}
+section.main .stCaption, section.main [data-testid="stCaptionContainer"] p {{
+    color: #E0F2FE !important;
+    font-size: calc({base_font} * 0.9) !important;
+}}
+
+/* กล่องเลือกสายรถบนหน้าจอหลัก */
+section.main div[data-baseweb="select"] > div {{
+    background: #FFFFFF !important;
+    border: 2px solid #0284C7 !important;
+    border-radius: 10px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+    padding: 2px !important;
+}}
+section.main div[data-baseweb="select"] * {{
+    color: #0F172A !important;
+    font-size: {base_font} !important;
+    font-weight: 700 !important;
+}}
+section.main div[data-baseweb="select"] svg {{
+    fill: #0F172A !important;
+}}
+
+/* ดรอปดาวน์ Option */
+div[role="listbox"], ul[role="listbox"], div[data-baseweb="menu"], [data-baseweb="select-dropdown"] {{
+    background: #FFFFFF !important;
+    border: 1.5px solid #0284C7 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.35) !important;
+}}
+div[role="option"], ul[role="listbox"] > li {{
+    color: #0F172A !important;
+    font-size: {base_font} !important;
+    font-weight: 600 !important;
+    padding: 10px 16px !important;
+    border-bottom: 1px solid #E2E8F0 !important;
+}}
+div[role="option"] *, ul[role="listbox"] > li * {{
+    color: #0F172A !important;
+    font-size: {base_font} !important;
+}}
+div[role="option"]:hover {{
+    background: #E0F2FE !important;
+}}
+div[role="option"][aria-selected="true"] {{
+    background: #38BDF8 !important;
+}}
+div[role="option"][aria-selected="true"] * {{
+    color: #002D62 !important;
+    font-weight: 700 !important;
+}}
+
+/* ปุ่มกดต่างๆ */
+.stButton>button {{
+    background: linear-gradient(135deg, #D4AF37 0%, #AA8C2C 100%) !important;
+    color: #000B18 !important;
+    border: none !important;
+    border-radius: 10px;
+    font-size: {base_font} !important;
+    font-weight: 700;
+    padding: .6rem 1.4rem;
+    width: 100%;
+    box-shadow: 0 4px 15px rgba(212,175,55,0.4);
+    transition: all .3s;
+}}
+.stButton>button:hover {{
+    background: linear-gradient(135deg, #F3E5AB 0%, #D4AF37 100%) !important;
+    box-shadow: 0 6px 20px rgba(255,215,0,0.6);
+    transform: translateY(-2px);
+}}
+[data-testid="stDownloadButton"] > button {{
+    background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%) !important;
+    color: #FFF !important;
+    font-size: {base_font} !important;
+    border-radius: 10px !important;
+    padding: .8rem 2rem;
+    font-weight: 700;
+    box-shadow: 0 4px 15px rgba(2,132,199,0.4);
+}}
+
+/* ตารางข้อมูล st.dataframe */
+.stDataFrame, .stDataFrame * {{
+    font-size: {table_font} !important;
+}}
+.stDataFrame {{
+    background: rgba(2, 45, 75, 0.65) !important;
+    backdrop-filter: blur(20px);
+    padding: 1rem;
+    border-radius: 16px;
+    border: 1.5px solid rgba(255,255,255,0.3) !important;
+    border-top: 4px solid #38BDF8 !important;
+    box-shadow: 0 8px 25px rgba(0,20,45,0.35);
+}}
+.stDataFrame td, .stDataFrame th, .stDataFrame div {{
+    color: #0F172A !important;
+    font-weight: 500 !important;
+}}
+
+/* ตาราง HTML Custom สีแดง */
+.custom-table-container {{
+    overflow-x: auto;
+    background: #FFFFFF;
+    border-radius: 12px;
+    border: 1.5px solid #0284C7;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}}
+.custom-table {{
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'Sarabun', sans-serif !important;
+    font-size: {table_font} !important;
+    text-align: center;
+}}
+.custom-table th {{
+    background: #F1F5F9;
+    color: #0F172A;
+    font-weight: 700;
+    padding: 12px 10px;
+    border-bottom: 2px solid #CBD5E1;
+}}
+.custom-table td {{
+    padding: 10px;
+    border-bottom: 1px solid #E2E8F0;
+    color: #1E293B;
+    font-weight: 500;
+}}
+.custom-table tr:hover td {{
+    background: #F8FAFC;
+}}
+.text-danger {{
+    color: #DC2626 !important;
+    font-weight: 800 !important;
+}}
+.text-primary {{
+    color: #0284C7 !important;
+    font-weight: 700 !important;
+}}
+</style>
+''', unsafe_allow_html=True)
+
+# 🛑 ฟังก์ชันเรนเดอร์การ์ดสถิติแบบบรรทัดเดียว (Flattened String) ป้องกันปัญหา Markdown Code Block
+def render_metric_card(label: str, value: str, delta: str = "", status: str = "normal"):
+    color_map = {"good": "#16A34A", "warning": "#D97706", "danger": "#DC2626", "normal": "#0284C7"}
+    val_color = color_map.get(status, "#0284C7")
+    delta_html = ""
+    if delta:
+        d_str = str(delta).strip()
+        if d_str.startswith("-") or "-" in d_str:
+            d_bg, d_color, d_border = "#FEE2E2", "#DC2626", "#FCA5A5"
+        elif status == "danger":
+            d_bg, d_color, d_border = "#FEE2E2", "#DC2626", "#FCA5A5"
+        elif status == "warning":
+            d_bg, d_color, d_border = "#FEF3C7", "#D97706", "#FCD34D"
+        elif status == "good":
+            d_bg, d_color, d_border = "#DCFCE7", "#16A34A", "#86EFAC"
+        else:
+            d_bg, d_color, d_border = "#E0F2FE", "#0369A1", "#BAE6FD"
+        delta_html = f'<div style="margin-top:6px;"><span style="background:{d_bg}; color:{d_color}; border:1px solid {d_border}; padding:3px 10px; border-radius:6px; font-weight:700; font-size:calc({base_font} * 0.88); display:inline-block;">{delta}</span></div>'
+    card_html = f'<div style="background:#FFFFFF; border-radius:14px; padding:16px 20px; border:2px solid #38BDF8; border-top:6px solid {val_color}; box-shadow:0 8px 24px rgba(0,15,35,0.25); min-height:115px; margin-bottom:12px;"><div style="color:#1E293B; font-size:{metric_lbl_font}; font-weight:700; margin-bottom:4px;">{label}</div><div style="color:{val_color}; font-size:{metric_val_font}; font-weight:800; line-height:1.2;">{value}</div>{delta_html}</div>'
+    st.markdown(card_html, unsafe_allow_html=True)
+
+def section_header(title: str, subtitle: str = ""):
+    sub_html = f"<div style='font-size:calc({base_font} * 0.9); color:#475569; font-weight:600; margin-top:3px;'>{subtitle}</div>" if subtitle else ""
+    header_html = f'<div style="background:#FFFFFF; border-radius:12px; padding:12px 20px; margin-top:24px; margin-bottom:14px; border-left:6px solid #FFD700; border:1.5px solid #CBD5E1; box-shadow:0 4px 14px rgba(0,15,35,0.15);"><div style="font-size:{h2_font}; font-weight:800; color:#024D7B; line-height:1.3;">{title}</div>{sub_html}</div>'
+    st.markdown(header_html, unsafe_allow_html=True)
+
+def reset_results():
+    for k in ('result', 'zoning_cfg_used'):
+        st.session_state.pop(k, None)
+
+def show_loader(placeholder, msg: str):
+    try:
+        with open("truck.jpg", "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+        html = f'<div style="text-align:center; padding:2rem; color:#FFD700; font-weight:bold; font-size:{h3_font}; border-radius:16px; background:rgba(2,54,88,0.85); backdrop-filter:blur(20px); border:1.5px solid rgba(56,189,248,0.4);"><img src="data:image/jpeg;base64,{b64}" style="width:140px; margin-bottom:10px;"><br>{msg}</div>'
+    except FileNotFoundError:
+        html = f'<div style="text-align:center; padding:2rem; color:#FFD700; font-weight:bold; font-size:{h3_font}; border-radius:16px; background:rgba(2,54,88,0.85);">{msg}</div>'
+    placeholder.markdown(html, unsafe_allow_html=True)
+
+# =====================================================================================
+#  SECTION 9 — DATA IMPORT & MAPPING
 # =====================================================================================
 st.title("🚛 Smart Route Rebalancer — Production v3.4")
 st.markdown(f"<div style='background:rgba(2,45,75,0.6); display:inline-block; padding:5px 16px; border-radius:12px; border:1px solid rgba(56,189,248,0.3); font-weight:600; color:#E0F2FE; font-size:{base_font};'>ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Zero-Overlap Satellite Pocket Architecture)</div>", unsafe_allow_html=True)
@@ -1527,7 +1542,7 @@ with d4:
     excess_status = "warning" if excess_total > 0 else "good"
     render_metric_card("ยอดส่วนเกินที่ต้องย้าย", f"{excess_total:,.0f} ถัง/เดือน", delta=f"≈ {math.ceil(excess_total/max(1.0,cap_units))} คันรถ", status=excess_status)
 
-# 🛑 ตารางผลวินิจฉัยก่อนปรับแบบ HTML บรรทัดเดียว (ป้องกัน Error ของ Streamlit Markdown)
+# 🛑 ตารางผลวินิจฉัยก่อนปรับแบบ HTML บรรทัดเดียวแก้บั๊ก Render
 diag_html = '<div class="custom-table-container"><table class="custom-table"><thead><tr><th>เบอร์รถ</th><th>จำนวนลูกค้า</th><th>ยอด/เดือน</th><th>ภาระงาน(%)</th><th>โหลดสูงสุด/วัน</th><th>จุดจอดสูงสุด/วัน</th><th>ส่วนเกิน/วัน</th><th>สถานะ</th></tr></thead><tbody>'
 for _, row in diag.iterrows():
     is_over = "🔴 เกินเพดาน" in str(row['สถานะ'])
