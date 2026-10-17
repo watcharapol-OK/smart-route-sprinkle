@@ -1,8 +1,8 @@
 # =====================================================================================
-#  MODERN PREMIUM UI/CSS REBUILD — STREAMLIT (Safe Injection)
+#  MODERN PREMIUM UI/CSS REBUILD — STREAMLIT (Inline Direct Injection)
 # =====================================================================================
 
-CUSTOM_CSS = """
+st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sarabun:wght@300;400;500;600;700&display=swap');
 
@@ -115,6 +115,4 @@ html, body, [class*="css"] {
     background: #F8FAFC;
 }
 </style>
-"""
-
-st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
