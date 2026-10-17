@@ -1,8 +1,8 @@
 # =====================================================================================
-#  MODERN PREMIUM UI/CSS REBUILD — STREAMLIT (Fixed Syntax)
+#  MODERN PREMIUM UI/CSS REBUILD — STREAMLIT (Safe Injection)
 # =====================================================================================
 
-st.markdown('''
+CUSTOM_CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sarabun:wght@300;400;500;600;700&display=swap');
 
@@ -14,9 +14,7 @@ html, body, [class*="css"] {
     background: #F8FAFC !important;
 }
 
-/* -------------------------------------------------------------
-   SIDEBAR STYLING (Modern Dark Navy Glass)
-   ------------------------------------------------------------- */
+/* Sidebar Styling */
 [data-testid="stSidebar"] {
     background: #0F172A !important;
     border-right: 1px solid #1E293B !important;
@@ -35,9 +33,7 @@ html, body, [class*="css"] {
     padding-bottom: 8px !important;
 }
 
-/* -------------------------------------------------------------
-   MODERN TABS NAVIGATION
-   ------------------------------------------------------------- */
+/* Modern Tabs Navigation */
 .stTabs [data-baseweb="tab-list"] {
     gap: 8px;
     background-color: #E2E8F0;
@@ -59,9 +55,7 @@ html, body, [class*="css"] {
     box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
 
-/* -------------------------------------------------------------
-   CARDS & CONTAINERS
-   ------------------------------------------------------------- */
+/* Cards & Containers */
 .metric-card-modern {
     background: #FFFFFF;
     border-radius: 14px;
@@ -75,9 +69,7 @@ html, body, [class*="css"] {
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08);
 }
 
-/* -------------------------------------------------------------
-   BUTTONS & INPUTS
-   ------------------------------------------------------------- */
+/* Buttons & Inputs */
 .stButton>button {
     background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%) !important;
     color: #FFFFFF !important;
@@ -93,9 +85,7 @@ html, body, [class*="css"] {
     box-shadow: 0 6px 16px rgba(2,132,199,0.35);
 }
 
-/* -------------------------------------------------------------
-   CUSTOM TABLES
-   ------------------------------------------------------------- */
+/* Custom Tables */
 .enterprise-table {
     width: 100%;
     border-collapse: separate;
@@ -125,4 +115,6 @@ html, body, [class*="css"] {
     background: #F8FAFC;
 }
 </style>
-''', unsafe_allow_html=True)
+"""
+
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
