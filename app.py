@@ -933,6 +933,37 @@ html, body, [class*="css"] {
 }
 </style>
 """, unsafe_allow_html=True)
+
+def render_enterprise_metric(label: str, value: str, delta: str = "", status: str = "normal"):
+    border_colors = {"good": "#10B981", "warning": "#F59E0B", "danger": "#EF4444", "normal": "#0284C7"}
+    bg_delta = {"good": "#ECFDF5", "warning": "#FFFBEB", "danger": "#FEF2F2", "normal": "#F0F9FF"}
+    txt_delta = {"good": "#059669", "warning": "#D97706", "danger": "#DC2626", "normal": "#0284C7"}
+    
+    bc = border_colors.get(status, "#0284C7")
+    dc = bg_delta.get(status, "#F0F9FF")
+    tc = txt_delta.get(status, "#0284C7")
+    
+    delta_html = ""
+    if delta:
+        delta_html = f'''<div style="margin-top: 8px;"><span style="background:{dc}; color:{tc}; padding:3px 10px; border-radius:6px; font-weight:700; font-size:0.85rem; display:inline-block;">{delta}</span></div>'''
+        
+    html = f'''
+    <div class="metric-card-modern" style="border-left: 5px solid {bc};">
+        <div style="color: #64748B; font-size: 0.9rem; font-weight: 600; margin-bottom: 4px;">{label}</div>
+        <div style="color: #0F172A; font-size: 1.8rem; font-weight: 800; line-height: 1.2;">{value}</div>
+        {delta_html}
+    </div>
+    '''
+    st.markdown(html, unsafe_allow_html=True)
+
+def reset_results():
+    for k in ('result', 'zoning_cfg_used'):
+        st.session_state.pop(k, None)
+
+def show_loader(placeholder, msg: str):
+    html = f'<div style="text-align:center; padding:2rem; color:#0284C7; font-weight:bold; font-size:1.2rem; border-radius:12px; background:#FFFFFF; border:1px solid #E2E8F0;">{msg}</div>'
+    placeholder.markdown(html, unsafe_allow_html=True)
+
 # =====================================================================================
 #  SECTION 8 — MAIN ENGINE EXECUTION
 # =====================================================================================
@@ -1328,19 +1359,47 @@ with tab1:
     st.markdown(diag_html, unsafe_allow_html=True)
 
 with tab2:
-          def make_popup(r, is_after=False):
-            c_id = str(r.get(id_col, "-")) if hasattr(r, 'get') else str(r[id_col]) if id_col in r else "-"
+    st.markdown("### 🗺️ แผนที่เปรียบเทียบเชิงพื้นที่ (Before vs. After)")
+    if 'result' in st.session_state:
+        res: ZoningResult = st.session_state['result']
+        rdf = res.result_df
+        distinct_colors = ['#2563EB', '#16A34A', '#F59E0B', '#9333EA', '#0284C7', '#14B8A6', '#6366F1', '#84CC16', '#EC4899', '#06B6D4']
+        all_truck_keys = sorted(list(set(clean_truck_ids(df[truck_col].unique()) + active_trucks + exclude_trucks)))
+        color_map = {t: ('#DC2626' if t in new_trucks else distinct_colors[i % len(distinct_colors)]) for i, t in enumerate(all_truck_keys)}
+        color_map[OVERFLOW_LABEL] = '#64748B'
+
+        sel_t_view = st.multiselect("🔍 กรองดูเฉพาะเบอร์รถ (เว้นว่างเพื่อดูทั้งหมด):", options=all_truck_keys, default=[])
+        df_b = df if not sel_t_view else df[df[truck_col].isin(sel_t_view)]
+        df_a = rdf[rdf['เบอร์รถใหม่'] != OVERFLOW_LABEL] if not sel_t_view else rdf[rdf['เบอร์รถใหม่'].isin(sel_t_view)]
+
+        center_lat, center_lon = float(rdf[lat_col].mean()), float(rdf[lon_col].mean())
+        mcol1, mcol2 = st.columns(2)
+
+        def make_popup(r, is_after=False):
+            c_id = str(r[id_col]) if id_col in r else "-"
             c_name = "-"
-            if name_col and name_col in r.index:
-                val_name = r[name_col]
-                if pd.notna(val_name):
-                    c_name = str(val_name)
-            
-            vol_m = float(pd.to_numeric(r.get(vol_col, 0), errors="coerce") or 0.0) if hasattr(r, 'get') else float(pd.to_numeric(r[vol_col], errors="coerce") or 0.0)
-            orig_t = str(r.get(truck_col, "-")).strip() if hasattr(r, 'get') else str(r[truck_col]).strip()
-            new_t = str(r.get("เบอร์รถใหม่", orig_t)).strip() if hasattr(r, 'get') else str(r.get("เบอร์รถใหม่", orig_t)).strip()
-            
+            if name_col and name_col in r.index and pd.notna(r[name_col]):
+                c_name = str(r[name_col])
+            vol_m = float(pd.to_numeric(r[vol_col], errors="coerce") or 0.0) if vol_col in r else 0.0
+            orig_t = str(r[truck_col]).strip() if truck_col in r else "-"
+            new_t = str(r["เบอร์รถใหม่"]).strip() if "เบอร์รถใหม่" in r else orig_t
             return f"<b>รหัสสมาชิก:</b> {c_id}<br><b>ชื่อ:</b> {c_name}<br><b>ยอด:</b> {vol_m:,.0f} ถัง<br><b>สาย:</b> {orig_t if not is_after else orig_t + ' → ' + new_t}"
+
+        with mcol1:
+            st.markdown("<div style='text-align:center; font-weight:700; color:#024D7B; margin-bottom:6px;'>📍 ก่อนปรับ (Before)</div>", unsafe_allow_html=True)
+            mb = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles="OpenStreetMap")
+            for _, r in df_b.iterrows():
+                folium.CircleMarker([r[lat_col], r[lon_col]], radius=5, color=color_map.get(str(r[truck_col]), "#64748B"), fill=True, fillColor=color_map.get(str(r[truck_col]), "#64748B"), fill_opacity=0.8, popup=folium.Popup(make_popup(r, False), max_width=250)).add_to(mb)
+            components.html(mb.get_root().render(), height=650)
+
+        with mcol2:
+            st.markdown("<div style='text-align:center; font-weight:700; color:#024D7B; margin-bottom:6px;'>✨ หลังปรับ (After)</div>", unsafe_allow_html=True)
+            ma = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles="OpenStreetMap")
+            for _, r in df_a.iterrows():
+                folium.CircleMarker([r[lat_col], r[lon_col]], radius=5, color=color_map.get(str(r["เบอร์รถใหม่"]), "#64748B"), fill=True, fillColor=color_map.get(str(r["เบอร์รถใหม่"]), "#64748B"), fill_opacity=0.8, popup=folium.Popup(make_popup(r, True), max_width=250)).add_to(ma)
+            components.html(ma.get_root().render(), height=650)
+    else:
+        st.info("💡 กรุณากดปุ่ม '🚀 ประมวลผลจัดสายส่งใหม่' ที่เมนูด้านซ้ายเพื่อแสดงแผนที่")
 
 with tab3:
     st.markdown("### 📅 ตารางวิเคราะห์โหลดรายวัน & รายละเอียดการโยกย้าย")
