@@ -1,6 +1,6 @@
 # =====================================================================================
-#  SMART ROUTE REBALANCER — ENTERPRISE EDITION v3.9 (FULL SOURCE CODE)
-#  Multi-Donor Fleet Rebalancing + Exclude/Lock Specific Trucks + Modern Tabs UI
+#  SMART ROUTE REBALANCER — ENTERPRISE EDITION v4.0 (FULL SOURCE CODE)
+#  Multi-Donor Fleet Rebalancing + Depot Hub Distance + Remove Stop Limits
 # =====================================================================================
 from __future__ import annotations
 
@@ -41,7 +41,6 @@ DAYS_PER_MONTH = WORKING_DAYS * WEEKS_PER_MONTH
 
 DEFAULT_MONTHLY_CAPACITY = 4160.0
 DEFAULT_DAILY_CONTROL_CAP = 156.0
-DEFAULT_MAX_STOPS_PER_DAY = 90
 
 OVERFLOW_LABEL = "ส่วนเกิน (Overflow)"
 NO_TRUCK_TOKENS = {"", "nan", "none", "null", "-", "ไม่ระบุ", "na", "n/a"}
@@ -51,9 +50,6 @@ OPTIMAL_MAX = 155
 AVOID_MIN = 121
 AVOID_MAX = 139
 TARGET_DAY_CAP = 148
-ESCALATE_THRESHOLD = 160
-ESCALATE_TARGET_MIN = 180
-ESCALATE_TARGET_MAX = 190
 
 EARTH_RADIUS_M = 6371008.8
 
@@ -217,7 +213,8 @@ class ZoningConfig:
     name_col: Optional[str] = None
     monthly_capacity: float = DEFAULT_MONTHLY_CAPACITY
     daily_control_cap: float = DEFAULT_DAILY_CONTROL_CAP
-    max_stops_per_day: int = DEFAULT_MAX_STOPS_PER_DAY
+    depot_lat: float = 0.0
+    depot_lon: float = 0.0
     core_ratio: float = 65.0
     core_floor: float = 20.0
     core_step: float = 10.0
@@ -325,7 +322,7 @@ def diagnose_fleet(df: pd.DataFrame, cfg: ZoningConfig) -> pd.DataFrame:
             "ยอด/เดือน": int(round(tot_vol)),
             "ภาระงาน(%)": round(tot_vol / max(1.0, cfg.monthly_capacity) * 100.0, 1),
             "โหลดสูงสุด/วัน": int(round(peak_v)),
-            "จุดจอดสูงสุด/วัน": peak_s,
+            "จุดจอด": peak_s,
             "ส่วนเกิน/วัน": int(round(max(0.0, peak_v - cfg.daily_control_cap))),
             "สถานะ": status,
         })
@@ -648,7 +645,7 @@ def swap_improve(stops: pd.DataFrame, trucks: List[str], targets: Dict[str, floa
     return stops, loads
 
 # =====================================================================================
-#  SECTION 6 — DAILY LOAD SMOOTHING & COMPACTNESS
+#  SECTION 6 — DAILY LOAD SMOOTHING & DEPOT HUB DISTANCE
 # =====================================================================================
 def smooth_daily_loads(opt: pd.DataFrame, cfg: ZoningConfig, trucks: List[str]) -> Tuple[pd.DataFrame, np.ndarray, np.ndarray, Dict[str, np.ndarray]]:
     opt = opt.copy().reset_index(drop=True)
@@ -686,26 +683,25 @@ def smooth_daily_loads(opt: pd.DataFrame, cfg: ZoningConfig, trucks: List[str]) 
                     d_stops[t][d] += 1
         return d_vol, d_stops
     d_cap = max(1.0, float(cfg.daily_control_cap))
-    max_s = max(1, int(cfg.max_stops_per_day))
     for _ in range(max(1, int(cfg.daily_passes))):
         d_vol, d_stops = recompute_daily()
         changed = False
         for t in trucks:
             if t not in d_vol:
                 continue
-            score = d_vol[t] / d_cap + d_stops[t] / max_s
+            score = d_vol[t] / d_cap
             src_order = np.argsort(-score)
             for src in src_order:
                 src = int(src)
-                if not (d_vol[t][src] > d_cap or d_stops[t][src] > max_s):
+                if not (d_vol[t][src] > d_cap):
                     continue
-                dest_score = (d_vol[t] / d_cap + d_stops[t] / max_s).copy()
+                dest_score = (d_vol[t] / d_cap).copy()
                 dest_score[src] = np.inf
                 dest_candidates = np.argsort(dest_score)
                 dest = None
                 for cand in dest_candidates:
                     cand = int(cand)
-                    if not np.isfinite(dest_score[cand]) or d_vol[t][cand] >= d_cap or d_stops[t][cand] >= max_s:
+                    if not np.isfinite(dest_score[cand]) or d_vol[t][cand] >= d_cap:
                         continue
                     dest = cand
                     break
@@ -729,7 +725,7 @@ def smooth_daily_loads(opt: pd.DataFrame, cfg: ZoningConfig, trucks: List[str]) 
                 for idx in movable:
                     c_days = day_map[idx]
                     v_day = m_vols[idx] / max(1, len(c_days)) / WEEKS_PER_MONTH
-                    if d_vol[t][dest] + v_day > d_cap or d_stops[t][dest] + 1 > max_s:
+                    if d_vol[t][dest] + v_day > d_cap:
                         continue
                     new_days = sorted(set(dest if d == src else d for d in c_days))
                     if len(new_days) != len(c_days):
@@ -750,7 +746,7 @@ def smooth_daily_loads(opt: pd.DataFrame, cfg: ZoningConfig, trucks: List[str]) 
                     d_stops[t][dest] += 1
                     shifted_v += v_day
                     changed = True
-                    if d_vol[t][src] <= d_cap and d_stops[t][src] <= max_s and shifted_v >= excess_v:
+                    if d_vol[t][src] <= d_cap and shifted_v >= excess_v:
                         break
         if not changed:
             break
@@ -770,15 +766,22 @@ def smooth_daily_loads(opt: pd.DataFrame, cfg: ZoningConfig, trucks: List[str]) 
     final_daily, _ = recompute_daily()
     return opt, daily_mat, daily_s_mat, final_daily
 
-def compute_compactness(group: pd.DataFrame) -> float:
-    if group.empty:
+def compute_depot_hub_distance(group: pd.DataFrame, depot_lat: float, depot_lon: float) -> float:
+    """คำนวณระยะทางเฉลี่ยไป-กลับจากสาขา (Depot Hub) ถึงจุดส่งของลูกค้าแต่ละจุด"""
+    if group.empty or depot_lat == 0.0 or depot_lon == 0.0:
         return 0.0
-    coords = group[["x", "y"]].to_numpy(dtype=float)
+    dx, dy, _ = project_xy([depot_lat] + group[cfg_lat_col_ref if 'cfg_lat_col_ref' in globals() else group.columns[0]].tolist(), 
+                           [depot_lon] + group[cfg_lon_col_ref if 'cfg_lon_col_ref' in globals() else group.columns[1]].tolist())
+    # ระยะทางจาก Depot (index 0) ไปยังลูกค้าทุกจุด
+    depot_x, depot_y = dx[0], dy[0]
+    cust_x, cust_y = dx[1:], dy[1:]
+    if len(cust_x) == 0:
+        return 0.0
     weights = np.ones(len(group), dtype=float)
     if "total_vol" in group.columns:
         weights = np.maximum(pd.to_numeric(group["total_vol"], errors="coerce").fillna(0.0).to_numpy(dtype=float), 1e-9)
-    center = np.average(coords, axis=0, weights=weights)
-    return float(np.average(np.sqrt(((coords - center) ** 2).sum(axis=1)), weights=weights))
+    distances = np.sqrt((cust_x - depot_x) ** 2 + (cust_y - depot_y) ** 2) * 2.0 # คูณ 2 เผื่อวิ่งไป-กลับจากสาขา
+    return float(np.average(distances, weights=weights))
 
 def calculate_peak_daily_loads(data: pd.DataFrame, truck_col: str, vol_col: str, day_col: str) -> Dict[str, float]:
     output = {}
@@ -982,7 +985,7 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
     valid_mask = opt[cfg.lat_col].notna() & opt[cfg.lon_col].notna() & (~opt[cfg.truck_col].str.lower().isin(NO_TRUCK_TOKENS))
     opt = opt[valid_mask].reset_index(drop=True)
     opt["coord_key"] = opt[cfg.lat_col].round(5).astype(str) + "," + opt[cfg.lon_col].round(5).astype(str)
-    px, py, _ = project_xy(opt[cfg.lat_col].to_numpy(dtype=float), opt[cfg.lon_col].to_numpy(dtype=float))
+    px, py, _ = project_xy(opt[cfg.lat_col].to_numpy(dtype=float), opt[cfg.lon_col].to_numpy(dtype=float), lat0=cfg.depot_lat if cfg.depot_lat != 0 else None)
     opt["x"], opt["y"] = px, py
 
     vip_status = opt["VIP_Status"].astype(str).str.upper().str.strip() if "VIP_Status" in opt.columns else pd.Series(["ปกติ"] * len(opt))
@@ -1029,6 +1032,11 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
 
     gw = np.maximum(stops["total_vol"].to_numpy(dtype=float), 1e-9)
     gx, gy = float(np.average(stops["x"], weights=gw)), float(np.average(stops["y"], weights=gw))
+    if cfg.depot_lat != 0 and cfg.depot_lon != 0:
+        dx_depot, dy_depot, _ = project_xy([cfg.depot_lat], [cfg.depot_lon], lat0=cfg.depot_lat)
+        depot_coord = (float(dx_depot[0]), float(dy_depot[0]))
+    else:
+        depot_coord = (gx, gy)
 
     if norm_new:
         init_cores = compute_core_keys(stops, cfg.core_ratio, core_eligible, ratio_override)
@@ -1037,7 +1045,7 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
             spool = stops
         new_centers = kmeans_seeds(spool[["x", "y"]].to_numpy(dtype=float), spool["total_vol"].to_numpy(dtype=float), len(norm_new))
         if len(new_centers) == 0:
-            new_centers = np.asarray([[gx, gy]], dtype=float)
+            new_centers = np.asarray([depot_coord], dtype=float)
         for idx, t in enumerate(norm_new):
             c_idx = min(idx, len(new_centers) - 1)
             seeds[t] = (float(new_centers[c_idx, 0]), float(new_centers[c_idx, 1]))
@@ -1102,11 +1110,15 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
         excluded_df["สถานะ"] = "คงเดิม (ล็อกคัน) 🔒"
         opt = pd.concat([opt, excluded_df], ignore_index=True)
 
+    global cfg_lat_col_ref, cfg_lon_col_ref
+    cfg_lat_col_ref = cfg.lat_col
+    cfg_lon_col_ref = cfg.lon_col
+
     all_final_trucks = active + list(exclude_set)
     opt, daily_matrix, daily_stops_matrix, final_daily = smooth_daily_loads(opt, cfg, all_final_trucks)
 
-    comp_before = [compute_compactness(grp) for _, grp in opt.groupby(cfg.truck_col)]
-    comp_after = [compute_compactness(grp) for t, grp in opt.groupby("เบอร์รถใหม่") if t != OVERFLOW_LABEL]
+    comp_before = [compute_depot_hub_distance(grp, cfg.depot_lat, cfg.depot_lon) for _, grp in opt.groupby(cfg.truck_col)]
+    comp_after = [compute_depot_hub_distance(grp, cfg.depot_lat, cfg.depot_lon) for t, grp in opt.groupby("เบอร์รถใหม่") if t != OVERFLOW_LABEL]
     peak_before = calculate_peak_daily_loads(opt, cfg.truck_col, cfg.vol_col, cfg.day_col)
     peak_after = {t: float(v.max()) for t, v in final_daily.items()}
     moved_m_full = opt[cfg.truck_col].astype(str).str.strip() != opt["เบอร์รถใหม่"].astype(str).str.strip()
@@ -1136,7 +1148,7 @@ def run_multi_donor_zoning(df: pd.DataFrame, cfg: ZoningConfig, target_pcts: Dic
 #  SECTION 9 — DATA IMPORT & MAPPING UI (ENTERPRISE SIDEBAR)
 # =====================================================================================
 st.title("🚛 Smart Route Rebalancer — Enterprise")
-st.markdown("<div style='color:#64748B; font-weight:600; margin-bottom:1rem;'>ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Zero-Overlap Satellite Pocket Architecture)</div>", unsafe_allow_html=True)
+st.markdown("<div style='color:#64748B; font-weight:600; margin-bottom:1rem;'>ระบบวิเคราะห์และตัดสายส่งน้ำอัตโนมัติ (Zero-Overlap Hub-and-Spoke Architecture)</div>", unsafe_allow_html=True)
 
 st.sidebar.markdown("### 📁 1. นำเข้าข้อมูล")
 sheet_url = st.sidebar.text_input("🔗 ลิงก์ Google Sheets:", placeholder="วางลิงก์ที่นี่...")
@@ -1212,27 +1224,33 @@ df = df[~df[truck_col].str.lower().isin(NO_TRUCK_TOKENS)].reset_index(drop=True)
 available_trucks = clean_truck_ids(df[truck_col].unique())
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 📏 3. เพดานควบคุมของบริษัท")
+st.sidebar.markdown("### 🏢 3. พิกัดตั้งต้นสาขา (Depot Hub)")
+default_lat = float(df[lat_col].mean()) if not df.empty else 13.7563
+default_lon = float(df[lon_col].mean()) if not df.empty else 100.5018
+depot_lat = st.sidebar.number_input("ละติจูดสาขา (Depot Lat):", value=default_lat, format="%6.6f", on_change=reset_results)
+depot_lon = st.sidebar.number_input("ลองจิจูดสาขา (Depot Lon):", value=default_lon, format="%6.6f", on_change=reset_results)
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 📏 4. เพดานควบคุมของบริษัท")
 monthly_cap = st.sidebar.number_input("ความจุอ้างอิง (ถัง/เดือน/คัน) = 100%", 1000.0, 20000.0, DEFAULT_MONTHLY_CAPACITY, 40.0, on_change=reset_results)
 daily_cap = st.sidebar.number_input("เพดานยอดส่งต่อวัน (ถัง/วัน)", 50.0, 400.0, float(DEFAULT_DAILY_CONTROL_CAP), 1.0, on_change=reset_results)
-max_stops_day = st.sidebar.number_input("เพดานจุดจอดต่อวัน (จุด)", 10, 400, DEFAULT_MAX_STOPS_PER_DAY, 5, on_change=reset_results)
 cap_units = daily_cap * DAYS_PER_MONTH
 
 base_cfg = ZoningConfig(lat_col=lat_col, lon_col=lon_col, vol_col=vol_col, truck_col=truck_col,
                         id_col=id_col, day_col=day_col, name_col=name_col,
                         monthly_capacity=monthly_cap, daily_control_cap=daily_cap,
-                        max_stops_per_day=int(max_stops_day))
+                        depot_lat=depot_lat, depot_lon=depot_lon)
 
 diag = diagnose_fleet(df, base_cfg)
 overloaded = diag.loc[diag['สถานะ'] == '🔴 เกินเพดาน', 'เบอร์รถ'].tolist() if not diag.empty else []
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 🚫 4. ล็อกรถที่ไม่ต้องคำนวณ")
+st.sidebar.markdown("### 🚫 5. ล็อกรถที่ไม่ต้องคำนวณ")
 exclude_trucks = st.sidebar.multiselect("เลือกรถที่ต้องการล็อกไว้ (ห้ามแตะต้อง):", options=available_trucks, default=[], on_change=reset_results)
 processable_trucks = [t for t in available_trucks if t not in exclude_trucks]
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 🚚 5. เลือกรถต้นทาง (Donors)")
+st.sidebar.markdown("### 🚚 6. เลือกรถต้นทาง (Donors)")
 dissolve_trucks = st.sidebar.multiselect("🗑️ ยุบทั้งคัน", options=processable_trucks, default=[], on_change=reset_results)
 relieve_default = [t for t in overloaded if t in processable_trucks and t not in dissolve_trucks]
 relieve_trucks = st.sidebar.multiselect("✂️ ดึงงานออกบางส่วน", options=[t for t in processable_trucks if t not in dissolve_trucks], default=relieve_default, on_change=reset_results)
@@ -1245,8 +1263,8 @@ kept_trucks = [t for t in processable_trucks if t not in dissolve_trucks]
 active_trucks = kept_trucks + new_trucks
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 🎛️ 6. เป้าหมายรายคัน (%)")
-fingerprint = "|".join([sheet_url, sheet_gid, vol_col, truck_col, day_col, str(sorted(dissolve_trucks)), str(sorted(relieve_trucks)), str(new_trucks), str(sorted(exclude_trucks)), f"{monthly_cap}", f"{daily_cap}"])
+st.sidebar.markdown("### 🎛️ 7. เป้าหมายรายคัน (%)")
+fingerprint = "|".join([sheet_url, sheet_gid, vol_col, truck_col, day_col, str(sorted(dissolve_trucks)), str(sorted(relieve_trucks)), str(new_trucks), str(sorted(exclude_trucks)), f"{monthly_cap}", f"{daily_cap}", f"{depot_lat}", f"{depot_lon}"])
 if st.sidebar.button("🔄 คำนวณเป้าหมายอัตโนมัติ"):
     st.session_state.pop('slider_fp', None)
     reset_results()
@@ -1287,7 +1305,7 @@ for t in active_trucks:
         st.session_state.truck_pcts[t] = v
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 🔒 7. ล็อก Key Account & กฎ")
+st.sidebar.markdown("### 🔒 8. ล็อก Key Account & กฎ")
 manual_vips = st.sidebar.multiselect("รหัสลูกค้าห้ามย้ายสาย", options=df[id_col].unique().tolist(), default=[], on_change=reset_results)
 core_ratio_pct = st.sidebar.slider("สัดส่วนแกนกลาง (Core %)", 0, 100, 65, 5, on_change=reset_results)
 tol_pct = st.sidebar.number_input("ค่าเผื่อเป้าหมาย (%)", 0.0, 50.0, 5.0, 0.5, on_change=reset_results)
@@ -1295,12 +1313,12 @@ tol_pct = st.sidebar.number_input("ค่าเผื่อเป้าหมา
 cfg = ZoningConfig(lat_col=lat_col, lon_col=lon_col, vol_col=vol_col, truck_col=truck_col,
                     id_col=id_col, day_col=day_col, name_col=name_col,
                     monthly_capacity=monthly_cap, daily_control_cap=daily_cap,
-                    max_stops_per_day=int(max_stops_day), core_ratio=float(core_ratio_pct),
+                    depot_lat=depot_lat, depot_lon=depot_lon, core_ratio=float(core_ratio_pct),
                     tol_pct=float(tol_pct))
 
 if st.sidebar.button("🚀 ประมวลผลจัดสายส่งใหม่", use_container_width=True):
     ph = st.empty()
-    show_loader(ph, "กำลังประมวลผลจัดกลุ่มเส้นทางอัจฉริยะ... 💧")
+    show_loader(ph, "กำลังประมวลผลจัดกลุ่มเส้นทางอัจฉริยะ (Hub-and-Spoke)... 💧")
     res = run_multi_donor_zoning(df, cfg, target_pcts, dissolve_trucks, relieve_trucks, new_trucks, manual_vips, exclude_trucks)
     st.session_state['result'] = res
     st.session_state['zoning_cfg_used'] = cfg
@@ -1331,7 +1349,7 @@ with tab1:
         with k2:
             render_enterprise_metric("โหลดสูงสุด", f"{peak_after:,.0f} ถัง/วัน", delta=f"{peak_diff:+,.0f} ถัง", status="warning" if peak_after > daily_cap else "good")
         with k3:
-            render_enterprise_metric("ความกระชับของโซน", f"{res.metrics['compact_after_km']:.2f} กม.", delta=f"{compact_diff:+.2f} กม.", status="good" if compact_diff <= 0 else "warning")
+            render_enterprise_metric("ระยะทางวิ่งเฉลี่ยจากสาขา", f"{res.metrics['compact_after_km']:.2f} กม.", delta=f"{compact_diff:+.2f} กม.", status="good" if compact_diff <= 0 else "warning")
         with k4:
             render_enterprise_metric("ลูกค้าที่โยกย้าย", f"{int(res.metrics['moved_cust']):,} ราย", delta=f"{res.metrics['moved_pct']:.1f}% ของสาขา", status="normal")
     else:
@@ -1348,18 +1366,18 @@ with tab1:
 
     st.markdown("---")
     st.markdown("### 🩺 ผลวินิจฉัยสถานะรถปัจจุบัน (ก่อนปรับ)")
-    diag_html = '<div class="custom-table-container"><table class="custom-table"><thead><tr><th>เบอร์รถ</th><th>จำนวนลูกค้า</th><th>ยอด/เดือน</th><th>ภาระงาน(%)</th><th>โหลดสูงสุด/วัน</th><th>จุดจอดสูงสุด/วัน</th><th>ส่วนเกิน/วัน</th><th>สถานะ</th></tr></thead><tbody>'
+    diag_html = '<div class="custom-table-container"><table class="custom-table"><thead><tr><th>เบอร์รถ</th><th>จำนวนลูกค้า</th><th>ยอด/เดือน</th><th>ภาระงาน(%)</th><th>โหลดสูงสุด/วัน</th><th>จุดจอด</th><th>ส่วนเกิน/วัน</th><th>สถานะ</th></tr></thead><tbody>'
     for _, row in diag.iterrows():
         is_over = "🔴 เกินเพดาน" in str(row['สถานะ'])
         is_warn = "🟡 ควรเลี่ยง" in str(row['สถานะ'])
         vol_cls = "text-danger" if is_over else ("text-primary" if not is_warn else "")
         status_color = "#DC2626" if is_over else ("#D97706" if is_warn else "#16A34A")
-        diag_html += f'<tr><td style="font-weight:700;">{row["เบอร์รถ"]}</td><td>{row["จำนวนลูกค้า"]:,}</td><td>{row["ยอด/เดือน"]:,}</td><td>{row["ภาระงาน(%)"]}%</td><td class="{vol_cls}">{row["โหลดสูงสุด/วัน"]:,}</td><td>{row["จุดจอดสูงสุด/วัน"]:,}</td><td style="color:{"#DC2626" if row["ส่วนเกิน/วัน"] > 0 else "#475569"}; font-weight:700;">{row["ส่วนเกิน/วัน"]:,}</td><td><span style="color:{status_color}; font-weight:700;">{row["สถานะ"]}</span></td></tr>'
+        diag_html += f'<tr><td style="font-weight:700;">{row["เบอร์รถ"]}</td><td>{row["จำนวนลูกค้า"]:,}</td><td>{row["ยอด/เดือน"]:,}</td><td>{row["ภาระงาน(%)"]}%</td><td class="{vol_cls}">{row["โหลดสูงสุด/วัน"]:,}</td><td>{row["จุดจอด"]:,}</td><td style="color:{"#DC2626" if row["ส่วนเกิน/วัน"] > 0 else "#475569"}; font-weight:700;">{row["ส่วนเกิน/วัน"]:,}</td><td><span style="color:{status_color}; font-weight:700;">{row["สถานะ"]}</span></td></tr>'
     diag_html += "</tbody></table></div>"
     st.markdown(diag_html, unsafe_allow_html=True)
 
 with tab2:
-    st.markdown("### 🗺️ แผนที่เปรียบเทียบเชิงพื้นที่ (Before vs. After)")
+    st.markdown("### 🗺️ แผนที่เปรียบเทียบเชิงพื้นที่ (Hub-and-Spoke Routing)")
     if 'result' in st.session_state:
         res: ZoningResult = st.session_state['result']
         rdf = res.result_df
@@ -1372,7 +1390,7 @@ with tab2:
         df_b = df if not sel_t_view else df[df[truck_col].isin(sel_t_view)]
         df_a = rdf[rdf['เบอร์รถใหม่'] != OVERFLOW_LABEL] if not sel_t_view else rdf[rdf['เบอร์รถใหม่'].isin(sel_t_view)]
 
-        center_lat, center_lon = float(rdf[lat_col].mean()), float(rdf[lon_col].mean())
+        center_lat, center_lon = (depot_lat, depot_lon) if depot_lat != 0 else (float(rdf[lat_col].mean()), float(rdf[lon_col].mean()))
         mcol1, mcol2 = st.columns(2)
 
         def make_popup(r, is_after=False):
@@ -1388,13 +1406,17 @@ with tab2:
         with mcol1:
             st.markdown("<div style='text-align:center; font-weight:700; color:#024D7B; margin-bottom:6px;'>📍 ก่อนปรับ (Before)</div>", unsafe_allow_html=True)
             mb = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles="OpenStreetMap")
+            if depot_lat != 0 and depot_lon != 0:
+                folium.Marker([depot_lat, depot_lon], popup="<b>📌 สาขา (Depot Hub)</b>", icon=folium.Icon(color='red', icon='home', prefix='fa')).add_to(mb)
             for _, r in df_b.iterrows():
                 folium.CircleMarker([r[lat_col], r[lon_col]], radius=5, color=color_map.get(str(r[truck_col]), "#64748B"), fill=True, fillColor=color_map.get(str(r[truck_col]), "#64748B"), fill_opacity=0.8, popup=folium.Popup(make_popup(r, False), max_width=250)).add_to(mb)
             components.html(mb.get_root().render(), height=650)
 
         with mcol2:
-            st.markdown("<div style='text-align:center; font-weight:700; color:#024D7B; margin-bottom:6px;'>✨ หลังปรับ (After)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; font-weight:700; color:#024D7B; margin-bottom:6px;'>✨ หลังปรับ (After - Hub Routing)</div>", unsafe_allow_html=True)
             ma = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles="OpenStreetMap")
+            if depot_lat != 0 and depot_lon != 0:
+                folium.Marker([depot_lat, depot_lon], popup="<b>📌 สาขา (Depot Hub)</b>", icon=folium.Icon(color='red', icon='home', prefix='fa')).add_to(ma)
             for _, r in df_a.iterrows():
                 folium.CircleMarker([r[lat_col], r[lon_col]], radius=5, color=color_map.get(str(r["เบอร์รถใหม่"]), "#64748B"), fill=True, fillColor=color_map.get(str(r["เบอร์รถใหม่"]), "#64748B"), fill_opacity=0.8, popup=folium.Popup(make_popup(r, True), max_width=250)).add_to(ma)
             components.html(ma.get_root().render(), height=650)
