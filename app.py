@@ -815,7 +815,7 @@ html, body, [class*="css"] {
     background: #F8FAFC !important;
 }
 
-/* Sidebar Styling */
+/* Sidebar Styling & Text Visibility */
 [data-testid="stSidebar"] {
     background: #0F172A !important;
     border-right: 1px solid #1E293B !important;
@@ -823,7 +823,7 @@ html, body, [class*="css"] {
 [data-testid="stSidebar"] * {
     color: #F8FAFC !important;
 }
-[data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown p {
+[data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown p, [data-testid="stSidebar"] span {
     color: #38BDF8 !important;
     font-weight: 600 !important;
     font-size: 0.95rem !important;
@@ -832,6 +832,11 @@ html, body, [class*="css"] {
     color: #38BDF8 !important;
     border-bottom: 1px solid #1E293B !important;
     padding-bottom: 8px !important;
+}
+
+/* Fix Dropdown & Input Text inside Sidebar */
+[data-testid="stSidebar"] input, [data-testid="stSidebar"] select, [data-testid="stSidebar"] div[data-baseweb="select"] span {
+    color: #0F172A !important;
 }
 
 /* Modern Tabs Navigation */
@@ -928,37 +933,6 @@ html, body, [class*="css"] {
 }
 </style>
 """, unsafe_allow_html=True)
-
-def render_enterprise_metric(label: str, value: str, delta: str = "", status: str = "normal"):
-    border_colors = {"good": "#10B981", "warning": "#F59E0B", "danger": "#EF4444", "normal": "#0284C7"}
-    bg_delta = {"good": "#ECFDF5", "warning": "#FFFBEB", "danger": "#FEF2F2", "normal": "#F0F9FF"}
-    txt_delta = {"good": "#059669", "warning": "#D97706", "danger": "#DC2626", "normal": "#0284C7"}
-    
-    bc = border_colors.get(status, "#0284C7")
-    dc = bg_delta.get(status, "#F0F9FF")
-    tc = txt_delta.get(status, "#0284C7")
-    
-    delta_html = ""
-    if delta:
-        delta_html = f'''<div style="margin-top: 8px;"><span style="background:{dc}; color:{tc}; padding:3px 10px; border-radius:6px; font-weight:700; font-size:0.85rem; display:inline-block;">{delta}</span></div>'''
-        
-    html = f'''
-    <div class="metric-card-modern" style="border-left: 5px solid {bc};">
-        <div style="color: #64748B; font-size: 0.9rem; font-weight: 600; margin-bottom: 4px;">{label}</div>
-        <div style="color: #0F172A; font-size: 1.8rem; font-weight: 800; line-height: 1.2;">{value}</div>
-        {delta_html}
-    </div>
-    '''
-    st.markdown(html, unsafe_allow_html=True)
-
-def reset_results():
-    for k in ('result', 'zoning_cfg_used'):
-        st.session_state.pop(k, None)
-
-def show_loader(placeholder, msg: str):
-    html = f'<div style="text-align:center; padding:2rem; color:#0284C7; font-weight:bold; font-size:1.2rem; border-radius:12px; background:#FFFFFF; border:1px solid #E2E8F0;">{msg}</div>'
-    placeholder.markdown(html, unsafe_allow_html=True)
-
 # =====================================================================================
 #  SECTION 8 — MAIN ENGINE EXECUTION
 # =====================================================================================
